@@ -1,13 +1,14 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v1.3  
+> **版本**: v1.4  
 > **日期**: 2026-03-01  
-> **关联 PRD**: [PRD.md](./PRD.md) v1.3  
+> **关联 PRD**: [PRD.md](./PRD.md) v1.4  
 > **状态**: 迭代中  
 > **变更记录**:  
 > - v1.1 (2026-03-01): 新增需求树技术设计 — tasks.type 字段、树形 API、Requirements 页面  
 > - v1.2 (2026-03-01): 系统自洽性修复 — type/parent 字段全链路贯通  
-> - v1.3 (2026-03-01): 人员管理、甘特图、需求树增强（过滤+思维导图）
+> - v1.3 (2026-03-01): 人员管理、甘特图、需求树增强（过滤+思维导图）  
+> - v1.4 (2026-03-01): **需求图谱重设计** — 废弃 type 枚举，改为 labels 标签；新增 req_links 关联表；循环依赖检测算法；迁移/关联 API
 
 ---
 
@@ -1110,3 +1111,207 @@ getTaskChildren: (taskId: string) =>
 | **SQL 注入** | Drizzle ORM 参数化查询 |
 | **速率限制** | Fastify rate-limit 插件 |
 | **数据备份** | SQLite 文件可直接 cp 备份 |
+
+---
+
+## 十六、需求图谱技术设计（v1.4 新增）
+
+> 对应 PRD 第九章"需求图谱"，替代 v1.1 的固定四级树设计。
+
+### 16.1 数据库变更
+
+#### 16.1.1 `tasks` 表变更
+
+```sql
+-- 原 type TEXT NOT NULL DEFAULT 'task'  →  保留但语义降级为"遗留字段"
+-- 新增 labels 字段（JSON 数组存储，替代 type 的分类功能）
+ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';
+
+-- 新增思维导图位置字段（每个节点在图中的坐标，本地覆盖优先）
+ALTER TABLE tasks ADD COLUMN pos_x REAL;
+ALTER TABLE tasks ADD COLUMN pos_y REAL;
+```
+
+> `type` 字段暂时保留（向后兼容），但新代码不再写入，UI 不再显示固定类型；`labels` 数组承担其语义分类功能。
+
+#### 16.1.2 新表：`req_links`（需求关联）
+
+```sql
+CREATE TABLE IF NOT EXISTS req_links (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id   TEXT NOT NULL,   -- 发起关联的节点 taskId（阻塞依赖中：被阻塞方）
+  target_id   TEXT NOT NULL,   -- 被指向的节点 taskId（阻塞依赖中：阻塞源头）
+  link_type   TEXT NOT NULL,   -- 'blocks' | 'precedes' | 'relates'
+  description TEXT,            -- 关联备注（可选）
+  visible     INTEGER NOT NULL DEFAULT 1,  -- 1=显示 0=隐藏
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(source_id, target_id, link_type)
+);
+
+-- 关联类型语义说明：
+-- blocks:   source_id 被 target_id 阻塞（target_id 必须先完成）
+-- precedes: target_id 推荐在 source_id 之前完成（软性顺序）
+-- relates:  双向弱关联（无方向，语义对称）
+```
+
+---
+
+### 16.2 循环依赖检测算法
+
+创建 `blocks` 或 `precedes` 关联时，必须检测是否引入循环（防止死锁）。
+
+**算法：深度优先搜索（DFS）**
+
+```typescript
+// req-link-service.ts
+function hasCycle(sourceId: string, targetId: string, allLinks: ReqLink[]): boolean {
+  // 从 targetId 出发，沿 blocks/precedes 方向遍历
+  // 若能到达 sourceId，则说明创建 (source→target) 后会形成环
+  const visited = new Set<string>();
+  const stack = [targetId];
+
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (cur === sourceId) return true;   // 找到环
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+
+    // 找所有从 cur 出发的依赖边
+    const outgoing = allLinks.filter(
+      l => l.sourceId === cur && (l.linkType === 'blocks' || l.linkType === 'precedes')
+    );
+    stack.push(...outgoing.map(l => l.targetId));
+  }
+  return false;
+}
+```
+
+**在 API 层调用：**
+```typescript
+// POST /api/v1/req-links
+const allLinks = db.select().from(reqLinks).all();
+if (body.link_type !== 'relates' && hasCycle(body.source_id, body.target_id, allLinks)) {
+  return reply.code(422).send({ error: '检测到循环依赖，无法创建关联' });
+}
+```
+
+---
+
+### 16.3 节点迁移（Reparent）
+
+将节点（及其整个子树）移入新父节点：
+
+```typescript
+// PATCH /api/v1/tasks/:taskId/reparent
+async function reparentTask(taskId: string, newParentId: string | null) {
+  // 1. 防止将节点移入其自身的子孙节点（形成环）
+  if (newParentId) {
+    const descendants = await getDescendantIds(taskId);  // 递归获取所有子孙
+    if (descendants.includes(newParentId)) {
+      throw new Error('不能将节点移入其自身的子孙节点');
+    }
+  }
+  // 2. 更新 parent_task_id
+  db.update(tasks)
+    .set({ parentTaskId: newParentId ? getInternalId(newParentId) : null })
+    .where(eq(tasks.taskId, taskId))
+    .run();
+  // 3. 子节点无需修改（parent_task_id 链条自然跟随）
+  // 4. req_links 关联不变
+}
+```
+
+---
+
+### 16.4 API 设计
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/req-links` | 获取所有关联（支持 `?node_id=` 过滤） |
+| POST | `/api/v1/req-links` | 创建关联（含循环检测） |
+| PATCH | `/api/v1/req-links/:id` | 更新关联（修改描述/可见性） |
+| DELETE | `/api/v1/req-links/:id` | 删除关联 |
+| PATCH | `/api/v1/tasks/:taskId/reparent` | 节点迁移（换父节点） |
+| GET | `/api/v1/tasks/graph` | 返回完整图谱数据（nodes + edges，含关联线） |
+
+**`GET /api/v1/tasks/graph` 返回格式：**
+
+```typescript
+{
+  nodes: Task[],          // 所有任务节点（含 labels、pos_x/y）
+  treeEdges: {            // 亲子树状边
+    source: string;       // parent taskId
+    target: string;       // child taskId
+  }[],
+  linkEdges: {            // 关联边
+    id: number;
+    source: string;
+    target: string;
+    link_type: 'blocks' | 'precedes' | 'relates';
+    visible: boolean;
+    description?: string;
+  }[];
+}
+```
+
+---
+
+### 16.5 前端思维导图升级方案
+
+基于现有的 `@xyflow/react` 实现，扩展以下能力：
+
+#### 16.5.1 多类型边（Edge Types）
+
+```typescript
+const EDGE_STYLES = {
+  tree:     { stroke: '#d1d5db', strokeWidth: 1.5, type: 'smoothstep' },  // 灰色实线
+  blocks:   { stroke: '#ef4444', strokeWidth: 2,   strokeDasharray: '5,3', animated: false },
+  precedes: { stroke: '#f97316', strokeWidth: 1.5, strokeDasharray: '4,3' },
+  relates:  { stroke: '#93c5fd', strokeWidth: 1,   strokeDasharray: '3,4' },
+};
+```
+
+#### 16.5.2 节点拖拽到新父节点
+
+- 监听 `onNodeDragStop` 事件
+- 检测节点是否落入另一个节点的 bounding box（重叠检测）
+- 如果是，弹出确认："是否将 [节点名] 移入 [目标节点名] 下？"
+- 确认后调用 `PATCH /tasks/:id/reparent` 并刷新图谱
+
+#### 16.5.3 关联线可见性控制
+
+- 顶部工具栏：`[☑ 阻塞依赖] [☑ 顺序依赖] [☐ 弱关联]` 复选框
+- 本地 state 控制哪些 link_type 的边显示在画布上
+- 可选：调用 `PATCH /req-links/:id` 持久化到服务端
+
+#### 16.5.4 标签色标系统
+
+```typescript
+const LABEL_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
+  epic:    { bg: '#f5f3ff', text: '#6d28d9', accent: '#7c3aed' },
+  feature: { bg: '#eff6ff', text: '#1d4ed8', accent: '#2563eb' },
+  task:    { bg: '#f0fdf4', text: '#15803d', accent: '#16a34a' },
+  bug:     { bg: '#fef2f2', text: '#b91c1c', accent: '#dc2626' },
+  spike:   { bg: '#fff7ed', text: '#c2410c', accent: '#ea580c' },
+  chore:   { bg: '#f8fafc', text: '#475569', accent: '#64748b' },
+  // 未匹配标签：取标签哈希值对应一组预设色
+};
+```
+
+---
+
+### 16.6 迁移策略（兼容现有数据）
+
+现有数据库中的 `type` 字段（epic/story/task/subtask）→ 自动迁移为 `labels` 字段：
+
+```typescript
+// 迁移脚本（在 connection.ts 的 runMigrations 中执行）
+function migrateTypeToLabels(sqlite: Database.Database) {
+  const rows = sqlite.prepare("SELECT task_id, type FROM tasks WHERE labels = '[]'").all();
+  for (const row of rows as any[]) {
+    const label = row.type || 'task';
+    sqlite.prepare("UPDATE tasks SET labels = ? WHERE task_id = ?")
+      .run(JSON.stringify([label]), row.task_id);
+  }
+}
+```
