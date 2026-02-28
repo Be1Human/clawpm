@@ -4,8 +4,9 @@ import { cn } from '@/lib/utils';
 const nav = [
   { to: '/', label: '仪表盘', icon: '⬡', exact: true },
   { to: '/board', label: '看板', icon: '◫' },
+  { to: '/requirements', label: '需求树', icon: '◈' },
   { to: '/tasks', label: '任务', icon: '☑' },
-  { to: '/backlog', label: '需求池', icon: '◈' },
+  { to: '/backlog', label: '需求池', icon: '⊞' },
   { to: '/milestones', label: '里程碑', icon: '⬟' },
   { to: '/goals', label: '目标', icon: '◎' },
 ];
@@ -49,7 +50,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-slate-800/80">
-          <div className="text-xs text-slate-600">ClawPM v1.0</div>
+          <div className="text-xs text-slate-600">ClawPM v1.1</div>
         </div>
       </aside>
 

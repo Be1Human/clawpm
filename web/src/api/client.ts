@@ -21,6 +21,10 @@ export const api = {
   // Tasks
   getTasks: (params?: Record<string, string>) =>
     request<any[]>(`/tasks${params ? '?' + new URLSearchParams(params) : ''}`),
+  getTaskTree: (domain?: string) =>
+    request<any[]>(`/tasks/tree${domain ? '?domain=' + encodeURIComponent(domain) : ''}`),
+  getTaskChildren: (taskId: string) =>
+    request<any[]>(`/tasks/${taskId}/children`),
   getTask: (id: string) => request<any>(`/tasks/${id}`),
   createTask: (data: any) => request<any>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: string, data: any) => request<any>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

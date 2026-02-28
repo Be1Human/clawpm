@@ -1,9 +1,11 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v1.0  
-> **日期**: 2026-02-28  
-> **关联 PRD**: [PRD.md](./PRD.md) v1.0  
-> **状态**: 待评审  
+> **版本**: v1.1  
+> **日期**: 2026-03-01  
+> **关联 PRD**: [PRD.md](./PRD.md) v1.1  
+> **状态**: 迭代中  
+> **变更记录**:  
+> - v1.1 (2026-03-01): 新增需求树技术设计 — tasks.type 字段、树形 API、Requirements 页面
 
 ---
 
@@ -748,6 +750,150 @@ Fastify 同时提供：
 1. 创建 SQLite 数据库文件
 2. 执行 schema 迁移
 3. 如果 `CLAWPM_SEED=true`，注入示例数据
+
+---
+
+## 十一、需求树技术设计（v1.1 新增）
+
+### 11.1 数据库变更
+
+**tasks 表新增 `type` 字段：**
+
+```sql
+ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task';
+-- 取值: 'epic' | 'story' | 'task' | 'subtask'
+```
+
+**父子关系：** 沿用已有的 `parent_task_id` 字段（引用 `tasks.id`），无需新增表。
+
+**层级约束（应用层校验，非数据库约束）：**
+
+| 父类型 | 允许的子类型 |
+|--------|------------|
+| `null` | `epic` |
+| `epic` | `story` |
+| `story` | `task` |
+| `task` | `subtask` |
+| `subtask` | — |
+
+### 11.2 API 设计
+
+**新增接口：**
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/tasks/tree` | 返回完整需求树（所有根节点及其后代） |
+| GET | `/api/v1/tasks/:taskId/children` | 返回指定节点的直接子节点 |
+
+**`GET /api/v1/tasks/tree` 响应结构：**
+
+```json
+[
+  {
+    "id": 1,
+    "taskId": "U-001",
+    "title": "用户系统重构",
+    "type": "epic",
+    "parentTaskId": null,
+    "status": "active",
+    "progress": 65,
+    "priority": "P0",
+    "domain": { "id": 1, "name": "用户系统", "color": "#6366f1" },
+    "children": [
+      {
+        "id": 2,
+        "taskId": "U-002",
+        "title": "用户注册流程优化",
+        "type": "story",
+        "parentTaskId": 1,
+        "progress": 80,
+        "children": [...]
+      }
+    ]
+  }
+]
+```
+
+**`POST /api/v1/tasks` 参数新增：**
+
+```json
+{
+  "title": "实现注册API",
+  "type": "task",
+  "parent_task_id": "U-002"
+}
+```
+
+> `type` 未传时：有父节点则根据父节点类型自动推导，无父节点则默认 `epic`。
+
+### 11.3 服务层设计
+
+**TaskService 新增方法：**
+
+```typescript
+// 获取完整树（所有根节点递归构建）
+getTree(domainName?: string): TreeNode[]
+
+// 内部：递归构建子树
+_buildSubtree(parentId: number, allTasks: Task[]): TreeNode[]
+
+// 自动推导子节点类型
+_inferChildType(parentType: string): string
+// epic → story, story → task, task → subtask, subtask → subtask
+
+// 更新 create：支持 type 和 parent_task_id
+create(params: CreateTaskParams): Task
+// 新增参数: type?: string, parent_task_id?: string (taskId 格式)
+```
+
+### 11.4 前端设计
+
+**新增页面：** `web/src/pages/Requirements.tsx`
+
+**路由：** `/requirements`
+
+**组件结构：**
+
+```
+Requirements
+├── TreeToolbar（全展开/收起、Domain 筛选、新建 Epic）
+└── TreeNode（递归组件）
+    ├── NodeRow（展开箭头、类型图标、标题、徽章、进度、操作）
+    └── TreeNode[]（子节点，递归）
+```
+
+**TreeNode 组件核心逻辑：**
+
+```tsx
+// 每个节点维护自己的展开状态
+const [expanded, setExpanded] = useState(depth < 2); // 默认展开前两层
+
+// 类型配置
+const TYPE_CONFIG = {
+  epic:    { icon: '◈', label: '史诗',   color: 'purple', indent: 0  },
+  story:   { icon: '◎', label: '用户故事', color: 'blue',  indent: 20 },
+  task:    { icon: '◻', label: '任务',   color: 'green', indent: 40 },
+  subtask: { icon: '○', label: '子任务',  color: 'gray',  indent: 60 },
+};
+
+// 创建子节点时根据父类型自动确定子类型
+const childType = { epic: 'story', story: 'task', task: 'subtask' }[type];
+```
+
+**新增导航项：**
+
+```
+{ to: '/requirements', label: '需求树', icon: '◈' }
+```
+
+### 11.5 API Client 新增
+
+```typescript
+getTaskTree: (domain?: string) =>
+  request<TreeNode[]>(`/tasks/tree${domain ? '?domain=' + domain : ''}`),
+getTaskChildren: (taskId: string) =>
+  request<any[]>(`/tasks/${taskId}/children`),
+```
 
 ---
 

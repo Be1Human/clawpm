@@ -19,6 +19,17 @@ export async function registerRoutes(app: FastifyInstance) {
     return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority });
   });
 
+  // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
+  app.get('/api/v1/tasks/tree', async (req) => {
+    const q = req.query as any;
+    return TaskService.getTree(q.domain);
+  });
+
+  app.get('/api/v1/tasks/:taskId/children', async (req, reply) => {
+    const { taskId } = req.params as any;
+    return TaskService.getChildren(taskId);
+  });
+
   app.get('/api/v1/tasks/:taskId', async (req, reply) => {
     const { taskId } = req.params as any;
     const task = TaskService.getByTaskId(taskId);

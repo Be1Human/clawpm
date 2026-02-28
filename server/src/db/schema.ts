@@ -27,6 +27,7 @@ export const tasks = sqliteTable('tasks', {
   domainId: integer('domain_id').references(() => domains.id),
   milestoneId: integer('milestone_id').references(() => milestones.id),
   parentTaskId: integer('parent_task_id'),
+  type: text('type').notNull().default('task'),
   status: text('status').notNull().default('planned'),
   progress: integer('progress').notNull().default(0),
   priority: text('priority').notNull().default('P2'),

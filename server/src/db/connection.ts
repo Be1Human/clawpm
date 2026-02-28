@@ -23,6 +23,9 @@ export function getDb() {
 }
 
 function runMigrations(sqlite: Database.Database) {
+  // 增量迁移：为已有数据库添加新字段
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`); } catch {}
+
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS domains (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

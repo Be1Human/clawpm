@@ -6,6 +6,7 @@ import { generateTaskId } from './id-generator.js';
 export interface CreateTaskParams {
   title: string;
   description?: string;
+  type?: string;
   domain?: string;
   priority?: string;
   milestone?: string;
@@ -56,6 +57,22 @@ export const TaskService = {
       if (m) milestoneId = m.id;
     }
 
+    // 解析父节点
+    let parentTaskId: number | undefined;
+    let inferredType = params.type;
+    if (params.parent_task_id) {
+      const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
+      if (parent) {
+        parentTaskId = parent.id;
+        // 若未指定 type，根据父节点类型自动推导
+        if (!inferredType) {
+          inferredType = this._inferChildType((parent as any).type || 'task');
+        }
+      }
+    }
+    // 无父节点且未指定 type 时默认 epic
+    if (!inferredType) inferredType = params.parent_task_id ? 'task' : 'epic';
+
     const taskId = await generateTaskId(domainId);
 
     db.insert(tasks).values({
@@ -64,6 +81,7 @@ export const TaskService = {
       description: params.description,
       domainId,
       milestoneId,
+      parentTaskId: parentTaskId ?? null,
       priority: params.priority || 'P2',
       owner: params.owner,
       dueDate: params.due_date,
@@ -71,7 +89,8 @@ export const TaskService = {
       source: params.source || 'planned',
       tags: JSON.stringify(params.tags || []),
       status: 'planned',
-    }).run();
+      ...(inferredType ? { type: inferredType } : {}),
+    } as any).run();
 
     return this.getByTaskId(taskId)!;
   },
@@ -273,6 +292,45 @@ export const TaskService = {
       ).limit(10).all();
 
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
+  },
+
+  getTree(domainName?: string) {
+    const db = getDb();
+    let allTasks = db.select().from(tasks).all();
+
+    if (domainName) {
+      const d = db.select().from(domains).where(eq(domains.name, domainName)).get();
+      if (d) allTasks = allTasks.filter(t => t.domainId === d.id);
+    }
+
+    const enriched = allTasks.map(t => this._enrichTask(t));
+    const roots = enriched.filter(t => !t.parentTaskId);
+    return roots.map(r => this._buildSubtree(r, enriched));
+  },
+
+  getChildren(taskId: string) {
+    const db = getDb();
+    const parent = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!parent) return [];
+    const children = db.select().from(tasks).where(eq(tasks.parentTaskId, parent.id)).all();
+    return children.map(t => this._enrichTask(t));
+  },
+
+  _buildSubtree(node: any, allTasks: any[]): any {
+    const children = allTasks
+      .filter(t => t.parentTaskId === node.id)
+      .map(c => this._buildSubtree(c, allTasks));
+    return { ...node, children };
+  },
+
+  _inferChildType(parentType: string): string {
+    const map: Record<string, string> = {
+      epic: 'story',
+      story: 'task',
+      task: 'subtask',
+      subtask: 'subtask',
+    };
+    return map[parentType] || 'task';
   },
 
   _calcHealthScore(task: any, progress?: number): number {
