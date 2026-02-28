@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
   useNodesState, useEdgesState,
-  type Node, type Edge, type NodeProps,
+  type Node, type Edge, type NodeProps, type EdgeProps,
   Handle, Position, Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
