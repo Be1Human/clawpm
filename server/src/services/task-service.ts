@@ -307,13 +307,41 @@ export const TaskService = {
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
   },
 
-  getTree(domainName?: string) {
+  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string } = {}) {
     const db = getDb();
     let allTasks = db.select().from(tasks).all();
 
     if (domainName) {
       const d = db.select().from(domains).where(eq(domains.name, domainName)).get();
       if (d) allTasks = allTasks.filter(t => t.domainId === d.id);
+    }
+    if (filters.milestone) {
+      const m = db.select().from(milestones).where(eq(milestones.name, filters.milestone)).get();
+      if (m) allTasks = allTasks.filter(t => t.milestoneId === m.id);
+    }
+    if (filters.status) {
+      allTasks = allTasks.filter(t => t.status === filters.status);
+    }
+    if (filters.owner) {
+      allTasks = allTasks.filter(t => t.owner === filters.owner);
+    }
+
+    // 过滤后保留命中节点的祖先（保持树路径完整）
+    const hitIds = new Set(allTasks.map(t => t.id));
+    if (filters.milestone || filters.status || filters.owner) {
+      const allTasksFull = db.select().from(tasks).all();
+      const idMap = new Map(allTasksFull.map(t => [t.id, t]));
+      // 向上补全祖先
+      for (const t of [...allTasks]) {
+        let cur = t;
+        while (cur.parentTaskId) {
+          const parent = idMap.get(cur.parentTaskId);
+          if (!parent || hitIds.has(parent.id)) break;
+          hitIds.add(parent.id);
+          allTasks.push(parent);
+          cur = parent;
+        }
+      }
     }
 
     const enriched = allTasks.map(t => this._enrichTask(t));

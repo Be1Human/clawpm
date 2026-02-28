@@ -128,5 +128,15 @@ function runMigrations(sqlite: Database.Database) {
       objective_id INTEGER NOT NULL REFERENCES objectives(id),
       task_id INTEGER NOT NULL REFERENCES tasks(id)
     );
+
+    CREATE TABLE IF NOT EXISTS members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      identifier TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL DEFAULT 'human',
+      color TEXT NOT NULL DEFAULT '#6366f1',
+      description TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }

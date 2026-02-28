@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { TaskService } from '../services/task-service.js';
 import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
+import { MemberService } from '../services/member-service.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -22,7 +23,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
   app.get('/api/v1/tasks/tree', async (req) => {
     const q = req.query as any;
-    return TaskService.getTree(q.domain);
+    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner });
   });
 
   app.get('/api/v1/tasks/:taskId/children', async (req, reply) => {
@@ -230,5 +231,59 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return { byOwner };
+  });
+
+  // ── Members ────────────────────────────────────────────────────────
+  app.get('/api/v1/members', async (req) => {
+    const q = req.query as any;
+    return MemberService.list(q.type);
+  });
+
+  app.post('/api/v1/members', async (req, reply) => {
+    const m = MemberService.create(req.body as any);
+    return reply.code(201).send(m);
+  });
+
+  app.get('/api/v1/members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const m = MemberService.getByIdentifier(identifier);
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    return m;
+  });
+
+  app.patch('/api/v1/members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const m = MemberService.update(identifier, req.body as any);
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    return m;
+  });
+
+  app.delete('/api/v1/members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    return MemberService.delete(identifier);
+  });
+
+  // ── Gantt ──────────────────────────────────────────────────────────
+  app.get('/api/v1/gantt', async (req) => {
+    const db = getDb();
+    const q = req.query as any;
+    let allTasks = db.select().from(tasks).all();
+
+    if (q.domain) {
+      const d = db.select().from(domains).where(eq(domains.name, q.domain)).get();
+      if (d) allTasks = allTasks.filter(t => t.domainId === d.id);
+    }
+    if (q.owner) allTasks = allTasks.filter(t => t.owner === q.owner);
+
+    const allMilestones = db.select().from(milestones).all();
+    const allDomains = db.select().from(domains).all();
+
+    return {
+      tasks: allTasks.map(t => {
+        const domain = allDomains.find(d => d.id === t.domainId);
+        return { ...t, domain: domain ? { name: domain.name, color: domain.color } : null };
+      }),
+      milestones: allMilestones,
+    };
   });
 }

@@ -5,10 +5,13 @@ const nav = [
   { to: '/', label: '仪表盘', icon: '⬡', exact: true },
   { to: '/board', label: '看板', icon: '◫' },
   { to: '/requirements', label: '需求树', icon: '◈' },
+  { to: '/mindmap', label: '思维导图', icon: '◉' },
+  { to: '/gantt', label: '甘特图', icon: '▤' },
   { to: '/tasks', label: '任务', icon: '☑' },
   { to: '/backlog', label: '需求池', icon: '⊞' },
   { to: '/milestones', label: '里程碑', icon: '⬟' },
   { to: '/goals', label: '目标', icon: '◎' },
+  { to: '/members', label: '团队成员', icon: '👥' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -50,12 +53,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-slate-800/80">
-          <div className="text-xs text-slate-600">ClawPM v1.1</div>
+          <div className="text-xs text-slate-600">ClawPM v1.3</div>
         </div>
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto flex flex-col">
         {children}
       </main>
     </div>

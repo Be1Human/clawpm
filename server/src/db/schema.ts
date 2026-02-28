@@ -103,3 +103,13 @@ export const objectiveTaskLinks = sqliteTable('objective_task_links', {
   objectiveId: integer('objective_id').notNull().references(() => objectives.id),
   taskId: integer('task_id').notNull().references(() => tasks.id),
 });
+
+export const members = sqliteTable('members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  identifier: text('identifier').notNull().unique(), // tasks.owner 存的值
+  type: text('type').notNull().default('human'),      // 'human' | 'agent'
+  color: text('color').notNull().default('#6366f1'),
+  description: text('description'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});

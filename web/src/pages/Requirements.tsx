@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 
@@ -292,15 +292,26 @@ function TreeNode({
 
 // ── 主页面 ─────────────────────────────────────────────────────────
 export default function Requirements() {
+  const navigate = useNavigate();
   const [globalExpanded, setGlobalExpanded] = useState<boolean | null>(null);
   const [createModal, setCreateModal] = useState<{
     parentTaskId: string | null;
     parentType: string | null;
   } | null>(null);
 
+  // 过滤器
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterMilestone, setFilterMilestone] = useState('');
+
+  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: () => api.getMilestones() });
+
+  const treeParams: Record<string, string> = {};
+  if (filterStatus) treeParams.status = filterStatus;
+  if (filterMilestone) treeParams.milestone = filterMilestone;
+
   const { data: tree = [], isLoading } = useQuery({
-    queryKey: ['task-tree'],
-    queryFn: () => api.getTaskTree(),
+    queryKey: ['task-tree', filterStatus, filterMilestone],
+    queryFn: () => api.getTaskTree(Object.keys(treeParams).length ? treeParams : undefined),
   });
 
   const totalNodes = countNodes(tree as any[]);
@@ -308,12 +319,26 @@ export default function Requirements() {
   return (
     <div className="p-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-100">需求树</h1>
           <p className="text-sm text-slate-500 mt-0.5">{totalNodes} 个节点</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* 视图切换 */}
+          <div className="flex bg-slate-800/60 rounded-lg p-1 gap-0.5">
+            <button
+              className="px-3 py-1.5 text-xs rounded-md bg-brand-500 text-white font-medium"
+            >
+              ☰ 列表
+            </button>
+            <button
+              onClick={() => navigate('/mindmap')}
+              className="px-3 py-1.5 text-xs rounded-md text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              ◉ 思维导图
+            </button>
+          </div>
           {/* 展开/收起 */}
           <div className="flex bg-slate-800/60 rounded-lg p-1 gap-0.5">
             <button
@@ -325,7 +350,7 @@ export default function Requirements() {
                   : 'text-slate-500 hover:text-slate-300'
               )}
             >
-              全部展开
+              展开
             </button>
             <button
               onClick={() => setGlobalExpanded(false)}
@@ -336,18 +361,7 @@ export default function Requirements() {
                   : 'text-slate-500 hover:text-slate-300'
               )}
             >
-              全部收起
-            </button>
-            <button
-              onClick={() => setGlobalExpanded(null)}
-              className={cn(
-                'px-3 py-1.5 text-xs rounded-md transition-all',
-                globalExpanded === null
-                  ? 'bg-brand-500 text-white font-medium'
-                  : 'text-slate-500 hover:text-slate-300'
-              )}
-            >
-              自动
+              收起
             </button>
           </div>
           {/* 新建 Epic */}
@@ -360,16 +374,46 @@ export default function Requirements() {
         </div>
       </div>
 
-      {/* 图例 */}
-      <div className="flex items-center gap-4 mb-4 px-1">
-        {Object.entries(TYPE_CONFIG).map(([type, conf]) => (
-          <div key={type} className="flex items-center gap-1.5">
-            <span className={cn('text-sm', conf.color)}>{conf.icon}</span>
-            <span className="text-xs text-slate-500">{conf.label}</span>
-          </div>
-        ))}
-        <div className="ml-auto flex items-center gap-4 text-xs text-slate-600">
-          <span>悬停节点可添加子项</span>
+      {/* 过滤器 */}
+      <div className="flex items-center gap-3 mb-4">
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-1.5 min-w-[100px]"
+        >
+          <option value="">全部状态</option>
+          <option value="planned">待开始</option>
+          <option value="active">进行中</option>
+          <option value="review">评审中</option>
+          <option value="blocked">已阻塞</option>
+          <option value="done">已完成</option>
+        </select>
+        <select
+          value={filterMilestone}
+          onChange={e => setFilterMilestone(e.target.value)}
+          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-1.5 min-w-[120px]"
+        >
+          <option value="">全部里程碑</option>
+          {(milestones as any[]).map((m: any) => (
+            <option key={m.id} value={m.name}>{m.name}</option>
+          ))}
+        </select>
+        {(filterStatus || filterMilestone) && (
+          <button
+            onClick={() => { setFilterStatus(''); setFilterMilestone(''); }}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            ✕ 清除过滤
+          </button>
+        )}
+        {/* 图例 */}
+        <div className="ml-auto flex items-center gap-4">
+          {Object.entries(TYPE_CONFIG).map(([type, conf]) => (
+            <div key={type} className="flex items-center gap-1.5">
+              <span className={cn('text-sm', conf.color)}>{conf.icon}</span>
+              <span className="text-xs text-slate-500">{conf.label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -395,8 +439,12 @@ export default function Requirements() {
         ) : (tree as any[]).length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-4xl mb-3 opacity-30">◈</div>
-            <div className="text-slate-500 text-sm mb-1">还没有任何需求</div>
-            <div className="text-slate-600 text-xs">点击「新建史诗」开始构建产品需求树</div>
+            <div className="text-slate-500 text-sm mb-1">
+              {filterStatus || filterMilestone ? '没有符合过滤条件的节点' : '还没有任何需求'}
+            </div>
+            <div className="text-slate-600 text-xs">
+              {filterStatus || filterMilestone ? '尝试清除过滤条件' : '点击「新建史诗」开始构建产品需求树'}
+            </div>
           </div>
         ) : (
           (tree as any[]).map((node: any) => (

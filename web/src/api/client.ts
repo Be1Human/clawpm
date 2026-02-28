@@ -21,8 +21,10 @@ export const api = {
   // Tasks
   getTasks: (params?: Record<string, string>) =>
     request<any[]>(`/tasks${params ? '?' + new URLSearchParams(params) : ''}`),
-  getTaskTree: (domain?: string) =>
-    request<any[]>(`/tasks/tree${domain ? '?domain=' + encodeURIComponent(domain) : ''}`),
+  getTaskTree: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    return request<any[]>(`/tasks/tree${qs}`);
+  },
   getTaskChildren: (taskId: string) =>
     request<any[]>(`/tasks/${taskId}/children`),
   getTask: (id: string) => request<any>(`/tasks/${id}`),
@@ -61,4 +63,17 @@ export const api = {
   getOverview: () => request<any>('/dashboard/overview'),
   getRisks: () => request<any>('/dashboard/risks'),
   getResources: () => request<any>('/dashboard/resources'),
+
+  // Members
+  getMembers: (type?: string) => request<any[]>(`/members${type ? '?type=' + type : ''}`),
+  getMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`),
+  createMember: (data: any) => request<any>('/members', { method: 'POST', body: JSON.stringify(data) }),
+  updateMember: (identifier: string, data: any) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
+
+  // Gantt
+  getGanttData: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    return request<any>(`/gantt${qs}`);
+  },
 };

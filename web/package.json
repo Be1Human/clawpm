@@ -14,6 +14,8 @@
     "react-dom": "^18",
     "react-router-dom": "^7",
     "@tanstack/react-query": "^5",
+    "@xyflow/react": "^12.10.1",
+    "dagre": "^0.8.5",
     "recharts": "^2",
     "lucide-react": "latest",
     "clsx": "latest",
@@ -22,6 +24,7 @@
   "devDependencies": {
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/dagre": "^0.7.54",
     "@vitejs/plugin-react": "^4",
     "autoprefixer": "latest",
     "postcss": "latest",

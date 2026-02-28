@@ -8,6 +8,9 @@ import Backlog from './pages/Backlog';
 import Milestones from './pages/Milestones';
 import Goals from './pages/Goals';
 import Requirements from './pages/Requirements';
+import MindMap from './pages/MindMap';
+import GanttChart from './pages/GanttChart';
+import Members from './pages/Members';
 
 export default function App() {
   return (
@@ -22,6 +25,9 @@ export default function App() {
           <Route path="/milestones" element={<Milestones />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/requirements" element={<Requirements />} />
+          <Route path="/mindmap" element={<MindMap />} />
+          <Route path="/gantt" element={<GanttChart />} />
+          <Route path="/members" element={<Members />} />
         </Routes>
       </Layout>
     </BrowserRouter>

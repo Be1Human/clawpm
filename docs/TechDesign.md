@@ -1,12 +1,13 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v1.2  
+> **版本**: v1.3  
 > **日期**: 2026-03-01  
-> **关联 PRD**: [PRD.md](./PRD.md) v1.1  
+> **关联 PRD**: [PRD.md](./PRD.md) v1.3  
 > **状态**: 迭代中  
 > **变更记录**:  
 > - v1.1 (2026-03-01): 新增需求树技术设计 — tasks.type 字段、树形 API、Requirements 页面  
-> - v1.2 (2026-03-01): 系统自洽性修复 — type/parent 字段全链路贯通
+> - v1.2 (2026-03-01): 系统自洽性修复 — type/parent 字段全链路贯通  
+> - v1.3 (2026-03-01): 人员管理、甘特图、需求树增强（过滤+思维导图）
 
 ---
 
@@ -751,6 +752,140 @@ Fastify 同时提供：
 1. 创建 SQLite 数据库文件
 2. 执行 schema 迁移
 3. 如果 `CLAWPM_SEED=true`，注入示例数据
+
+---
+
+## 十三、人员管理技术设计（v1.3 新增）
+
+### 13.1 数据库
+
+```sql
+CREATE TABLE members (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  identifier TEXT NOT NULL UNIQUE,  -- 登录名/Agent ID，也是 tasks.owner 的值
+  type       TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'agent'
+  color      TEXT NOT NULL DEFAULT '#6366f1',
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+> `tasks.owner` 字段存储 `members.identifier`，两者通过 identifier 关联（软关联，不加外键约束，owner 可以是任意字符串）。
+
+### 13.2 API
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/members` | 列出所有成员，支持 `?type=human\|agent` |
+| POST | `/api/v1/members` | 创建成员 |
+| GET | `/api/v1/members/:identifier` | 获取成员详情（含任务统计） |
+| PATCH | `/api/v1/members/:identifier` | 更新成员信息 |
+| DELETE | `/api/v1/members/:identifier` | 删除成员 |
+
+### 13.3 前端路由
+
+| 路径 | 页面 | 描述 |
+|------|------|------|
+| `/members` | Members | 成员列表 |
+| `/members/:identifier` | MemberDetail | 成员详情 |
+
+### 13.4 CreateTaskModal 增强
+
+从文本输入改为成员选择器（Combobox）：
+- 显示成员列表（头像+名称+类型图标）
+- 支持输入搜索过滤
+- 允许输入自定义（不在列表中的 owner）
+
+---
+
+## 十四、甘特图技术设计（v1.3 新增）
+
+### 14.1 技术方案
+
+不引入额外甘特库（避免包体积），使用纯 CSS + SVG 自行实现：
+
+```
+时间轴 = CSS Grid，每列 = 1 天（可切换为每列 1 周）
+任务条 = position: absolute，left/width 按日期计算
+今日线 = 绝对定位的竖线
+里程碑 = 菱形图标 + 竖线
+```
+
+### 14.2 数据处理
+
+```typescript
+// 计算任务条宽度和偏移
+function calcBar(task, startDate, dayWidth) {
+  const start = task.startDate || task.createdAt.slice(0,10);
+  const end   = task.dueDate   || today;
+  const left  = diffDays(startDate, start) * dayWidth;
+  const width = Math.max(diffDays(start, end), 1) * dayWidth;
+  return { left, width };
+}
+```
+
+### 14.3 前端路由
+
+| 路径 | 页面 |
+|------|------|
+| `/gantt` | GanttChart |
+
+---
+
+## 十五、需求树增强技术设计（v1.3 新增）
+
+### 15.1 过滤器
+
+新增 query 参数：`milestone`、`status`、`domain`、`owner`
+
+后端 `getTree(filters)` 已支持 `domainName`，需扩展为完整 `TreeFilters`：
+
+```typescript
+interface TreeFilters {
+  domain?: string;
+  milestone?: string;
+  status?: string;
+  owner?: string;
+}
+```
+
+过滤策略：过滤命中的节点始终显示，其祖先节点也显示（保持树路径完整），不命中且无命中子孙的节点隐藏。
+
+### 15.2 思维导图视图
+
+**依赖库：** `@xyflow/react` v12（原 react-flow）
+
+```bash
+pnpm --filter web add @xyflow/react
+```
+
+**节点数据结构（XYFlow Node）：**
+```typescript
+{
+  id: task.taskId,
+  type: 'taskNode',        // 自定义节点类型
+  position: { x, y },     // 自动布局（dagre）或用户拖拽后保存
+  data: { task },
+}
+```
+
+**边数据结构（XYFlow Edge）：**
+```typescript
+{
+  id: `${parent.taskId}->${child.taskId}`,
+  source: parent.taskId,
+  target: child.taskId,
+  type: 'smoothstep',
+}
+```
+
+**自动布局：** 使用 `dagre` 库计算初始位置（从根向下展开）。节点拖拽后位置保存到 localStorage（不同步到服务端，仅本地缓存）。
+
+**自定义节点（TaskNode）：**
+- 显示 type 图标 + 标题 + 状态圆点 + 进度条
+- 右上角 `+` 按钮添加子节点
+- 右键菜单：跳转详情 / 添加子节点 / 删除节点
 
 ---
 
