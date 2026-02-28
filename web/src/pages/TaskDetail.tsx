@@ -1,10 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useState } from 'react';
 import { api } from '@/api/client';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, formatRelative, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
+const CHILD_TYPE: Record<string, string> = {
+  epic: 'story', story: 'task', task: 'subtask',
+};
+const TYPE_LABEL: Record<string, string> = {
+  epic: '史诗', story: '用户故事', task: '任务', subtask: '子任务',
+};
 
 export default function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -14,18 +21,34 @@ export default function TaskDetail() {
   const { data: task, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => api.getTask(taskId!) });
   const { data: history = [] } = useQuery({ queryKey: ['task-history', taskId], queryFn: () => api.getTaskHistory(taskId!) });
   const { data: notes = [] } = useQuery({ queryKey: ['task-notes', taskId], queryFn: () => api.getTaskNotes(taskId!) });
+  const { data: children = [] } = useQuery({ queryKey: ['task-children', taskId], queryFn: () => api.getTaskChildren(taskId!) });
 
   const [progressVal, setProgressVal] = useState('');
   const [progressSummary, setProgressSummary] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [blockerText, setBlockerText] = useState('');
   const [showBlocker, setShowBlocker] = useState(false);
+  const [showAddChild, setShowAddChild] = useState(false);
+  const [childTitle, setChildTitle] = useState('');
+  const [childPriority, setChildPriority] = useState('P2');
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task', taskId] });
     qc.invalidateQueries({ queryKey: ['task-history', taskId] });
     qc.invalidateQueries({ queryKey: ['tasks'] });
+    qc.invalidateQueries({ queryKey: ['task-tree'] });
   };
+
+  const addChildMut = useMutation({
+    mutationFn: (data: any) => api.createTask(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-children', taskId] });
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      setChildTitle('');
+      setChildPriority('P2');
+      setShowAddChild(false);
+    },
+  });
 
   const progressMut = useMutation({
     mutationFn: () => api.updateProgress(taskId!, parseInt(progressVal), progressSummary || undefined),
@@ -63,6 +86,11 @@ export default function TaskDetail() {
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
             <span className="font-mono text-sm text-slate-500">{task.taskId}</span>
+            {task.type && task.type !== 'task' && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                {TYPE_LABEL[task.type] || task.type}
+              </span>
+            )}
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
           </div>
@@ -196,6 +224,11 @@ export default function TaskDetail() {
           <div className="card p-4">
             <h3 className="text-xs text-slate-500 uppercase tracking-wider mb-4">任务信息</h3>
             <div className="space-y-3">
+              {task.type && (
+                <MetaRow label="类型">
+                  <span className="text-sm text-slate-300">{TYPE_LABEL[task.type] || task.type}</span>
+                </MetaRow>
+              )}
               <MetaRow label="当前进度">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -245,6 +278,105 @@ export default function TaskDetail() {
               <div className="flex flex-wrap gap-1.5">
                 {task.tags.map((tag: string) => (
                   <span key={tag} className="badge bg-slate-800 text-slate-400">{tag}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 子任务 */}
+          {CHILD_TYPE[task.type] && (
+            <div className="card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs text-slate-500 uppercase tracking-wider">
+                  {TYPE_LABEL[CHILD_TYPE[task.type]] || '子任务'}
+                  {(children as any[]).length > 0 && (
+                    <span className="ml-1.5 text-slate-600">({(children as any[]).length})</span>
+                  )}
+                </h3>
+                <button
+                  onClick={() => setShowAddChild(v => !v)}
+                  className={cn(
+                    'text-xs px-2 py-1 rounded border transition-colors',
+                    showAddChild
+                      ? 'border-brand-500/50 text-brand-400 bg-brand-500/10'
+                      : 'border-slate-700 text-slate-500 hover:text-brand-400 hover:border-brand-500/30'
+                  )}
+                >
+                  {showAddChild ? '收起' : `+ 添加${TYPE_LABEL[CHILD_TYPE[task.type]]}`}
+                </button>
+              </div>
+
+              {/* 添加子任务表单 */}
+              {showAddChild && (
+                <div className="mb-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50 space-y-2">
+                  <input
+                    className="input w-full text-sm"
+                    placeholder={`${TYPE_LABEL[CHILD_TYPE[task.type]]}标题`}
+                    value={childTitle}
+                    onChange={e => setChildTitle(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && childTitle.trim()) {
+                        addChildMut.mutate({
+                          title: childTitle.trim(),
+                          type: CHILD_TYPE[task.type],
+                          parent_task_id: task.taskId,
+                          priority: childPriority,
+                          domain: task.domain?.name,
+                        });
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="input text-xs py-1"
+                      value={childPriority}
+                      onChange={e => setChildPriority(e.target.value)}
+                    >
+                      {['P0', 'P1', 'P2', 'P3'].map(p => <option key={p}>{p}</option>)}
+                    </select>
+                    <span className="text-xs text-slate-600 flex-1">Enter 确认 / 点击创建</span>
+                    <button
+                      onClick={() => {
+                        if (!childTitle.trim()) return;
+                        addChildMut.mutate({
+                          title: childTitle.trim(),
+                          type: CHILD_TYPE[task.type],
+                          parent_task_id: task.taskId,
+                          priority: childPriority,
+                          domain: task.domain?.name,
+                        });
+                      }}
+                      disabled={!childTitle.trim() || addChildMut.isPending}
+                      className="btn-primary text-xs py-1 px-3 disabled:opacity-50"
+                    >
+                      {addChildMut.isPending ? '...' : '创建'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 子任务列表 */}
+              <div className="space-y-1.5">
+                {(children as any[]).length === 0 && !showAddChild && (
+                  <p className="text-xs text-slate-700 py-1">暂无子项，点击上方按钮添加</p>
+                )}
+                {(children as any[]).map((child: any) => (
+                  <Link
+                    key={child.id}
+                    to={`/tasks/${child.taskId}`}
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800/50 transition-colors group"
+                  >
+                    <div className={cn(
+                      'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                      child.status === 'done' ? 'bg-emerald-500' :
+                      child.status === 'active' ? 'bg-brand-500' :
+                      child.status === 'blocked' ? 'bg-red-500' : 'bg-slate-600'
+                    )} />
+                    <span className="flex-1 text-sm text-slate-300 group-hover:text-slate-100 truncate">{child.title}</span>
+                    <span className="text-xs text-slate-600 flex-shrink-0">{child.progress}%</span>
+                    <span className="font-mono text-xs text-slate-700 flex-shrink-0">{child.taskId}</span>
+                  </Link>
                 ))}
               </div>
             </div>

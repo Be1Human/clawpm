@@ -229,16 +229,18 @@ function TreeNodeRow({
         <span className="text-xs text-slate-600 w-7 text-right">{node.progress}%</span>
       </div>
 
-      {/* 添加子节点按钮 */}
-      {childType && (
-        <button
-          onClick={e => { e.stopPropagation(); onCreateChild(); }}
-          className="opacity-0 group-hover:opacity-100 flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all text-xs"
-          title={`添加${TYPE_CONFIG[childType]?.label}`}
-        >
-          +
-        </button>
-      )}
+      {/* 添加子节点按钮 — 始终可见 */}
+      <div className="flex-shrink-0 w-6">
+        {childType && (
+          <button
+            onClick={e => { e.stopPropagation(); onCreateChild(); }}
+            className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all text-sm font-light border border-transparent hover:border-brand-500/30"
+            title={`添加${TYPE_CONFIG[childType]?.label}`}
+          >
+            +
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -383,7 +385,7 @@ export default function Requirements() {
           <div className="w-6 text-xs text-slate-500 text-center">优先</div>
           <div className="w-14 text-xs text-slate-500 text-right">状态</div>
           <div className="w-20 text-xs text-slate-500 text-center">进度</div>
-          <div className="w-5 flex-shrink-0" />
+          <div className="w-6 text-xs text-slate-500 text-center" title="点击 + 添加子节点">+</div>
         </div>
 
         {isLoading ? (
