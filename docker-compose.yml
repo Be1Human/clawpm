@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  clawpm:
+    build: .
+    ports:
+      - "${CLAWPM_PORT:-3210}:3210"
+    volumes:
+      - clawpm-data:/app/data
+    environment:
+      - CLAWPM_PORT=3210
+      - CLAWPM_API_TOKEN=${CLAWPM_API_TOKEN:?请设置 CLAWPM_API_TOKEN}
+      - CLAWPM_DB_PATH=/app/data/clawpm.db
+      - CLAWPM_LOG_LEVEL=${CLAWPM_LOG_LEVEL:-info}
+    restart: unless-stopped
+
+volumes:
+  clawpm-data:

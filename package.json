@@ -1,0 +1,15 @@
+{
+  "name": "clawpm",
+  "version": "0.1.0",
+  "description": "Self-hosted project management hub with MCP integration for AI agents",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter server dev",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm --filter server build && pnpm --filter web build",
+    "start": "pnpm --filter server start",
+    "lint": "pnpm -r lint"
+  },
+  "keywords": ["project-management", "mcp", "ai-agent", "self-hosted"],
+  "license": "MIT"
+}

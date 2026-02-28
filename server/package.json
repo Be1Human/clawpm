@@ -1,0 +1,30 @@
+{
+  "name": "@clawpm/server",
+  "version": "0.1.0",
+  "description": "ClawPM backend server — REST API + MCP Server",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "better-sqlite3": "latest",
+    "drizzle-orm": "latest",
+    "fastify": "latest",
+    "@fastify/cors": "latest",
+    "@fastify/static": "latest",
+    "@fastify/rate-limit": "latest",
+    "zod": "latest",
+    "nanoid": "latest"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "latest",
+    "@types/node": "latest",
+    "drizzle-kit": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
