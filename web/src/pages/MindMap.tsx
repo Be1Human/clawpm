@@ -13,15 +13,15 @@ import { cn } from '@/lib/utils';
 import CreateTaskModal from '@/components/CreateTaskModal';
 
 // ── 类型配置 ───────────────────────────────────────────────────────
-const TYPE_CONFIG: Record<string, { icon: string; border: string; bg: string; text: string }> = {
-  epic:    { icon: '◈', border: 'border-purple-500/50', bg: 'bg-purple-500/10', text: 'text-purple-300' },
-  story:   { icon: '◎', border: 'border-blue-500/50',   bg: 'bg-blue-500/10',   text: 'text-blue-300' },
-  task:    { icon: '◻', border: 'border-emerald-500/50', bg: 'bg-emerald-500/10', text: 'text-emerald-300' },
-  subtask: { icon: '○', border: 'border-slate-500/50',  bg: 'bg-slate-500/10',  text: 'text-slate-400' },
+const TYPE_CONFIG: Record<string, { icon: string; border: string; bg: string; text: string; accent: string }> = {
+  epic:    { icon: '◈', border: 'border-violet-200', bg: 'bg-violet-50',   text: 'text-violet-700', accent: 'bg-violet-500' },
+  story:   { icon: '◎', border: 'border-blue-200',   bg: 'bg-blue-50',     text: 'text-blue-700',   accent: 'bg-blue-500' },
+  task:    { icon: '◻', border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-700', accent: 'bg-emerald-500' },
+  subtask: { icon: '○', border: 'border-gray-200',    bg: 'bg-gray-50',    text: 'text-gray-500',   accent: 'bg-gray-400' },
 };
 const STATUS_DOT: Record<string, string> = {
-  done: 'bg-emerald-500', active: 'bg-brand-500', blocked: 'bg-red-500',
-  review: 'bg-yellow-500', planned: 'bg-slate-600',
+  done: 'bg-emerald-500', active: 'bg-indigo-500', blocked: 'bg-red-500',
+  review: 'bg-amber-500', planned: 'bg-gray-300',
 };
 const CHILD_TYPE: Record<string, string> = { epic: 'story', story: 'task', task: 'subtask' };
 
@@ -36,37 +36,39 @@ function TaskNode({ data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'relative min-w-[180px] max-w-[240px] rounded-xl border-2 shadow-lg transition-all cursor-default',
+        'relative min-w-[180px] max-w-[240px] rounded-xl border bg-white shadow-sm transition-all cursor-default',
         conf.border,
-        conf.bg,
-        selected ? 'ring-2 ring-brand-400 ring-offset-1 ring-offset-slate-900' : ''
+        selected ? 'ring-2 ring-indigo-400 ring-offset-1' : ''
       )}
       onContextMenu={e => { e.preventDefault(); setShowMenu(v => !v); }}
     >
-      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-slate-600 !border-slate-500" />
+      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-gray-300 !border-gray-200" />
 
-      <div className="px-3 pt-2.5 pb-2">
-        {/* 头部：图标 + ID */}
-        <div className="flex items-center justify-between gap-2 mb-1">
+      {/* 顶部色块条 */}
+      <div className={cn('h-1 rounded-t-xl', conf.accent)} />
+
+      <div className="px-3 pt-2 pb-2.5">
+        {/* 头部：图标 + ID + 状态 */}
+        <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-1.5">
-            <span className={cn('text-xs', conf.text)}>{conf.icon}</span>
-            <span className="text-xs font-mono text-slate-600">{task.taskId}</span>
+            <span className={cn('text-xs font-medium', conf.text)}>{conf.icon}</span>
+            <span className="text-[10px] font-mono text-gray-400">{task.taskId}</span>
           </div>
-          <div className={cn('w-2 h-2 rounded-full flex-shrink-0', STATUS_DOT[task.status] || 'bg-slate-600')} />
+          <div className={cn('w-2 h-2 rounded-full flex-shrink-0', STATUS_DOT[task.status] || 'bg-gray-300')} />
         </div>
 
         {/* 标题 */}
-        <p className="text-sm text-slate-100 leading-snug line-clamp-2 mb-2">{task.title}</p>
+        <p className="text-sm text-gray-800 leading-snug line-clamp-2 mb-2 font-medium">{task.title}</p>
 
         {/* 进度条 */}
         <div className="flex items-center gap-1.5">
-          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className={cn('h-full rounded-full', task.progress >= 100 ? 'bg-emerald-500' : 'bg-brand-500')}
+              className={cn('h-full rounded-full transition-all', task.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500')}
               style={{ width: `${task.progress}%` }}
             />
           </div>
-          <span className="text-xs text-slate-600 w-7 text-right">{task.progress}%</span>
+          <span className="text-[10px] text-gray-400 w-7 text-right">{task.progress}%</span>
         </div>
       </div>
 
@@ -74,7 +76,7 @@ function TaskNode({ data, selected }: NodeProps) {
       {childType && (
         <button
           onClick={() => (data as any).onAddChild(task.taskId, type)}
-          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-500 hover:text-brand-400 hover:border-brand-500/50 flex items-center justify-center text-sm transition-all z-10"
+          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 flex items-center justify-center text-sm transition-all z-10 shadow-sm"
           title={`添加${type === 'epic' ? '用户故事' : type === 'story' ? '任务' : '子任务'}`}
         >
           +
@@ -84,26 +86,26 @@ function TaskNode({ data, selected }: NodeProps) {
       {/* 右键菜单 */}
       {showMenu && (
         <div
-          className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 py-1 min-w-[140px]"
+          className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 min-w-[140px]"
           onMouseLeave={() => setShowMenu(false)}
         >
           {childType && (
             <button
-              className="w-full text-left text-xs px-3 py-2 hover:bg-slate-800 text-slate-300"
+              className="w-full text-left text-xs px-3 py-2 hover:bg-gray-50 text-gray-700"
               onClick={() => { (data as any).onAddChild(task.taskId, type); setShowMenu(false); }}
             >
               + 添加子节点
             </button>
           )}
           <button
-            className="w-full text-left text-xs px-3 py-2 hover:bg-slate-800 text-slate-300"
+            className="w-full text-left text-xs px-3 py-2 hover:bg-gray-50 text-gray-700"
             onClick={() => { window.open(`/tasks/${task.taskId}`, '_blank'); setShowMenu(false); }}
           >
             查看详情 ↗
           </button>
-          <hr className="border-slate-800 my-1" />
+          <hr className="border-gray-100 my-1" />
           <button
-            className="w-full text-left text-xs px-3 py-2 hover:bg-red-900/30 text-red-400"
+            className="w-full text-left text-xs px-3 py-2 hover:bg-red-50 text-red-500"
             onClick={() => { (data as any).onDelete(task.taskId, task.title); setShowMenu(false); }}
           >
             删除节点
@@ -111,7 +113,7 @@ function TaskNode({ data, selected }: NodeProps) {
         </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-slate-600 !border-slate-500" />
+      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-gray-300 !border-gray-200" />
     </div>
   );
 }
@@ -209,30 +211,30 @@ function MindMapInner() {
         onConnect={onConnect}
         fitView
         fitViewOptions={{ padding: 0.2 }}
-        className="bg-slate-950"
+        style={{ backgroundColor: '#f0f2f5' }}
         minZoom={0.2}
         maxZoom={2}
       >
-        <Background color="#1e293b" gap={20} />
-        <Controls className="!bg-slate-800 !border-slate-700 !rounded-lg" />
+        <Background color="#dde1e7" gap={24} />
+        <Controls className="!bg-white !border-gray-200 !rounded-lg !shadow-sm" />
         <MiniMap
           nodeColor={n => {
             const t = (n.data as any)?.task?.type || 'task';
-            const colors: Record<string, string> = { epic: '#8b5cf6', story: '#3b82f6', task: '#10b981', subtask: '#64748b' };
-            return colors[t] || '#64748b';
+            const colors: Record<string, string> = { epic: '#8b5cf6', story: '#3b82f6', task: '#10b981', subtask: '#94a3b8' };
+            return colors[t] || '#94a3b8';
           }}
-          className="!bg-slate-900 !border-slate-700 !rounded-lg"
+          className="!bg-white !border-gray-200 !rounded-lg !shadow-sm"
         />
       </ReactFlow>
 
       {/* 图例 */}
-      <div className="absolute top-3 left-3 flex items-center gap-3 bg-slate-900/90 backdrop-blur px-3 py-2 rounded-lg border border-slate-800 text-xs">
+      <div className="absolute top-3 left-3 flex items-center gap-3 bg-white/90 backdrop-blur px-3 py-2 rounded-lg border border-gray-200 shadow-sm text-xs">
         {Object.entries(TYPE_CONFIG).map(([type, conf]) => (
           <span key={type} className={cn('flex items-center gap-1', conf.text)}>
             {conf.icon} {type}
           </span>
         ))}
-        <span className="text-slate-600 ml-1">右键节点查看操作</span>
+        <span className="text-gray-400 ml-1">右键节点查看操作</span>
       </div>
 
       {/* 创建弹窗 */}
@@ -246,17 +248,17 @@ function MindMapInner() {
 
       {/* 删除确认 */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="card p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-slate-100 mb-2">确认删除</h3>
-            <p className="text-sm text-slate-400 mb-4">
-              将把 <span className="text-slate-200 font-medium">{deleteConfirm.title}</span> 标记为已取消（含子节点）
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              将把 <span className="text-gray-800 font-medium">{deleteConfirm.title}</span> 标记为已取消（含子节点）
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="btn-ghost">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.taskId)}
-                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm transition-colors"
+                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
                 {deleteMut.isPending ? '处理中...' : '确认删除'}

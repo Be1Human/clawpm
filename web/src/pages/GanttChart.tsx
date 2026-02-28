@@ -6,12 +6,12 @@ import { Link } from 'react-router-dom';
 
 // ── 常量 ────────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, string> = {
-  done:    'bg-emerald-600/80',
-  active:  'bg-brand-600/80',
-  blocked: 'bg-red-600/80',
-  review:  'bg-yellow-600/80',
-  planned: 'bg-slate-600/60',
-  cancelled: 'bg-slate-700/40',
+  done:      'bg-emerald-500',
+  active:    'bg-indigo-500',
+  blocked:   'bg-red-500',
+  review:    'bg-amber-500',
+  planned:   'bg-slate-400',
+  cancelled: 'bg-slate-200',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -123,7 +123,7 @@ export default function GanttChart() {
   return (
     <div className="flex flex-col h-full">
       {/* 工具栏 */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-700 bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-slate-400 text-sm">分组：</span>
           {(['domain', 'owner'] as const).map(g => (
@@ -175,20 +175,20 @@ export default function GanttChart() {
       {/* 主体：左侧任务列表 + 右侧时间轴 */}
       <div className="flex flex-1 min-h-0">
         {/* 左列（固定宽度） */}
-        <div className="w-64 flex-shrink-0 border-r border-slate-800 flex flex-col">
-          <div className="h-10 border-b border-slate-800 bg-slate-900 flex items-center px-4">
-            <span className="text-xs text-slate-500 font-medium uppercase tracking-wide">任务</span>
+        <div className="w-64 flex-shrink-0 border-r border-slate-700 flex flex-col bg-white">
+          <div className="h-10 border-b border-slate-700 bg-white flex items-center px-4">
+            <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">任务</span>
           </div>
           <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {groups.map(([groupName, groupTasks]) => (
               <div key={groupName}>
-                <div className="h-8 bg-slate-800/60 flex items-center px-4 sticky top-0 z-10">
-                  <span className="text-xs text-slate-400 font-medium truncate">{groupName}</span>
-                  <span className="ml-auto text-xs text-slate-600">{groupTasks.length}</span>
+                <div className="h-8 bg-gray-50 flex items-center px-4 sticky top-0 z-10 border-b border-slate-700">
+                  <span className="text-xs text-gray-600 font-semibold truncate">{groupName}</span>
+                  <span className="ml-auto text-xs text-gray-400">{groupTasks.length}</span>
                 </div>
                 {groupTasks.map(t => (
-                  <div key={t.id} className="h-9 flex items-center px-4 border-b border-slate-800/50 hover:bg-slate-800/30">
-                    <Link to={`/tasks/${t.taskId}`} className="text-xs text-slate-300 hover:text-brand-400 truncate">
+                  <div key={t.id} className="h-9 flex items-center px-4 border-b border-slate-700/50 hover:bg-gray-50">
+                    <Link to={`/tasks/${t.taskId}`} className="text-xs text-gray-700 hover:text-indigo-600 truncate">
                       {t.title}
                     </Link>
                   </div>
@@ -202,24 +202,24 @@ export default function GanttChart() {
         <div className="flex-1 overflow-auto relative">
           <div style={{ width: totalWidth, minWidth: '100%', position: 'relative' }}>
             {/* 时间轴头 */}
-            <div className="h-10 border-b border-slate-800 bg-slate-900 sticky top-0 z-20" style={{ width: totalWidth }}>
+            <div className="h-10 border-b border-slate-700 bg-white sticky top-0 z-20" style={{ width: totalWidth }}>
               {ticks.map((tick, i) => (
                 <div
                   key={i}
                   className="absolute top-0 h-full flex flex-col justify-center"
                   style={{ left: tick.offset }}
                 >
-                  <span className="text-xs text-slate-600 px-1 whitespace-nowrap">{tick.label}</span>
-                  <div className="absolute bottom-0 left-0 h-2 w-px bg-slate-800" />
+                  <span className="text-xs text-gray-400 px-1 whitespace-nowrap">{tick.label}</span>
+                  <div className="absolute bottom-0 left-0 h-2 w-px bg-gray-200" />
                 </div>
               ))}
               {/* 今日线头部标签 */}
               {todayOffset > 0 && todayOffset < totalWidth && (
                 <div
-                  className="absolute top-0 h-full border-l-2 border-brand-500/60 z-10"
+                  className="absolute top-0 h-full border-l-2 border-indigo-400/70 z-10"
                   style={{ left: todayOffset }}
                 >
-                  <span className="absolute -top-0 left-1 text-xs text-brand-400 font-medium whitespace-nowrap">今天</span>
+                  <span className="absolute top-1 left-1 text-xs text-indigo-600 font-semibold whitespace-nowrap">今天</span>
                 </div>
               )}
               {/* 里程碑 */}
@@ -245,13 +245,13 @@ export default function GanttChart() {
               {groups.map(([groupName, groupTasks]) => (
                 <div key={groupName}>
                   <div className="h-8 bg-slate-800/20 relative border-b border-slate-800/50">
-                    {/* 今日线 */}
-                    {todayOffset > 0 && (
-                      <div
-                        className="absolute top-0 bottom-0 w-px bg-brand-500/30 z-10"
-                        style={{ left: todayOffset }}
-                      />
-                    )}
+                  {/* 今日线 */}
+                  {todayOffset > 0 && (
+                    <div
+                      className="absolute top-0 bottom-0 w-px bg-indigo-400/40 z-10"
+                      style={{ left: todayOffset }}
+                    />
+                  )}
                     {/* 里程碑线 */}
                     {milestones.map((m: any) => {
                       if (!m.targetDate) return null;
@@ -271,12 +271,12 @@ export default function GanttChart() {
                       <div key={t.id} className="h-9 relative border-b border-slate-800/50">
                         {/* 背景格线 */}
                         {ticks.map((tick, i) => (
-                          <div key={i} className="absolute top-0 bottom-0 w-px bg-slate-800/40" style={{ left: tick.offset }} />
+                          <div key={i} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: tick.offset }} />
                         ))}
-                        {/* 今日线 */}
-                        {todayOffset > 0 && (
-                          <div className="absolute top-0 bottom-0 w-px bg-brand-500/30 z-10" style={{ left: todayOffset }} />
-                        )}
+                  {/* 今日线 */}
+                  {todayOffset > 0 && (
+                    <div className="absolute top-0 bottom-0 w-px bg-indigo-400/40 z-10" style={{ left: todayOffset }} />
+                  )}
                         {/* 里程碑线 */}
                         {milestones.map((m: any) => {
                           if (!m.targetDate) return null;

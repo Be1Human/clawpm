@@ -246,18 +246,18 @@ export default function Members() {
 
       {/* 删除确认 */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="card p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-slate-100 mb-2">确认删除</h3>
-            <p className="text-sm text-slate-400 mb-4">
-              删除成员 <span className="text-slate-200 font-medium">{deleteConfirm.name}</span>？
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              删除成员 <span className="text-gray-800 font-medium">{deleteConfirm.name}</span>？
               该成员负责的任务不会受影响，但 owner 字段将保留原值。
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="btn-ghost">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.identifier)}
-                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm transition-colors"
+                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
                 {deleteMut.isPending ? '删除中...' : '确认删除'}
