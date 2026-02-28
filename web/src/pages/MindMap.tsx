@@ -170,8 +170,8 @@ function MindMapInner() {
     queryFn: () => api.getTaskTree(),
   });
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [createModal, setCreateModal] = useState<{ parentId: string; parentType: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string } | null>(null);
 
