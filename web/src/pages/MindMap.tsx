@@ -16,6 +16,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
+import CreateTaskModal from '@/components/CreateTaskModal';
 
 // ── 布局常量 ──────────────────────────────────────────────────────
 const NODE_W  = 190;
@@ -136,7 +137,6 @@ function buildFlow(treeData: any[], positions: Map<string, { x: number; y: numbe
 }
 
 // ── 自定义边（贝塞尔曲线，连接右侧到左侧） ────────────────────────
-import type { EdgeProps } from '@xyflow/react';
 function MindMapEdge({ sourceX, sourceY, targetX, targetY }: EdgeProps) {
   const dx = (targetX - sourceX) * 0.55;
   const d = `M ${sourceX},${sourceY} C ${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`;
