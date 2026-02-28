@@ -1,9 +1,17 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { PriorityBadge } from '@/components/ui/Badge';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
+import CreateTaskModal from '@/components/CreateTaskModal';
+
+const TYPE_ICON: Record<string, string> = {
+  epic: '◈', story: '◎', task: '◻', subtask: '○',
+};
+const TYPE_COLOR: Record<string, string> = {
+  epic: 'text-purple-400', story: 'text-blue-400', task: 'text-emerald-400', subtask: 'text-slate-500',
+};
 
 const COLUMNS = [
   { key: 'planned', label: '待开始', color: 'border-t-slate-600' },
@@ -34,7 +42,14 @@ function TaskCard({ task }: { task: any }) {
     <Link to={`/tasks/${task.taskId}`} className="block">
       <div className="card p-3.5 hover:border-slate-700 hover:bg-slate-800/80 transition-all duration-150 cursor-pointer group">
         <div className="flex items-start justify-between gap-2 mb-2">
-          <span className="text-xs font-mono text-slate-600 group-hover:text-slate-500">{task.taskId}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-mono text-slate-600 group-hover:text-slate-500">{task.taskId}</span>
+            {task.type && task.type !== 'task' && (
+              <span className={cn('text-xs', TYPE_COLOR[task.type] || 'text-slate-500')}>
+                {TYPE_ICON[task.type] || ''}
+              </span>
+            )}
+          </div>
           <PriorityBadge priority={task.priority} />
         </div>
         <p className="text-sm text-slate-200 leading-snug mb-3 line-clamp-2">{task.title}</p>
@@ -81,6 +96,7 @@ function TaskCard({ task }: { task: any }) {
 
 export default function KanbanBoard() {
   const [filter, setFilter] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.getTasks(),
@@ -112,9 +128,9 @@ export default function KanbanBoard() {
             value={filter}
             onChange={e => setFilter(e.target.value)}
           />
-          <Link to="/tasks" className="btn-primary h-8 flex items-center">
+          <button onClick={() => setShowCreate(true)} className="btn-primary h-8 flex items-center">
             + 新建任务
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -150,6 +166,8 @@ export default function KanbanBoard() {
           })}
         </div>
       </div>
+
+      {showCreate && <CreateTaskModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

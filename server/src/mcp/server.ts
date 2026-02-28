@@ -17,6 +17,8 @@ export function createMcpServer() {
   mcp.tool('create_task', '创建新任务', {
     title: z.string().describe('任务标题'),
     description: z.string().optional(),
+    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('节点类型：epic/story/task/subtask，缺省由父节点推导'),
+    parent_task_id: z.string().optional().describe('父任务 ID，如 U-001；设置后 type 可自动推导'),
     domain: z.string().optional().describe('业务板块名称'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     milestone: z.string().optional().describe('里程碑名称'),
@@ -50,6 +52,7 @@ export function createMcpServer() {
     milestone: z.string().optional(),
     owner: z.string().optional(),
     priority: z.string().optional(),
+    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('按节点类型筛选'),
   }, async (p) => {
     const tasks = TaskService.list(p);
     return { content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }] };
@@ -97,6 +100,8 @@ export function createMcpServer() {
     task_id: z.string(),
     title: z.string().optional(),
     description: z.string().optional(),
+    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('修改节点类型'),
+    parent_task_id: z.string().optional().describe('修改父任务 ID，传空字符串可取消父子关系'),
     status: z.string().optional(),
     priority: z.string().optional(),
     owner: z.string().optional(),

@@ -16,7 +16,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/tasks', async (req) => {
     const q = req.query as any;
-    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority });
+    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, type: q.type });
   });
 
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）

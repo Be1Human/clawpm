@@ -1,81 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '@/api/client';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import CreateTaskModal from '@/components/CreateTaskModal';
 
-function CreateTaskModal({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient();
-  const [form, setForm] = useState({ title: '', description: '', priority: 'P2', owner: '', due_date: '', domain: '', milestone: '' });
-  const { data: domains = [] } = useQuery({ queryKey: ['domains'], queryFn: api.getDomains });
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: api.getMilestones });
-
-  const mut = useMutation({
-    mutationFn: api.createTask,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); onClose(); },
-  });
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card w-full max-w-md p-6 animate-slide-up mx-4">
-        <h2 className="text-base font-semibold text-slate-100 mb-5">新建任务</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">标题 *</label>
-            <input className="input w-full" placeholder="任务标题" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">描述</label>
-            <textarea className="input w-full resize-none" rows={3} placeholder="任务描述" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">优先级</label>
-              <select className="input w-full" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
-                {['P0', 'P1', 'P2', 'P3'].map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">负责人</label>
-              <input className="input w-full" placeholder="agent-01" value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">业务板块</label>
-              <select className="input w-full" value={form.domain} onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}>
-                <option value="">不选</option>
-                {(domains as any[]).map((d: any) => <option key={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">里程碑</label>
-              <select className="input w-full" value={form.milestone} onChange={e => setForm(f => ({ ...f, milestone: e.target.value }))}>
-                <option value="">不选</option>
-                {(milestones as any[]).map((m: any) => <option key={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">截止日期</label>
-            <input type="date" className="input w-full" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="btn-ghost">取消</button>
-          <button
-            onClick={() => mut.mutate(form)}
-            disabled={!form.title || mut.isPending}
-            className="btn-primary disabled:opacity-50"
-          >
-            {mut.isPending ? '创建中...' : '创建'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+const TYPE_LABEL: Record<string, string> = {
+  epic: '史诗', story: '故事', task: '任务', subtask: '子任务',
+};
+const TYPE_COLOR: Record<string, string> = {
+  epic: 'text-purple-400 bg-purple-500/10',
+  story: 'text-blue-400 bg-blue-500/10',
+  task: 'text-emerald-400 bg-emerald-500/10',
+  subtask: 'text-slate-400 bg-slate-500/10',
+};
 
 export default function TaskList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -83,13 +23,22 @@ export default function TaskList() {
   const [search, setSearch] = useState('');
 
   const statusFilter = searchParams.get('status') || '';
+  const typeFilter = searchParams.get('type') || '';
+
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', statusFilter],
-    queryFn: () => api.getTasks(statusFilter ? { status: statusFilter } : undefined),
+    queryKey: ['tasks', statusFilter, typeFilter],
+    queryFn: () => {
+      const params: Record<string, string> = {};
+      if (statusFilter) params.status = statusFilter;
+      if (typeFilter) params.type = typeFilter;
+      return api.getTasks(Object.keys(params).length ? params : undefined);
+    },
   });
 
   const statuses = ['', 'planned', 'active', 'review', 'blocked', 'done'];
   const statusLabels: Record<string, string> = { '': '全部', planned: '待开始', active: '进行中', review: '评审中', blocked: '已阻塞', done: '已完成' };
+  const types = ['', 'epic', 'story', 'task', 'subtask'];
+  const typeLabels: Record<string, string> = { '': '全部类型', epic: '史诗', story: '用户故事', task: '任务', subtask: '子任务' };
 
   const filtered = search
     ? tasks.filter((t: any) =>
@@ -109,20 +58,44 @@ export default function TaskList() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* 状态筛选 */}
         <div className="flex bg-slate-800/60 rounded-lg p-1 gap-0.5">
           {statuses.map(s => (
             <button
               key={s}
-              onClick={() => setSearchParams(s ? { status: s } : {})}
+              onClick={() => {
+                const p: Record<string, string> = {};
+                if (s) p.status = s;
+                if (typeFilter) p.type = typeFilter;
+                setSearchParams(p);
+              }}
               className={cn(
                 'px-3 py-1.5 text-xs rounded-md transition-all',
-                statusFilter === s
-                  ? 'bg-brand-500 text-white font-medium'
-                  : 'text-slate-500 hover:text-slate-300'
+                statusFilter === s ? 'bg-brand-500 text-white font-medium' : 'text-slate-500 hover:text-slate-300'
               )}
             >
               {statusLabels[s]}
+            </button>
+          ))}
+        </div>
+        {/* 类型筛选 */}
+        <div className="flex bg-slate-800/60 rounded-lg p-1 gap-0.5">
+          {types.map(t => (
+            <button
+              key={t}
+              onClick={() => {
+                const p: Record<string, string> = {};
+                if (statusFilter) p.status = statusFilter;
+                if (t) p.type = t;
+                setSearchParams(p);
+              }}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded-md transition-all',
+                typeFilter === t ? 'bg-brand-500 text-white font-medium' : 'text-slate-500 hover:text-slate-300'
+              )}
+            >
+              {typeLabels[t]}
             </button>
           ))}
         </div>
@@ -141,6 +114,7 @@ export default function TaskList() {
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">ID</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">标题</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-20">类型</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">状态</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">优先级</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">板块</th>
@@ -157,7 +131,7 @@ export default function TaskList() {
                 </tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-12 text-slate-600">没有任务</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-slate-600">没有任务</td></tr>
             ) : (
               filtered.map((task: any) => {
                 const days = getDaysUntil(task.dueDate);
@@ -170,6 +144,13 @@ export default function TaskList() {
                     <td className="px-4 py-3">
                       <Link to={`/tasks/${task.taskId}`} className="text-slate-200 hover:text-brand-400 line-clamp-1">{task.title}</Link>
                       {task.blocker && <div className="text-xs text-red-400 mt-0.5 truncate">🚧 {task.blocker}</div>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {task.type ? (
+                        <span className={cn('text-xs px-1.5 py-0.5 rounded', TYPE_COLOR[task.type] || 'text-slate-400 bg-slate-500/10')}>
+                          {TYPE_LABEL[task.type] || task.type}
+                        </span>
+                      ) : <span className="text-slate-700">—</span>}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={task.status} /></td>
                     <td className="px-4 py-3"><PriorityBadge priority={task.priority} /></td>
@@ -210,6 +191,7 @@ export default function TaskList() {
       </div>
 
       {showCreate && <CreateTaskModal onClose={() => setShowCreate(false)} />}
+
     </div>
   );
 }

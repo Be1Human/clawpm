@@ -1,11 +1,12 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v1.1  
+> **版本**: v1.2  
 > **日期**: 2026-03-01  
 > **关联 PRD**: [PRD.md](./PRD.md) v1.1  
 > **状态**: 迭代中  
 > **变更记录**:  
-> - v1.1 (2026-03-01): 新增需求树技术设计 — tasks.type 字段、树形 API、Requirements 页面
+> - v1.1 (2026-03-01): 新增需求树技术设计 — tasks.type 字段、树形 API、Requirements 页面  
+> - v1.2 (2026-03-01): 系统自洽性修复 — type/parent 字段全链路贯通
 
 ---
 
@@ -750,6 +751,73 @@ Fastify 同时提供：
 1. 创建 SQLite 数据库文件
 2. 执行 schema 迁移
 3. 如果 `CLAWPM_SEED=true`，注入示例数据
+
+---
+
+## 十二、系统自洽性设计（v1.2 新增）
+
+### 12.1 问题背景
+
+v1.1 引入了 `type`（epic/story/task/subtask）和 `parent_task_id` 字段，但仅在需求树页面和任务详情页实现了支持，其余页面和接口存在 15 处不自洽。
+
+### 12.2 需要修复的层级清单
+
+| 层级 | 组件/接口 | 问题 | 修复方案 |
+|------|-----------|------|---------|
+| 后端服务 | `TaskService.update` | 不支持修改 `type` / `parent_task_id` | `UpdateTaskParams` 加两字段，update 方法处理 |
+| 后端服务 | `TaskService.list` | `TaskFilters` 无 `type` 筛选 | 加 `type?` 字段，list 方法加 where 条件 |
+| 后端服务 | `BacklogService.schedule` | 排期转任务不设置 `type` | 默认设为 `task` |
+| 后端路由 | `GET /api/v1/tasks` | 不传递 `type` query 参数 | routes.ts 透传 `q.type` |
+| MCP 工具 | `create_task` | 无 `type` / `parent_task_id` 参数 | 加入 schema 和处理逻辑 |
+| MCP 工具 | `update_task` | 无 `type` / `parent_task_id` 参数 | 加入 schema 和处理逻辑 |
+| 前端 | `TaskList.tsx` | 创建弹窗无 type/parent 字段，列表无 type 列，无 type 筛选 | 统一创建弹窗，加 type 列和筛选 |
+| 前端 | `KanbanBoard.tsx` | 卡片不显示 type，创建入口不支持 type | 卡片加 type 标签，复用统一创建弹窗 |
+
+### 12.3 统一任务创建弹窗规范
+
+所有创建任务的入口（需求树、看板、任务列表）必须支持相同的字段：
+
+```
+必填: title
+选填: type (epic/story/task/subtask, 默认 task)
+      parent_task_id (父节点 task_id)
+      priority (P0-P3, 默认 P2)
+      domain
+      milestone
+      owner
+      due_date
+      description
+```
+
+> **规则**：若指定了 `parent_task_id`，`type` 可由父节点类型自动推导（epic→story→task→subtask）。
+
+### 12.4 TaskService 更新后接口
+
+```typescript
+interface UpdateTaskParams {
+  title?: string;
+  description?: string;
+  type?: string;              // 新增
+  parent_task_id?: string;    // 新增（传 taskId 字符串）
+  status?: string;
+  priority?: string;
+  owner?: string;
+  due_date?: string;
+  milestone?: string;
+  blocker?: string;
+  tags?: string[];
+}
+
+interface TaskFilters {
+  status?: string;
+  domain?: string;
+  milestone?: string;
+  owner?: string;
+  priority?: string;
+  type?: string;              // 新增
+  parentId?: number;          // 新增（可选，筛选某父节点的子任务）
+}
+```
 
 ---
 

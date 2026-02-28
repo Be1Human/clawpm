@@ -107,6 +107,7 @@ export const BacklogService = {
     const task = await TaskService.create({
       title: item.title,
       description: item.description || undefined,
+      type: 'task',
       domain: domain?.name,
       milestone: scheduleParams.milestone,
       owner: scheduleParams.owner,

@@ -21,6 +21,8 @@ export interface CreateTaskParams {
 export interface UpdateTaskParams {
   title?: string;
   description?: string;
+  type?: string;
+  parent_task_id?: string;
   status?: string;
   priority?: string;
   owner?: string;
@@ -38,6 +40,7 @@ export interface TaskFilters {
   milestone?: string;
   owner?: string;
   priority?: string;
+  type?: string;
   search?: string;
 }
 
@@ -118,6 +121,7 @@ export const TaskService = {
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
     if (filters.owner) conditions.push(eq(tasks.owner, filters.owner));
     if (filters.priority) conditions.push(eq(tasks.priority, filters.priority));
+    if (filters.type) conditions.push(eq((tasks as any).type, filters.type));
 
     if (filters.domain) {
       const d = db.select().from(domains).where(eq(domains.name, filters.domain)).get();
@@ -168,6 +172,15 @@ export const TaskService = {
     if (params.blocker !== undefined) updates.blocker = params.blocker;
     if (params.tags !== undefined) updates.tags = JSON.stringify(params.tags);
 
+    if (params.type !== undefined) updates.type = params.type;
+    if (params.parent_task_id !== undefined) {
+      if (params.parent_task_id === null || params.parent_task_id === '') {
+        updates.parentTaskId = null;
+      } else {
+        const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
+        if (parent) updates.parentTaskId = parent.id;
+      }
+    }
     if (params.domain !== undefined) {
       const d = db.select().from(domains).where(eq(domains.name, params.domain)).get();
       if (d) updates.domainId = d.id;
