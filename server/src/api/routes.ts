@@ -3,6 +3,7 @@ import { TaskService } from '../services/task-service.js';
 import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
 import { MemberService } from '../services/member-service.js';
+import { ReqLinkService } from '../services/req-link-service.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -23,7 +24,20 @@ export async function registerRoutes(app: FastifyInstance) {
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
   app.get('/api/v1/tasks/tree', async (req) => {
     const q = req.query as any;
-    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner });
+    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, label: q.label });
+  });
+
+  // 节点迁移（换父节点）
+  app.patch('/api/v1/tasks/:taskId/reparent', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const { new_parent_task_id } = req.body as any;
+    try {
+      const task = TaskService.reparent(taskId, new_parent_task_id ?? null);
+      if (!task) return reply.code(404).send({ error: 'Not found' });
+      return task;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
   });
 
   app.get('/api/v1/tasks/:taskId/children', async (req, reply) => {
@@ -261,6 +275,27 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete('/api/v1/members/:identifier', async (req, reply) => {
     const { identifier } = req.params as any;
     return MemberService.delete(identifier);
+  });
+
+  // ── Req Links（需求关联） ────────────────────────────────────────────
+  app.get('/api/v1/req-links', async () => {
+    const links = ReqLinkService.getAll();
+    return ReqLinkService.enrichLinks(links);
+  });
+
+  app.post('/api/v1/req-links', async (req, reply) => {
+    const { source_task_id, target_task_id, link_type } = req.body as any;
+    try {
+      const link = ReqLinkService.create(source_task_id, target_task_id, link_type || 'relates');
+      return reply.code(201).send(ReqLinkService.enrichLinks([link])[0]);
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.delete('/api/v1/req-links/:linkId', async (req, reply) => {
+    const { linkId } = req.params as any;
+    return ReqLinkService.delete(parseInt(linkId));
   });
 
   // ── Gantt ──────────────────────────────────────────────────────────

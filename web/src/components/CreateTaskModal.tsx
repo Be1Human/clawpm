@@ -1,48 +1,57 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { cn } from '@/lib/utils';
 
-const TYPE_OPTIONS = [
-  { value: 'epic',    label: '史诗 (Epic)' },
-  { value: 'story',   label: '用户故事 (Story)' },
-  { value: 'task',    label: '任务 (Task)' },
-  { value: 'subtask', label: '子任务 (Subtask)' },
+const PRESET_LABELS = [
+  { value: 'epic',    label: 'Epic',    color: '#8b5cf6', bg: '#ede9fe' },
+  { value: 'feature', label: 'Feature', color: '#3b82f6', bg: '#dbeafe' },
+  { value: 'story',   label: 'Story',   color: '#0ea5e9', bg: '#e0f2fe' },
+  { value: 'task',    label: 'Task',    color: '#10b981', bg: '#d1fae5' },
+  { value: 'bug',     label: 'Bug',     color: '#ef4444', bg: '#fee2e2' },
+  { value: 'spike',   label: 'Spike',   color: '#f97316', bg: '#ffedd5' },
+  { value: 'chore',   label: 'Chore',   color: '#64748b', bg: '#f1f5f9' },
 ];
-
-const CHILD_TYPE: Record<string, string> = {
-  epic: 'story', story: 'task', task: 'subtask',
-};
 
 interface Props {
   onClose: () => void;
-  /** 预设父任务 ID（taskId 字符串，如 U-005），有则自动推导 type */
   defaultParentId?: string;
-  /** 预设 type */
   defaultType?: string;
 }
 
 export default function CreateTaskModal({ onClose, defaultParentId, defaultType }: Props) {
   const qc = useQueryClient();
 
+  const initLabels = defaultType ? [defaultType] : [];
   const [form, setForm] = useState({
     title: '',
     description: '',
-    type: defaultType || (defaultParentId ? '' : 'task'),
+    labels: initLabels as string[],
     parent_task_id: defaultParentId || '',
     priority: 'P2',
     owner: '',
     due_date: '',
     domain: '',
     milestone: '',
+    customLabel: '',
   });
 
   const { data: domains = [] } = useQuery({ queryKey: ['domains'], queryFn: api.getDomains });
   const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: api.getMilestones });
+  const { data: members = [] } = useQuery({ queryKey: ['members'], queryFn: () => api.getMembers() });
 
-  // 当 parent_task_id 变化时，自动推导 type
-  const handleParentChange = (val: string) => {
-    setForm(f => ({ ...f, parent_task_id: val, type: f.type }));
-  };
+  function toggleLabel(val: string) {
+    setForm(f => ({
+      ...f,
+      labels: f.labels.includes(val) ? f.labels.filter(l => l !== val) : [...f.labels, val],
+    }));
+  }
+
+  function addCustomLabel() {
+    const v = form.customLabel.trim().toLowerCase();
+    if (!v || form.labels.includes(v)) { setForm(f => ({ ...f, customLabel: '' })); return; }
+    setForm(f => ({ ...f, labels: [...f.labels, v], customLabel: '' }));
+  }
 
   const mut = useMutation({
     mutationFn: (data: any) => api.createTask(data),
@@ -53,11 +62,12 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultType 
     },
   });
 
-  const handleSubmit = () => {
+  function handleSubmit() {
     if (!form.title.trim()) return;
     const payload: Record<string, any> = {
       title: form.title.trim(),
       description: form.description || undefined,
+      labels: form.labels,
       priority: form.priority,
       owner: form.owner || undefined,
       due_date: form.due_date || undefined,
@@ -65,62 +75,97 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultType 
       milestone: form.milestone || undefined,
       parent_task_id: form.parent_task_id || undefined,
     };
-    // type: 有父节点且未选type时自动推导，否则用选中的
-    if (form.type) {
-      payload.type = form.type;
-    }
+    // 兼容旧 type 字段（用第一个 label）
+    if (form.labels.length > 0) payload.type = form.labels[0];
     mut.mutate(payload);
-  };
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card w-full max-w-lg p-6 animate-slide-up mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-base font-semibold text-slate-100 mb-5">新建任务</h2>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-lg mx-4 max-h-[92vh] overflow-y-auto">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">新建需求节点</h2>
+          <p className="text-xs text-gray-400 mt-0.5">创建一个新的需求节点，可自由添加标签分类</p>
+        </div>
 
-        <div className="space-y-4">
+        <div className="px-6 py-5 space-y-4">
           {/* 标题 */}
           <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">标题 *</label>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">标题 <span className="text-red-400">*</span></label>
             <input
-              className="input w-full"
-              placeholder="任务标题"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent"
+              placeholder="需求标题"
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter' && form.title.trim()) handleSubmit(); }}
               autoFocus
             />
           </div>
 
-          {/* 类型 + 父任务 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">类型</label>
-              <select
-                className="input w-full"
-                value={form.type}
-                onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-              >
-                <option value="">自动推导</option>
-                {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+          {/* 标签 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-2 block">标签分类（可多选）</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {PRESET_LABELS.map(l => {
+                const active = form.labels.includes(l.value);
+                return (
+                  <button
+                    key={l.value}
+                    onClick={() => toggleLabel(l.value)}
+                    className={cn(
+                      'text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full border transition-all',
+                      active ? 'border-transparent' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                    )}
+                    style={active ? { backgroundColor: l.bg, color: l.color, borderColor: l.color + '40' } : {}}
+                  >
+                    {active ? '✓ ' : ''}{l.label}
+                  </button>
+                );
+              })}
             </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">父任务 ID</label>
+            {/* 自定义标签 */}
+            <div className="flex gap-2">
               <input
-                className="input w-full"
-                placeholder="如 U-005（可选）"
-                value={form.parent_task_id}
-                onChange={e => handleParentChange(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                placeholder="自定义标签（回车添加）"
+                value={form.customLabel}
+                onChange={e => setForm(f => ({ ...f, customLabel: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomLabel(); } }}
               />
+              <button onClick={addCustomLabel} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg">添加</button>
             </div>
+            {/* 已选标签展示 */}
+            {form.labels.filter(l => !PRESET_LABELS.map(p => p.value).includes(l)).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {form.labels.filter(l => !PRESET_LABELS.map(p => p.value).includes(l)).map(l => (
+                  <span key={l} className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full flex items-center gap-1">
+                    #{l}
+                    <button onClick={() => setForm(f => ({ ...f, labels: f.labels.filter(x => x !== l) }))} className="text-gray-400 hover:text-red-400">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 父任务 ID */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">父节点 ID（可选）</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="如 U-005（留空则为根节点）"
+              value={form.parent_task_id}
+              onChange={e => setForm(f => ({ ...f, parent_task_id: e.target.value }))}
+            />
           </div>
 
           {/* 描述 */}
           <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">描述</label>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">描述</label>
             <textarea
-              className="input w-full resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
               rows={2}
-              placeholder="任务描述（可选）"
+              placeholder="详细描述（可选）"
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
             />
@@ -129,29 +174,55 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultType 
           {/* 优先级 + 负责人 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">优先级</label>
-              <select className="input w-full" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
-                {['P0', 'P1', 'P2', 'P3'].map(p => <option key={p}>{p}</option>)}
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">优先级</label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                value={form.priority}
+                onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}
+              >
+                {[
+                  { value: 'P0', label: 'P0 — 紧急' },
+                  { value: 'P1', label: 'P1 — 重要' },
+                  { value: 'P2', label: 'P2 — 普通' },
+                  { value: 'P3', label: 'P3 — 可推迟' },
+                ].map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">负责人</label>
-              <input className="input w-full" placeholder="agent-01" value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">负责人</label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                value={form.owner}
+                onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
+              >
+                <option value="">不指定</option>
+                {(members as any[]).map((m: any) => (
+                  <option key={m.identifier} value={m.identifier}>{m.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
           {/* 板块 + 里程碑 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">业务板块</label>
-              <select className="input w-full" value={form.domain} onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">业务板块</label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                value={form.domain}
+                onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
+              >
                 <option value="">不选</option>
                 {(domains as any[]).map((d: any) => <option key={d.id}>{d.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 mb-1.5 block">里程碑</label>
-              <select className="input w-full" value={form.milestone} onChange={e => setForm(f => ({ ...f, milestone: e.target.value }))}>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">里程碑</label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                value={form.milestone}
+                onChange={e => setForm(f => ({ ...f, milestone: e.target.value }))}
+              >
                 <option value="">不选</option>
                 {(milestones as any[]).map((m: any) => <option key={m.id}>{m.name}</option>)}
               </select>
@@ -160,19 +231,27 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultType 
 
           {/* 截止日期 */}
           <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">截止日期</label>
-            <input type="date" className="input w-full" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">截止日期</label>
+            <input
+              type="date"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              value={form.due_date}
+              onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+            />
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="btn-ghost">取消</button>
+        {/* Footer */}
+        <div className="px-6 pb-5 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            取消
+          </button>
           <button
             onClick={handleSubmit}
             disabled={!form.title.trim() || mut.isPending}
-            className="btn-primary disabled:opacity-50"
+            className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
           >
-            {mut.isPending ? '创建中...' : '创建'}
+            {mut.isPending ? '创建中...' : '创建节点'}
           </button>
         </div>
       </div>

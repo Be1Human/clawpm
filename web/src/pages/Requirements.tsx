@@ -302,15 +302,17 @@ export default function Requirements() {
   // 过滤器
   const [filterStatus, setFilterStatus] = useState('');
   const [filterMilestone, setFilterMilestone] = useState('');
+  const [filterLabel, setFilterLabel] = useState('');
 
   const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: () => api.getMilestones() });
 
   const treeParams: Record<string, string> = {};
   if (filterStatus) treeParams.status = filterStatus;
   if (filterMilestone) treeParams.milestone = filterMilestone;
+  if (filterLabel) treeParams.label = filterLabel;
 
   const { data: tree = [], isLoading } = useQuery({
-    queryKey: ['task-tree', filterStatus, filterMilestone],
+    queryKey: ['task-tree', filterStatus, filterMilestone, filterLabel],
     queryFn: () => api.getTaskTree(Object.keys(treeParams).length ? treeParams : undefined),
   });
 
@@ -375,11 +377,21 @@ export default function Requirements() {
       </div>
 
       {/* 过滤器 */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center flex-wrap gap-2 mb-4">
+        <select
+          value={filterLabel}
+          onChange={e => setFilterLabel(e.target.value)}
+          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[110px] focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">全部标签</option>
+          {['epic','feature','story','task','bug','spike','chore'].map(l => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
         <select
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
-          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-1.5 min-w-[100px]"
+          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">全部状态</option>
           <option value="planned">待开始</option>
@@ -391,30 +403,21 @@ export default function Requirements() {
         <select
           value={filterMilestone}
           onChange={e => setFilterMilestone(e.target.value)}
-          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-1.5 min-w-[120px]"
+          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">全部里程碑</option>
           {(milestones as any[]).map((m: any) => (
             <option key={m.id} value={m.name}>{m.name}</option>
           ))}
         </select>
-        {(filterStatus || filterMilestone) && (
+        {(filterStatus || filterMilestone || filterLabel) && (
           <button
-            onClick={() => { setFilterStatus(''); setFilterMilestone(''); }}
-            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            onClick={() => { setFilterStatus(''); setFilterMilestone(''); setFilterLabel(''); }}
+            className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-50"
           >
             ✕ 清除过滤
           </button>
         )}
-        {/* 图例 */}
-        <div className="ml-auto flex items-center gap-4">
-          {Object.entries(TYPE_CONFIG).map(([type, conf]) => (
-            <div key={type} className="flex items-center gap-1.5">
-              <span className={cn('text-sm', conf.color)}>{conf.icon}</span>
-              <span className="text-xs text-slate-500">{conf.label}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* 树形内容 */}
@@ -440,10 +443,10 @@ export default function Requirements() {
           <div className="py-16 text-center">
             <div className="text-4xl mb-3 opacity-30">◈</div>
             <div className="text-slate-500 text-sm mb-1">
-              {filterStatus || filterMilestone ? '没有符合过滤条件的节点' : '还没有任何需求'}
+              {filterStatus || filterMilestone || filterLabel ? '没有符合过滤条件的节点' : '还没有任何需求'}
             </div>
             <div className="text-slate-600 text-xs">
-              {filterStatus || filterMilestone ? '尝试清除过滤条件' : '点击「新建史诗」开始构建产品需求树'}
+              {filterStatus || filterMilestone || filterLabel ? '尝试清除过滤条件' : '点击「新建节点」开始构建需求图谱'}
             </div>
           </div>
         ) : (

@@ -7,6 +7,7 @@ export interface CreateTaskParams {
   title: string;
   description?: string;
   type?: string;
+  labels?: string[];
   domain?: string;
   priority?: string;
   milestone?: string;
@@ -22,7 +23,8 @@ export interface UpdateTaskParams {
   title?: string;
   description?: string;
   type?: string;
-  parent_task_id?: string;
+  labels?: string[];
+  parent_task_id?: string | null;
   status?: string;
   priority?: string;
   owner?: string;
@@ -32,6 +34,8 @@ export interface UpdateTaskParams {
   domain?: string;
   tags?: string[];
   blocker?: string;
+  pos_x?: number;
+  pos_y?: number;
 }
 
 export interface TaskFilters {
@@ -78,6 +82,10 @@ export const TaskService = {
 
     const taskId = await generateTaskId(domainId);
 
+    // 自动用 type 初始化 labels（如果 labels 未提供）
+    let labels = params.labels || [];
+    if (!labels.length && inferredType) labels = [inferredType];
+
     db.insert(tasks).values({
       taskId,
       title: params.title,
@@ -91,6 +99,7 @@ export const TaskService = {
       startDate: params.start_date || new Date().toISOString().split('T')[0],
       source: params.source || 'planned',
       tags: JSON.stringify(params.tags || []),
+      labels: JSON.stringify(labels),
       status: 'planned',
       ...(inferredType ? { type: inferredType } : {}),
     } as any).run();
@@ -173,11 +182,14 @@ export const TaskService = {
     if (params.tags !== undefined) updates.tags = JSON.stringify(params.tags);
 
     if (params.type !== undefined) updates.type = params.type;
+    if (params.labels !== undefined) updates.labels = JSON.stringify(params.labels);
+    if (params.pos_x !== undefined) updates.posX = params.pos_x;
+    if (params.pos_y !== undefined) updates.posY = params.pos_y;
     if (params.parent_task_id !== undefined) {
       if (params.parent_task_id === null || params.parent_task_id === '') {
         updates.parentTaskId = null;
       } else {
-        const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
+        const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id as string)).get();
         if (parent) updates.parentTaskId = parent.id;
       }
     }
@@ -307,7 +319,7 @@ export const TaskService = {
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
   },
 
-  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string } = {}) {
+  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string } = {}) {
     const db = getDb();
     let allTasks = db.select().from(tasks).all();
 
@@ -325,10 +337,19 @@ export const TaskService = {
     if (filters.owner) {
       allTasks = allTasks.filter(t => t.owner === filters.owner);
     }
+    if (filters.label) {
+      const label = filters.label;
+      allTasks = allTasks.filter(t => {
+        try {
+          const labels: string[] = JSON.parse((t as any).labels || '[]');
+          return labels.includes(label) || (t as any).type === label;
+        } catch { return false; }
+      });
+    }
 
     // 过滤后保留命中节点的祖先（保持树路径完整）
     const hitIds = new Set(allTasks.map(t => t.id));
-    if (filters.milestone || filters.status || filters.owner) {
+    if (filters.milestone || filters.status || filters.owner || filters.label) {
       const allTasksFull = db.select().from(tasks).all();
       const idMap = new Map(allTasksFull.map(t => [t.id, t]));
       // 向上补全祖先
@@ -389,6 +410,44 @@ export const TaskService = {
     return Math.max(0, score);
   },
 
+  // 节点迁移：将节点（及其子树）移到新父节点
+  reparent(taskId: string, newParentTaskId: string | null) {
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return null;
+
+    let newParentId: number | null = null;
+    if (newParentTaskId) {
+      const parent = db.select().from(tasks).where(eq(tasks.taskId, newParentTaskId)).get();
+      if (!parent) return null;
+      // 检测是否会形成循环（新父节点不能是当前节点的子孙）
+      if (this._isDescendant(parent.id, task.id)) {
+        throw new Error('循环引用：不能将节点移入自己的子树');
+      }
+      newParentId = parent.id;
+    }
+
+    db.update(tasks).set({ parentTaskId: newParentId, updatedAt: new Date().toISOString() } as any)
+      .where(eq(tasks.taskId, taskId)).run();
+    return this.getByTaskId(taskId)!;
+  },
+
+  // 检查 candidateId 是否是 ancestorId 的子孙
+  _isDescendant(candidateId: number, ancestorId: number): boolean {
+    const db = getDb();
+    const visited = new Set<number>();
+    const queue = [candidateId];
+    while (queue.length) {
+      const cur = queue.pop()!;
+      if (cur === ancestorId) return true;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      const children = db.select().from(tasks).where(eq(tasks.parentTaskId, cur)).all();
+      for (const c of children) queue.push(c.id);
+    }
+    return false;
+  },
+
   _enrichTask(task: any) {
     const db = getDb();
     let domain = null;
@@ -401,9 +460,15 @@ export const TaskService = {
       milestone = db.select().from(milestones).where(eq(milestones.id, task.milestoneId)).get();
     }
 
+    // 兼容旧数据：如果 labels 为空，用 type 初始化
+    let labels: string[] = [];
+    try { labels = JSON.parse(task.labels || '[]'); } catch {}
+    if (!labels.length && task.type) labels = [task.type];
+
     return {
       ...task,
       tags: JSON.parse(task.tags || '[]'),
+      labels,
       domain: domain ? { id: domain.id, name: domain.name, color: domain.color } : null,
       milestone: milestone ? { id: milestone.id, name: milestone.name } : null,
     };

@@ -76,4 +76,14 @@ export const api = {
     const qs = params ? '?' + new URLSearchParams(params) : '';
     return request<any>(`/gantt${qs}`);
   },
+
+  // Req Links（需求关联）
+  getReqLinks: () => request<any[]>('/req-links'),
+  createReqLink: (sourceTaskId: string, targetTaskId: string, linkType: string) =>
+    request<any>('/req-links', { method: 'POST', body: JSON.stringify({ source_task_id: sourceTaskId, target_task_id: targetTaskId, link_type: linkType }) }),
+  deleteReqLink: (linkId: number) => request<any>(`/req-links/${linkId}`, { method: 'DELETE' }),
+
+  // Reparent（节点迁移）
+  reparentTask: (taskId: string, newParentTaskId: string | null) =>
+    request<any>(`/tasks/${taskId}/reparent`, { method: 'PATCH', body: JSON.stringify({ new_parent_task_id: newParentTaskId }) }),
 };

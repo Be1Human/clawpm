@@ -38,8 +38,19 @@ export const tasks = sqliteTable('tasks', {
   blocker: text('blocker'),
   healthScore: integer('health_score').notNull().default(100),
   tags: text('tags').notNull().default('[]'),
+  labels: text('labels').notNull().default('[]'),
+  posX: real('pos_x'),
+  posY: real('pos_y'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const reqLinks = sqliteTable('req_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sourceTaskId: integer('source_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  targetTaskId: integer('target_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  linkType: text('link_type').notNull().default('relates'), // 'blocks' | 'precedes' | 'relates'
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
 
 export const taskNotes = sqliteTable('task_notes', {

@@ -84,13 +84,28 @@ export default function TaskDetail() {
       <div className="flex items-start gap-4 mb-6">
         <button onClick={() => navigate(-1)} className="btn-ghost mt-0.5 text-slate-500">← 返回</button>
         <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="font-mono text-sm text-slate-500">{task.taskId}</span>
-            {task.type && task.type !== 'task' && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                {TYPE_LABEL[task.type] || task.type}
-              </span>
-            )}
+            {/* labels（新字段）或 fallback 到 type */}
+            {(() => {
+              const labels: string[] = (() => { try { return JSON.parse(task.labels || '[]'); } catch { return []; } })();
+              const display = labels.length ? labels : (task.type ? [task.type] : []);
+              const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
+                epic: { bg: '#ede9fe', text: '#7c3aed' }, feature: { bg: '#dbeafe', text: '#1d4ed8' },
+                story: { bg: '#e0f2fe', text: '#0369a1' }, task: { bg: '#d1fae5', text: '#047857' },
+                bug: { bg: '#fee2e2', text: '#b91c1c' }, spike: { bg: '#ffedd5', text: '#c2410c' },
+                chore: { bg: '#f1f5f9', text: '#475569' },
+              };
+              return display.map((l: string) => {
+                const c = LABEL_COLORS[l] || { bg: '#f1f5f9', text: '#475569' };
+                return (
+                  <span key={l} className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{ backgroundColor: c.bg, color: c.text }}>
+                    {l}
+                  </span>
+                );
+              });
+            })()}
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
           </div>

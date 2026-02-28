@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
+
 import { config } from '../config.js';
 import fs from 'fs';
 import path from 'path';
@@ -25,6 +26,9 @@ export function getDb() {
 function runMigrations(sqlite: Database.Database) {
   // 增量迁移：为已有数据库添加新字段
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_x REAL`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_y REAL`); } catch {}
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS domains (
@@ -136,6 +140,14 @@ function runMigrations(sqlite: Database.Database) {
       type TEXT NOT NULL DEFAULT 'human',
       color TEXT NOT NULL DEFAULT '#6366f1',
       description TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS req_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      target_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      link_type TEXT NOT NULL DEFAULT 'relates',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
