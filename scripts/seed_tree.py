@@ -2,11 +2,33 @@
 """Seed sample requirements tree data into clawpm via REST API."""
 
 import json
+import re
+import sqlite3
 import urllib.request
 import urllib.error
 
+DB_PATH = "/root/clawpm/data/clawpm.db"
 BASE = "http://localhost:3210/api/v1"
 TOKEN = "dev-token"
+
+# ── 清理非标准 task_id ─────────────────────────────────────────────
+print("[0] Cleaning up non-standard task IDs via SQLite...")
+conn = sqlite3.connect(DB_PATH)
+cur = conn.cursor()
+cur.execute("SELECT task_id FROM tasks")
+all_ids = [r[0] for r in cur.fetchall()]
+bad = [tid for tid in all_ids if not re.match(r'^[A-Z]+-\d+$', tid)]
+if bad:
+    for tid in bad:
+        print(f"  Deleting {tid}")
+        cur.execute("DELETE FROM progress_history WHERE task_id IN (SELECT id FROM tasks WHERE task_id=?)", (tid,))
+        cur.execute("DELETE FROM task_notes WHERE task_id IN (SELECT id FROM tasks WHERE task_id=?)", (tid,))
+        cur.execute("DELETE FROM tasks WHERE task_id=?", (tid,))
+    conn.commit()
+    print(f"  Deleted {len(bad)} bad tasks")
+else:
+    print("  All task IDs are clean")
+conn.close()
 
 def req(method, path, data=None):
     url = BASE + path
