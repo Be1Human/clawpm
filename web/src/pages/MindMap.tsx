@@ -37,12 +37,12 @@ const LABEL_COLORS: Record<string, { border: string; bg: string; pill: string; t
   spike:   { border: '#f97316', bg: '#fff7ed', pill: '#ffedd5', text: '#c2410c' },
   chore:   { border: '#64748b', bg: '#f8fafc', pill: '#f1f5f9', text: '#475569' },
 };
-const DEFAULT_COLORS = LABEL_COLORS.task;
+const DEFAULT_COLORS = { border: '#94a3b8', bg: '#f8fafc', pill: '#f1f5f9', text: '#64748b' };
 
 function getLabelColors(task: any) {
   const labels: string[] = (() => { try { return JSON.parse(task.labels ?? '[]'); } catch { return []; } })();
-  const first = labels[0] || task.type || 'task';
-  return { colors: LABEL_COLORS[first] ?? DEFAULT_COLORS, labels, firstLabel: first };
+  const first = labels[0] || null;
+  return { colors: LABEL_COLORS[first as string] ?? DEFAULT_COLORS, labels, firstLabel: first };
 }
 
 const STATUS_DOT: Record<string, string> = {
