@@ -6,7 +6,6 @@ import { generateTaskId } from './id-generator.js';
 export interface CreateTaskParams {
   title: string;
   description?: string;
-  type?: string;
   labels?: string[];
   domain?: string;
   priority?: string;
@@ -17,12 +16,12 @@ export interface CreateTaskParams {
   parent_task_id?: string;
   tags?: string[];
   source?: string;
+  status?: string;
 }
 
 export interface UpdateTaskParams {
   title?: string;
   description?: string;
-  type?: string;
   labels?: string[];
   parent_task_id?: string | null;
   status?: string;
@@ -44,8 +43,8 @@ export interface TaskFilters {
   milestone?: string;
   owner?: string;
   priority?: string;
-  type?: string;
   search?: string;
+  label?: string;
 }
 
 export const TaskService = {
@@ -64,27 +63,13 @@ export const TaskService = {
       if (m) milestoneId = m.id;
     }
 
-    // 解析父节点
     let parentTaskId: number | undefined;
-    let inferredType = params.type;
     if (params.parent_task_id) {
       const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
-      if (parent) {
-        parentTaskId = parent.id;
-        // 若未指定 type，根据父节点类型自动推导
-        if (!inferredType) {
-          inferredType = this._inferChildType((parent as any).type || 'task');
-        }
-      }
+      if (parent) parentTaskId = parent.id;
     }
-    // 无父节点且未指定 type 时默认 epic
-    if (!inferredType) inferredType = params.parent_task_id ? 'task' : 'epic';
 
     const taskId = await generateTaskId(domainId);
-
-    // 自动用 type 初始化 labels（如果 labels 未提供）
-    let labels = params.labels || [];
-    if (!labels.length && inferredType) labels = [inferredType];
 
     db.insert(tasks).values({
       taskId,
@@ -96,12 +81,12 @@ export const TaskService = {
       priority: params.priority || 'P2',
       owner: params.owner,
       dueDate: params.due_date,
-      startDate: params.start_date || new Date().toISOString().split('T')[0],
+      startDate: params.start_date || null,
       source: params.source || 'planned',
       tags: JSON.stringify(params.tags || []),
-      labels: JSON.stringify(labels),
-      status: 'planned',
-      ...(inferredType ? { type: inferredType } : {}),
+      labels: JSON.stringify(params.labels || []),
+      status: params.status || 'backlog',
+      type: 'task',
     } as any).run();
 
     return this.getByTaskId(taskId)!;
@@ -130,7 +115,15 @@ export const TaskService = {
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
     if (filters.owner) conditions.push(eq(tasks.owner, filters.owner));
     if (filters.priority) conditions.push(eq(tasks.priority, filters.priority));
-    if (filters.type) conditions.push(eq((tasks as any).type, filters.type));
+    if (filters.label) {
+      const label = filters.label;
+      const allRows = db.select().from(tasks).all();
+      const matchIds = allRows.filter(t => {
+        try { return JSON.parse((t as any).labels || '[]').includes(label); } catch { return false; }
+      }).map(t => t.id);
+      if (matchIds.length) conditions.push(sql`${tasks.id} IN (${sql.raw(matchIds.join(','))})`);
+      else conditions.push(sql`0`);
+    }
 
     if (filters.domain) {
       const d = db.select().from(domains).where(eq(domains.name, filters.domain)).get();
@@ -181,7 +174,6 @@ export const TaskService = {
     if (params.blocker !== undefined) updates.blocker = params.blocker;
     if (params.tags !== undefined) updates.tags = JSON.stringify(params.tags);
 
-    if (params.type !== undefined) updates.type = params.type;
     if (params.labels !== undefined) updates.labels = JSON.stringify(params.labels);
     if (params.pos_x !== undefined) updates.posX = params.pos_x;
     if (params.pos_y !== undefined) updates.posY = params.pos_y;
@@ -211,7 +203,7 @@ export const TaskService = {
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
     if (!task) return null;
 
-    const status = progress >= 100 ? 'done' : task.status === 'planned' ? 'active' : task.status;
+    const status = progress >= 100 ? 'done' : (task.status === 'planned' || task.status === 'backlog') ? 'active' : task.status;
     const healthScore = this._calcHealthScore(task, progress);
 
     db.update(tasks).set({
@@ -260,7 +252,6 @@ export const TaskService = {
 
     db.update(tasks).set({
       blocker,
-      status: 'blocked',
       updatedAt: new Date().toISOString(),
     }).where(eq(tasks.taskId, taskId)).run();
 
@@ -298,7 +289,7 @@ export const TaskService = {
   recommendNext(owner?: string, domainName?: string) {
     const db = getDb();
     const conditions: any[] = [
-      or(eq(tasks.status, 'planned'), eq(tasks.status, 'active')),
+      or(eq(tasks.status, 'backlog'), eq(tasks.status, 'planned'), eq(tasks.status, 'active')),
     ];
 
     if (owner) {
@@ -385,16 +376,6 @@ export const TaskService = {
     return { ...node, children };
   },
 
-  _inferChildType(parentType: string): string {
-    const map: Record<string, string> = {
-      epic: 'story',
-      story: 'task',
-      task: 'subtask',
-      subtask: 'subtask',
-    };
-    return map[parentType] || 'task';
-  },
-
   _calcHealthScore(task: any, progress?: number): number {
     let score = 100;
     const now = new Date();
@@ -460,10 +441,10 @@ export const TaskService = {
       milestone = db.select().from(milestones).where(eq(milestones.id, task.milestoneId)).get();
     }
 
-    // 兼容旧数据：如果 labels 为空，用 type 初始化
     let labels: string[] = [];
     try { labels = JSON.parse(task.labels || '[]'); } catch {}
-    if (!labels.length && task.type) labels = [task.type];
+    // 兼容旧数据：如果 labels 为空且 type 不是默认值 'task'，回退到 type
+    if (!labels.length && task.type && task.type !== 'task') labels = [task.type];
 
     return {
       ...task,

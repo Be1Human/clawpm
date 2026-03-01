@@ -30,6 +30,7 @@ export const api = {
   getTask: (id: string) => request<any>(`/tasks/${id}`),
   createTask: (data: any) => request<any>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: string, data: any) => request<any>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTask: (id: string) => request<any>(`/tasks/${id}`, { method: 'DELETE' }),
   updateProgress: (id: string, progress: number, summary?: string) =>
     request<any>(`/tasks/${id}/progress`, { method: 'POST', body: JSON.stringify({ progress, summary }) }),
   completeTask: (id: string, summary?: string) =>

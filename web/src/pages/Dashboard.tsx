@@ -48,8 +48,8 @@ function HealthRing({ value }: { value: number }) {
 
 function RiskBadge({ type }: { type: string }) {
   const styles: Record<string, { bg: string; text: string; label: string }> = {
-    overdue:  { bg: '#fef2f2', text: '#dc2626', label: '已逾期' },
-    blocked:  { bg: '#fff7ed', text: '#c2410c', label: '已阻塞' },
+    overdue:   { bg: '#fef2f2', text: '#dc2626', label: '已逾期' },
+    blocked:   { bg: '#fff7ed', text: '#c2410c', label: '有阻塞' },
     'at-risk': { bg: '#fefce8', text: '#a16207', label: '风险' },
   };
   const s = styles[type] || styles['at-risk'];

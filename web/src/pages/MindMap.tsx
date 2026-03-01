@@ -33,8 +33,6 @@ const ROOT_GAP = 52;
 const LABEL_COLORS: Record<string, { border: string; bg: string; pill: string; text: string }> = {
   epic:    { border: '#8b5cf6', bg: '#faf5ff', pill: '#ede9fe', text: '#7c3aed' },
   feature: { border: '#3b82f6', bg: '#eff6ff', pill: '#dbeafe', text: '#1d4ed8' },
-  story:   { border: '#0ea5e9', bg: '#f0f9ff', pill: '#e0f2fe', text: '#0369a1' },
-  task:    { border: '#10b981', bg: '#f0fdf4', pill: '#d1fae5', text: '#047857' },
   bug:     { border: '#ef4444', bg: '#fef2f2', pill: '#fee2e2', text: '#b91c1c' },
   spike:   { border: '#f97316', bg: '#fff7ed', pill: '#ffedd5', text: '#c2410c' },
   chore:   { border: '#64748b', bg: '#f8fafc', pill: '#f1f5f9', text: '#475569' },
@@ -48,8 +46,8 @@ function getLabelColors(task: any) {
 }
 
 const STATUS_DOT: Record<string, string> = {
-  done: '#10b981', active: '#6366f1', blocked: '#ef4444',
-  review: '#f59e0b', planned: '#cbd5e1', cancelled: '#e2e8f0',
+  backlog: '#94a3b8', planned: '#3b82f6', active: '#6366f1',
+  review: '#d97706', done: '#10b981',
 };
 
 // ── 关联线样式 ────────────────────────────────────────────────────
@@ -441,7 +439,7 @@ function MindMapCanvas() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (taskId: string) => api.updateTask(taskId, { status: 'cancelled' }),
+    mutationFn: (taskId: string) => api.deleteTask(taskId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-tree'] }); setDeleteConfirm(null); },
   });
 
@@ -636,7 +634,7 @@ function MindMapCanvas() {
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
             <p className="text-sm text-gray-500 mb-4">
-              将标记 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 为已取消。
+              将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>

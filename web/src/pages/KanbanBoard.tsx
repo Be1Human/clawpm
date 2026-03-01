@@ -6,18 +6,16 @@ import { useState, useRef } from 'react';
 import CreateTaskModal from '@/components/CreateTaskModal';
 
 const COLUMNS = [
-  { key: 'planned',  label: '待开始', accent: '#94a3b8', light: '#f8fafc' },
+  { key: 'backlog',  label: '未排期', accent: '#94a3b8', light: '#f8fafc' },
+  { key: 'planned',  label: '未开始', accent: '#3b82f6', light: '#eff6ff' },
   { key: 'active',   label: '进行中', accent: '#6366f1', light: '#eef2ff' },
-  { key: 'review',   label: '评审中', accent: '#8b5cf6', light: '#f5f3ff' },
-  { key: 'blocked',  label: '已阻塞', accent: '#ef4444', light: '#fef2f2' },
+  { key: 'review',   label: '验收中', accent: '#d97706', light: '#fffbeb' },
   { key: 'done',     label: '已完成', accent: '#10b981', light: '#f0fdf4' },
 ];
 
 const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
   epic:    { bg: '#ede9fe', text: '#7c3aed' },
   feature: { bg: '#dbeafe', text: '#1d4ed8' },
-  story:   { bg: '#e0f2fe', text: '#0369a1' },
-  task:    { bg: '#d1fae5', text: '#047857' },
   bug:     { bg: '#fee2e2', text: '#b91c1c' },
   spike:   { bg: '#ffedd5', text: '#c2410c' },
   chore:   { bg: '#f1f5f9', text: '#475569' },

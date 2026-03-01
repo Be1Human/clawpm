@@ -6,17 +6,16 @@ import { Link } from 'react-router-dom';
 
 // ── 常量 ────────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, string> = {
-  done:      'bg-emerald-500',
-  active:    'bg-indigo-500',
-  blocked:   'bg-red-500',
-  review:    'bg-amber-500',
-  planned:   'bg-slate-400',
-  cancelled: 'bg-slate-200',
+  backlog:  'bg-slate-300',
+  planned:  'bg-blue-400',
+  active:   'bg-indigo-500',
+  review:   'bg-amber-500',
+  done:     'bg-emerald-500',
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  done: '已完成', active: '进行中', blocked: '已阻塞',
-  review: '审查中', planned: '计划中', cancelled: '已取消',
+  backlog: '未排期', planned: '未开始', active: '进行中',
+  review: '验收中', done: '已完成',
 };
 
 // ── 工具函数 ─────────────────────────────────────────────────────────
@@ -163,7 +162,7 @@ export default function GanttChart() {
           </select>
           {/* 图例 */}
           <div className="flex items-center gap-2 ml-4">
-            {Object.entries(STATUS_LABEL).slice(0, 4).map(([s, l]) => (
+            {Object.entries(STATUS_LABEL).map(([s, l]) => (
               <span key={s} className="flex items-center gap-1 text-xs text-slate-500">
                 <span className={cn('w-3 h-3 rounded-sm inline-block', STATUS_COLOR[s])} />{l}
               </span>
@@ -290,7 +289,7 @@ export default function GanttChart() {
                           to={`/tasks/${t.taskId}`}
                           className={cn(
                             'absolute top-1.5 h-6 rounded flex items-center px-2 text-xs font-medium text-white/90 hover:brightness-110 transition-all truncate z-20',
-                            STATUS_COLOR[t.status] || STATUS_COLOR.planned
+                            STATUS_COLOR[t.status] || STATUS_COLOR.backlog
                           )}
                           style={{ left, width: Math.min(width, totalWidth - left) }}
                           title={`${t.taskId} — ${t.title} (${t.progress}%)`}

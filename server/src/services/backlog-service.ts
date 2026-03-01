@@ -107,13 +107,13 @@ export const BacklogService = {
     const task = await TaskService.create({
       title: item.title,
       description: item.description || undefined,
-      type: 'task',
       domain: domain?.name,
       milestone: scheduleParams.milestone,
       owner: scheduleParams.owner,
       due_date: scheduleParams.due_date,
       priority: scheduleParams.priority || item.priority,
       source: 'backlog',
+      status: 'planned',
       tags: JSON.parse(item.tags || '[]'),
     });
 

@@ -14,16 +14,17 @@ export function createMcpServer() {
   });
 
   // ── Task Tools ─────────────────────────────────────────────────────
-  mcp.tool('create_task', '创建新任务', {
-    title: z.string().describe('任务标题'),
+  mcp.tool('create_task', '创建需求节点（只需 title，其余可选）', {
+    title: z.string().describe('节点标题（唯一必填）'),
     description: z.string().optional(),
-    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('节点类型：epic/story/task/subtask，缺省由父节点推导'),
-    parent_task_id: z.string().optional().describe('父任务 ID，如 U-001；设置后 type 可自动推导'),
+    parent_task_id: z.string().optional().describe('父节点 ID，如 U-001'),
+    labels: z.array(z.string()).optional().describe('标签数组，如 ["epic", "用户系统"]'),
     domain: z.string().optional().describe('业务板块名称'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     milestone: z.string().optional().describe('里程碑名称'),
     owner: z.string().optional().describe('负责人'),
     due_date: z.string().optional().describe('截止日期 YYYY-MM-DD'),
+    status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional().describe('状态，默认 backlog'),
     tags: z.array(z.string()).optional(),
   }, async (p) => {
     const task = await TaskService.create(p);
@@ -40,19 +41,19 @@ export function createMcpServer() {
 
   mcp.tool('get_my_tasks', '获取我的任务列表', {
     owner: z.string().describe('负责人标识'),
-    status: z.enum(['planned', 'active', 'review', 'blocked']).optional(),
+    status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
   }, async (p) => {
     const tasks = TaskService.listByOwner(p.owner, p.status);
     return { content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }] };
   });
 
-  mcp.tool('list_tasks', '查询任务列表', {
-    status: z.string().optional(),
+  mcp.tool('list_tasks', '查询节点列表', {
+    status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
     domain: z.string().optional(),
     milestone: z.string().optional(),
     owner: z.string().optional(),
     priority: z.string().optional(),
-    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('按节点类型筛选'),
+    label: z.string().optional().describe('按标签筛选，如 epic/bug/feature'),
   }, async (p) => {
     const tasks = TaskService.list(p);
     return { content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }] };
@@ -96,13 +97,13 @@ export function createMcpServer() {
     return { content: [{ type: 'text', text: '📝 备注已添加' }] };
   });
 
-  mcp.tool('update_task', '更新任务信息', {
+  mcp.tool('update_task', '更新节点信息', {
     task_id: z.string(),
     title: z.string().optional(),
     description: z.string().optional(),
-    type: z.enum(['epic', 'story', 'task', 'subtask']).optional().describe('修改节点类型'),
-    parent_task_id: z.string().optional().describe('修改父任务 ID，传空字符串可取消父子关系'),
-    status: z.string().optional(),
+    labels: z.array(z.string()).optional().describe('标签数组'),
+    parent_task_id: z.string().optional().describe('修改父节点 ID，传空字符串可取消父子关系'),
+    status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
     priority: z.string().optional(),
     owner: z.string().optional(),
     due_date: z.string().optional(),

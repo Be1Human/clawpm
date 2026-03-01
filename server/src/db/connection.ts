@@ -30,6 +30,19 @@ function runMigrations(sqlite: Database.Database) {
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_x REAL`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_y REAL`); } catch {}
 
+  // v2.0 迁移：blocked → active（保留 blocker 字段），cancelled → done
+  try { sqlite.exec(`UPDATE tasks SET status = 'active' WHERE status = 'blocked'`); } catch {}
+  try { sqlite.exec(`UPDATE tasks SET status = 'done' WHERE status = 'cancelled'`); } catch {}
+  // 无 owner/due_date 的 planned → backlog
+  try { sqlite.exec(`UPDATE tasks SET status = 'backlog' WHERE status = 'planned' AND owner IS NULL AND due_date IS NULL`); } catch {}
+  // type → labels 迁移
+  try {
+    const rows = sqlite.prepare("SELECT task_id, type FROM tasks WHERE labels = '[]' AND type != 'task'").all() as any[];
+    for (const row of rows) {
+      sqlite.prepare("UPDATE tasks SET labels = ? WHERE task_id = ?").run(JSON.stringify([row.type]), row.task_id);
+    }
+  } catch {}
+
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS domains (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +70,7 @@ function runMigrations(sqlite: Database.Database) {
       domain_id INTEGER REFERENCES domains(id),
       milestone_id INTEGER REFERENCES milestones(id),
       parent_task_id INTEGER,
-      status TEXT NOT NULL DEFAULT 'planned',
+      status TEXT NOT NULL DEFAULT 'backlog',
       progress INTEGER NOT NULL DEFAULT 0,
       priority TEXT NOT NULL DEFAULT 'P2',
       owner TEXT,

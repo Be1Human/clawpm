@@ -13,14 +13,14 @@ export const RiskService = {
       .all();
 
     const overdue = allActive.filter(t =>
-      t.dueDate && t.dueDate < today && t.status !== 'done' && t.status !== 'cancelled'
+      t.dueDate && t.dueDate < today && t.status !== 'done'
     );
 
     const atRisk = allActive.filter(t =>
       t.dueDate && t.dueDate >= today && t.dueDate <= in3Days && t.progress < 80 && t.status !== 'done'
     );
 
-    const blocked = allActive.filter(t => t.blocker && t.status === 'blocked');
+    const blocked = allActive.filter(t => !!t.blocker);
 
     const stalled = allActive.filter(t => {
       if (t.status !== 'active') return false;
@@ -69,8 +69,9 @@ export const RiskService = {
     const total = all.length;
     const done = all.filter(t => t.status === 'done').length;
     const active = all.filter(t => t.status === 'active').length;
-    const blocked = all.filter(t => t.status === 'blocked').length;
+    const blocked = all.filter(t => !!t.blocker && t.status !== 'done').length;
     const planned = all.filter(t => t.status === 'planned').length;
+    const backlog = all.filter(t => t.status === 'backlog').length;
 
     const avgProgress = total > 0
       ? Math.round(all.reduce((a, t) => a + t.progress, 0) / total)
@@ -91,7 +92,7 @@ export const RiskService = {
     }
 
     return {
-      total, done, active, blocked, planned,
+      total, done, active, blocked, planned, backlog,
       completionRate: total > 0 ? Math.round((done / total) * 100) : 0,
       avgProgress,
       avgHealth,

@@ -18,7 +18,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/tasks', async (req) => {
     const q = req.query as any;
-    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, type: q.type });
+    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, label: q.label });
   });
 
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
@@ -57,6 +57,15 @@ export async function registerRoutes(app: FastifyInstance) {
     const task = TaskService.update(taskId, req.body as any);
     if (!task) return reply.code(404).send({ error: 'Not found' });
     return task;
+  });
+
+  app.delete('/api/v1/tasks/:taskId', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Not found' });
+    db.delete(tasks).where(eq(tasks.taskId, taskId)).run();
+    return { ok: true };
   });
 
   app.post('/api/v1/tasks/:taskId/progress', async (req, reply) => {
