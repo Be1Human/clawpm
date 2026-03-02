@@ -24,25 +24,6 @@ export function getDb() {
 }
 
 function runMigrations(sqlite: Database.Database) {
-  // 增量迁移：为已有数据库添加新字段
-  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`); } catch {}
-  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`); } catch {}
-  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_x REAL`); } catch {}
-  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_y REAL`); } catch {}
-
-  // v2.0 迁移：blocked → active（保留 blocker 字段），cancelled → done
-  try { sqlite.exec(`UPDATE tasks SET status = 'active' WHERE status = 'blocked'`); } catch {}
-  try { sqlite.exec(`UPDATE tasks SET status = 'done' WHERE status = 'cancelled'`); } catch {}
-  // 无 owner/due_date 的 planned → backlog
-  try { sqlite.exec(`UPDATE tasks SET status = 'backlog' WHERE status = 'planned' AND owner IS NULL AND due_date IS NULL`); } catch {}
-  // type → labels 迁移
-  try {
-    const rows = sqlite.prepare("SELECT task_id, type FROM tasks WHERE labels = '[]' AND type != 'task'").all() as any[];
-    for (const row of rows) {
-      sqlite.prepare("UPDATE tasks SET labels = ? WHERE task_id = ?").run(JSON.stringify([row.type]), row.task_id);
-    }
-  } catch {}
-
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS domains (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +51,7 @@ function runMigrations(sqlite: Database.Database) {
       domain_id INTEGER REFERENCES domains(id),
       milestone_id INTEGER REFERENCES milestones(id),
       parent_task_id INTEGER,
+      type TEXT NOT NULL DEFAULT 'task',
       status TEXT NOT NULL DEFAULT 'backlog',
       progress INTEGER NOT NULL DEFAULT 0,
       priority TEXT NOT NULL DEFAULT 'P2',
@@ -80,6 +62,9 @@ function runMigrations(sqlite: Database.Database) {
       blocker TEXT,
       health_score INTEGER NOT NULL DEFAULT 100,
       tags TEXT NOT NULL DEFAULT '[]',
+      labels TEXT NOT NULL DEFAULT '[]',
+      pos_x REAL,
+      pos_y REAL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -156,6 +141,24 @@ function runMigrations(sqlite: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS custom_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      field_type TEXT NOT NULL DEFAULT 'text',
+      options TEXT NOT NULL DEFAULT '[]',
+      color TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS task_field_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES custom_fields(id) ON DELETE CASCADE,
+      value TEXT NOT NULL DEFAULT '',
+      UNIQUE(task_id, field_id)
+    );
+
     CREATE TABLE IF NOT EXISTS req_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -164,4 +167,21 @@ function runMigrations(sqlite: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // 增量迁移：为旧数据库添加新字段（新建的表已包含这些列，ALTER 会被 catch 跳过）
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_x REAL`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_y REAL`); } catch {}
+
+  // v2.0 数据迁移
+  try { sqlite.exec(`UPDATE tasks SET status = 'active' WHERE status = 'blocked'`); } catch {}
+  try { sqlite.exec(`UPDATE tasks SET status = 'done' WHERE status = 'cancelled'`); } catch {}
+  try { sqlite.exec(`UPDATE tasks SET status = 'backlog' WHERE status = 'planned' AND owner IS NULL AND due_date IS NULL`); } catch {}
+  try {
+    const rows = sqlite.prepare("SELECT task_id, type FROM tasks WHERE labels = '[]' AND type != 'task'").all() as any[];
+    for (const row of rows) {
+      sqlite.prepare("UPDATE tasks SET labels = ? WHERE task_id = ?").run(JSON.stringify([row.type]), row.task_id);
+    }
+  } catch {}
 }

@@ -115,6 +115,23 @@ export const objectiveTaskLinks = sqliteTable('objective_task_links', {
   taskId: integer('task_id').notNull().references(() => tasks.id),
 });
 
+export const customFields = sqliteTable('custom_fields', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  fieldType: text('field_type').notNull().default('text'),
+  options: text('options').notNull().default('[]'),
+  color: text('color'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const taskFieldValues = sqliteTable('task_field_values', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  fieldId: integer('field_id').notNull().references(() => customFields.id, { onDelete: 'cascade' }),
+  value: text('value').notNull().default(''),
+});
+
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),

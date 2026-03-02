@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, like, or, isNull, lt, lte, sql } from 'drizzle-orm';
 import { getDb } from '../db/connection.js';
-import { tasks, taskNotes, progressHistory, domains, milestones } from '../db/schema.js';
+import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues } from '../db/schema.js';
 import { generateTaskId } from './id-generator.js';
 
 export interface CreateTaskParams {
@@ -66,7 +66,10 @@ export const TaskService = {
     let parentTaskId: number | undefined;
     if (params.parent_task_id) {
       const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
-      if (parent) parentTaskId = parent.id;
+      if (parent) {
+        parentTaskId = parent.id;
+        if (!domainId && parent.domainId) domainId = parent.domainId;
+      }
     }
 
     const taskId = await generateTaskId(domainId);
@@ -446,12 +449,26 @@ export const TaskService = {
     // 兼容旧数据：如果 labels 为空且 type 不是默认值 'task'，回退到 type
     if (!labels.length && task.type && task.type !== 'task') labels = [task.type];
 
+    const fieldValues = db.select().from(taskFieldValues).where(eq(taskFieldValues.taskId, task.id)).all();
+    const allFields = fieldValues.length > 0
+      ? db.select().from(customFields).all()
+      : [];
+
+    const customFieldsMap: Record<string, string> = {};
+    const customFieldValuesList = fieldValues.map(v => {
+      const field = allFields.find(f => f.id === v.fieldId);
+      if (field) customFieldsMap[field.name] = v.value;
+      return { fieldId: v.fieldId, fieldName: field?.name, fieldType: field?.fieldType, value: v.value };
+    });
+
     return {
       ...task,
       tags: JSON.parse(task.tags || '[]'),
       labels,
       domain: domain ? { id: domain.id, name: domain.name, color: domain.color } : null,
       milestone: milestone ? { id: milestone.id, name: milestone.name } : null,
+      customFields: customFieldsMap,
+      customFieldValues: customFieldValuesList,
     };
   },
 };

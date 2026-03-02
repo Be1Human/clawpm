@@ -11,6 +11,8 @@ import Requirements from './pages/Requirements';
 import MindMap from './pages/MindMap';
 import GanttChart from './pages/GanttChart';
 import Members from './pages/Members';
+import Domains from './pages/Domains';
+import CustomFields from './pages/CustomFields';
 
 export default function App() {
   return (
@@ -28,6 +30,8 @@ export default function App() {
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/gantt" element={<GanttChart />} />
           <Route path="/members" element={<Members />} />
+          <Route path="/domains" element={<Domains />} />
+          <Route path="/custom-fields" element={<CustomFields />} />
         </Routes>
       </Layout>
     </BrowserRouter>

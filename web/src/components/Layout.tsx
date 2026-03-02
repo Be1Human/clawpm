@@ -33,9 +33,11 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: '团队',
+    label: '设置',
     items: [
-      { to: '/members',      label: '成员',     icon: MembersIcon },
+      { to: '/domains',        label: '业务板块', icon: DomainIcon },
+      { to: '/custom-fields', label: '自定义字段', icon: FieldsIcon },
+      { to: '/members',       label: '成员',     icon: MembersIcon },
     ],
   },
 ];
@@ -127,6 +129,27 @@ function GoalIcon({ className }: { className?: string }) {
       <circle cx="8" cy="8" r="6.5" />
       <circle cx="8" cy="8" r="3.5" />
       <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function DomainIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1.5" y="2" width="13" height="12" rx="2" />
+      <line x1="6" y1="2" x2="6" y2="14" />
+      <line x1="10.5" y1="2" x2="10.5" y2="14" />
+    </svg>
+  );
+}
+function FieldsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="2" y="2" width="12" height="3" rx="1" />
+      <rect x="2" y="6.5" width="12" height="3" rx="1" />
+      <rect x="2" y="11" width="12" height="3" rx="1" />
+      <line x1="6" y1="2" x2="6" y2="5" />
+      <line x1="6" y1="6.5" x2="6" y2="9.5" />
+      <line x1="6" y1="11" x2="6" y2="14" />
     </svg>
   );
 }

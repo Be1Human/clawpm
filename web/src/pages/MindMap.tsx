@@ -50,6 +50,40 @@ const STATUS_DOT: Record<string, string> = {
   review: '#d97706', done: '#10b981',
 };
 
+// ── 进度计算（简单：直接子节点 done 数 / 总数） ──────────────────
+function calcProgress(node: any): number {
+  const children = node.children ?? [];
+  if (!children.length) return node.status === 'done' ? 100 : 0;
+  const doneCount = children.filter((c: any) => c.status === 'done').length;
+  return Math.round((doneCount / children.length) * 100);
+}
+
+// ── SVG 进度圆环 ─────────────────────────────────────────────────
+function ProgressRing({ progress, size = 20 }: { progress: number; size?: number }) {
+  const r = (size - 3) / 2;
+  const c = Math.PI * 2 * r;
+  const filled = (progress / 100) * c;
+  return (
+    <svg width={size} height={size} className="flex-shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={2.5} />
+      {progress > 0 && (
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none"
+          stroke={progress === 100 ? '#10b981' : '#6366f1'}
+          strokeWidth={2.5}
+          strokeDasharray={`${filled} ${c - filled}`}
+          strokeDashoffset={c / 4}
+          strokeLinecap="round"
+        />
+      )}
+      <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central"
+        fontSize={size <= 20 ? 6 : 7} fontWeight="700" fill="#6b7280">
+        {progress}
+      </text>
+    </svg>
+  );
+}
+
 // ── 关联线样式 ────────────────────────────────────────────────────
 const LINK_STYLE: Record<string, { stroke: string; dash: string; label: string; arrow: boolean }> = {
   blocks:   { stroke: '#ef4444', dash: '6 3', label: '阻塞', arrow: true },
@@ -110,6 +144,51 @@ function getDescendants(nodeId: string, edges: Edge[]): Set<string> {
   return result;
 }
 
+function nodeMatchesFilters(node: any, fieldFilters: Record<number, string>, fieldDefs: any[]): boolean {
+  if (!Object.keys(fieldFilters).length) return true;
+  const cf: Record<string, string> = node.customFields || {};
+  for (const [fieldIdStr, filterVal] of Object.entries(fieldFilters)) {
+    if (!filterVal) continue;
+    const fieldId = Number(fieldIdStr);
+    const fd = fieldDefs.find((f: any) => f.id === fieldId);
+    if (!fd) continue;
+    const fieldName = fd.name;
+    const nodeVal = cf[fieldName] || '';
+    const fieldType = fd.fieldType || fd.field_type;
+
+    if (fieldType === 'select') {
+      if (nodeVal !== filterVal) return false;
+    } else if (fieldType === 'multi_select') {
+      let selected: string[] = [];
+      try { selected = JSON.parse(nodeVal || '[]'); } catch { if (nodeVal) selected = [nodeVal]; }
+      if (!selected.includes(filterVal)) return false;
+    } else if (fieldType === 'text') {
+      if (!nodeVal.toLowerCase().includes(filterVal.toLowerCase())) return false;
+    } else {
+      if (nodeVal !== filterVal) return false;
+    }
+  }
+  return true;
+}
+
+function hasVisibleDescendant(node: any, fieldFilters: Record<number, string>, fieldDefs: any[]): boolean {
+  if (nodeMatchesFilters(node, fieldFilters, fieldDefs)) return true;
+  for (const child of node.children ?? []) {
+    if (hasVisibleDescendant(child, fieldFilters, fieldDefs)) return true;
+  }
+  return false;
+}
+
+function precomputeProgress(node: any): Map<string, number> {
+  const map = new Map<string, number>();
+  function walk(n: any) {
+    map.set(n.taskId, calcProgress(n));
+    for (const c of n.children ?? []) walk(c);
+  }
+  walk(node);
+  return map;
+}
+
 function buildFlow(
   treeData: any[],
   positions: Map<string, { x: number; y: number }>,
@@ -117,21 +196,36 @@ function buildFlow(
   callbacks: any,
   reqLinks: any[],
   linkVisibility: Record<string, boolean>,
+  highlightDomains: string[],
+  fieldFilters: Record<number, string> = {},
+  fieldDefs: any[] = [],
 ) {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
+  const hasFilters = Object.values(fieldFilters).some(v => !!v);
+
+  const progressMap = new Map<string, number>();
+  for (const root of treeData) {
+    const pm = precomputeProgress(root);
+    pm.forEach((v, k) => progressMap.set(k, v));
+  }
+
   function walk(node: any, isRoot: boolean) {
+    if (hasFilters && !hasVisibleDescendant(node, fieldFilters, fieldDefs)) return;
+
+    const progress = progressMap.get(node.taskId) ?? calcProgress(node);
     nodes.push({
       id: node.taskId,
       type: 'taskNode',
       position: positions.get(node.taskId) ?? { x: 0, y: 0 },
       draggable: isRoot,
       selectable: true,
-      data: { task: node, isRoot, isCollapsed: collapsed.has(node.taskId), ...callbacks },
+      data: { task: node, isRoot, isCollapsed: collapsed.has(node.taskId), progress, highlightDomains, ...callbacks },
     });
     if (!collapsed.has(node.taskId)) {
       for (const child of node.children ?? []) {
+        if (hasFilters && !hasVisibleDescendant(child, fieldFilters, fieldDefs)) continue;
         edges.push({
           id: `tree:${node.taskId}→${child.taskId}`,
           source: node.taskId,
@@ -270,7 +364,12 @@ function TaskNode({ data, selected }: NodeProps) {
   const { colors, labels, firstLabel } = getLabelColors(task);
   const isRoot = (data as any).isRoot;
   const isCollapsed = (data as any).isCollapsed;
+  const progress: number = (data as any).progress;
   const hasChildren = (task.children ?? []).length > 0;
+  const domain = task.domain as { id: number; name: string; color: string } | null;
+  const highlightDomains: string[] = (data as any).highlightDomains ?? [];
+  const isHighlighted = highlightDomains.length > 0 && !!domain && highlightDomains.includes(domain.name);
+  const hlColor = isHighlighted ? domain!.color : null;
 
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState(task.title);
@@ -289,23 +388,40 @@ function TaskNode({ data, selected }: NodeProps) {
     (data as any).onContextMenu(e.clientX, e.clientY, task);
   }
 
+  const boxShadow = (() => {
+    const base = selected ? `0 0 0 3px ${colors.border}28, 0 4px 12px rgba(0,0,0,0.1)` : '0 1px 4px rgba(0,0,0,0.06)';
+    if (isHighlighted) return `${base}, 0 0 14px 3px ${hlColor}35`;
+    return base;
+  })();
+
+  const borderColor = (() => {
+    if (selected) return colors.border;
+    if (isHighlighted) return `${hlColor}90`;
+    return '#e2e8f0';
+  })();
+
+  const bgColor = (() => {
+    if (isHighlighted) return `${hlColor}08`;
+    if (selected) return colors.bg;
+    return '#fff';
+  })();
+
   return (
     <div
-      className="relative bg-white rounded-xl select-none transition-shadow"
+      className="relative rounded-xl select-none"
       style={{
         width: NODE_W,
         minHeight: NODE_H,
-        border: `2px solid ${selected ? colors.border : '#e2e8f0'}`,
-        boxShadow: selected
-          ? `0 0 0 3px ${colors.border}28, 0 4px 12px rgba(0,0,0,0.1)`
-          : '0 1px 4px rgba(0,0,0,0.06)',
-        backgroundColor: selected ? colors.bg : '#fff',
+        border: `2px solid ${borderColor}`,
+        boxShadow,
+        backgroundColor: bgColor,
+        transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
       }}
       onDoubleClick={() => { setEditVal(task.title); setEditing(true); }}
       onContextMenu={handleContextMenu}
     >
       {/* 左侧色条 */}
-      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: colors.border }} />
+      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: isHighlighted ? hlColor! : colors.border }} />
 
       {/* 根节点拖拽把手 */}
       {isRoot && (
@@ -347,10 +463,15 @@ function TaskNode({ data, selected }: NodeProps) {
         </div>
       </div>
 
-      {/* 折叠按钮 */}
+      {/* 进度圆环（右下角） */}
+      <div className="absolute right-1.5 bottom-1.5">
+        <ProgressRing progress={progress} size={20} />
+      </div>
+
+      {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
       {hasChildren && (
         <button
-          className="absolute right-2 top-2 w-5 h-5 rounded-full border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-[10px] text-gray-400 hover:text-indigo-600 transition-colors"
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
           title={isCollapsed ? '展开' : '折叠'}
@@ -359,15 +480,31 @@ function TaskNode({ data, selected }: NodeProps) {
         </button>
       )}
 
-      {/* 添加子节点按钮 */}
-      <button
-        className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-sm shadow-sm z-10 transition-colors"
-        onMouseDown={e => e.stopPropagation()}
-        onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
-        title="添加子节点 (Tab)"
-      >
-        +
-      </button>
+      {/* 选中时显示的操作按钮 */}
+      {selected && (
+        <>
+          {/* 右侧添加子节点 */}
+          <button
+            className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
+            title="添加子节点 (Tab)"
+          >
+            +
+          </button>
+          {/* 下方添加同级 */}
+          {!isRoot && (
+            <button
+              className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
+              title="添加同级 (Enter)"
+            >
+              +
+            </button>
+          )}
+        </>
+      )}
 
       {/* 子节点计数气泡（折叠时显示） */}
       {isCollapsed && hasChildren && (
@@ -388,13 +525,39 @@ function TaskNode({ data, selected }: NodeProps) {
 const NODE_TYPES = { taskNode: TaskNode };
 const EDGE_TYPES = { treeEdge: TreeEdge, assocEdge: AssocEdge };
 
+// ── localStorage 持久化 ──────────────────────────────────────────
+const STORAGE_KEY = 'clawpm-mindmap';
+
+function loadState<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_KEY}-${key}`);
+    if (raw === null) return fallback;
+    return JSON.parse(raw);
+  } catch { return fallback; }
+}
+
+function saveState(key: string, value: any) {
+  try { localStorage.setItem(`${STORAGE_KEY}-${key}`, JSON.stringify(value)); } catch {}
+}
+
 // ── 主画布 ─────────────────────────────────────────────────────────
 function MindMapCanvas() {
   const qc = useQueryClient();
+  const [activeDomain, setActiveDomain] = useState(() => loadState('activeDomain', ''));
+
+  const { data: domainList = [] } = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.getDomains(),
+  });
+
+  const { data: customFieldDefs = [] } = useQuery({
+    queryKey: ['custom-fields'],
+    queryFn: () => api.getCustomFields(),
+  });
 
   const { data: treeData = [] } = useQuery({
-    queryKey: ['task-tree'],
-    queryFn: () => api.getTaskTree(),
+    queryKey: ['task-tree', activeDomain],
+    queryFn: () => api.getTaskTree(activeDomain ? { domain: activeDomain } : undefined),
   });
 
   const { data: reqLinks = [] } = useQuery({
@@ -404,15 +567,25 @@ function MindMapCanvas() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(() => loadState('selectedId', null));
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadState<string[]>('collapsed', [])));
   const [createModal, setCreateModal] = useState<{ parentId?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: any } | null>(null);
   const [addLinkModal, setAddLinkModal] = useState<{ sourceId: string } | null>(null);
-  const [linkVisibility, setLinkVisibility] = useState<Record<string, boolean>>({
-    blocks: true, precedes: true, relates: false,
-  });
+  const [linkVisibility, setLinkVisibility] = useState<Record<string, boolean>>(() =>
+    loadState('linkVisibility', { blocks: true, precedes: true, relates: false })
+  );
+  const [highlightDomains, setHighlightDomains] = useState<Set<string>>(() => new Set(loadState<string[]>('highlightDomains', [])));
+  const [fieldFilters, setFieldFilters] = useState<Record<number, string>>(() => loadState('fieldFilters', {}));
+
+  // 持久化状态到 localStorage
+  useEffect(() => { saveState('activeDomain', activeDomain); }, [activeDomain]);
+  useEffect(() => { saveState('collapsed', [...collapsed]); }, [collapsed]);
+  useEffect(() => { saveState('linkVisibility', linkVisibility); }, [linkVisibility]);
+  useEffect(() => { saveState('highlightDomains', [...highlightDomains]); }, [highlightDomains]);
+  useEffect(() => { saveState('fieldFilters', fieldFilters); }, [fieldFilters]);
+  useEffect(() => { saveState('selectedId', selectedId); }, [selectedId]);
 
   const dragSnap = useRef(new Map<string, { x: number; y: number }>());
   const edgesRef = useRef<Edge[]>([]);
@@ -422,6 +595,11 @@ function MindMapCanvas() {
 
   const callbacks = useMemo(() => ({
     onAddChild: (parentId: string) => setCreateModal({ parentId }),
+    onAddSibling: (task: any) => {
+      const curEdges = edgesRef.current;
+      const parentEdge = curEdges.find(ed => ed.target === task.taskId && ed.type === 'treeEdge');
+      setCreateModal(parentEdge ? { parentId: parentEdge.source } : {});
+    },
     onRename: (taskId: string, title: string) => renameMut.mutate({ taskId, title }),
     onDelete: (taskId: string, title: string) => setDeleteConfirm({ taskId, title }),
     onToggleCollapse: (taskId: string) => setCollapsed(prev => {
@@ -457,14 +635,23 @@ function MindMapCanvas() {
 
   // 重建图
   useEffect(() => {
-    if (!(treeData as any[]).length) return;
+    if (!(treeData as any[]).length) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
     const positions = computeLayout(treeData as any[], collapsed);
-    const { nodes: ns, edges: es } = buildFlow(treeData as any[], positions, collapsed, callbacks, reqLinks as any[], linkVisibility);
+    const hlArr = [...highlightDomains];
+    const { nodes: ns, edges: es } = buildFlow(
+      treeData as any[], positions, collapsed, callbacks,
+      reqLinks as any[], linkVisibility, hlArr,
+      fieldFilters, customFieldDefs as any[],
+    );
     nodeDataMap.current.clear();
     ns.forEach(n => nodeDataMap.current.set(n.id, (n.data as any).task));
     setNodes(ns);
     setEdges(es);
-  }, [treeData, collapsed, reqLinks, linkVisibility]);
+  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs]);
 
   // 拖拽：父节点移，子树跟随
   const onNodeDragStart = useCallback((_: React.MouseEvent, node: Node) => {
@@ -528,8 +715,10 @@ function MindMapCanvas() {
         onNodeDrag={onNodeDrag}
         onSelectionChange={({ nodes: sel }) => setSelectedId(sel.length === 1 ? sel[0].id : null)}
         deleteKeyCode={null}
-        fitView
+        defaultViewport={loadState('viewport', undefined)}
+        fitView={!loadState('viewport', null)}
         fitViewOptions={{ padding: 0.2 }}
+        onMoveEnd={(_e, vp) => saveState('viewport', vp)}
         style={{ backgroundColor: '#f0f2f5' }}
         minZoom={0.1}
         maxZoom={2.5}
@@ -547,35 +736,184 @@ function MindMapCanvas() {
           className="!bg-white !border-gray-200 !rounded-xl !shadow-sm"
         />
 
-        {/* 关联线可见性控制 */}
+        {/* 右侧控制面板 */}
         <Panel position="top-right">
-          <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
-            <p className="text-xs font-semibold text-gray-500 mb-2">显示关联线</p>
-            {Object.entries(LINK_STYLE).map(([key, s]) => (
-              <label key={key} className="flex items-center gap-2 cursor-pointer mb-1.5">
-                <input
-                  type="checkbox"
-                  checked={linkVisibility[key] ?? false}
-                  onChange={ev => setLinkVisibility(prev => ({ ...prev, [key]: ev.target.checked }))}
-                  className="rounded"
-                />
-                <span className="text-xs font-medium" style={{ color: s.stroke }}>{s.label}</span>
-                <span className="text-[10px] text-gray-400">
-                  {key === 'blocks' ? '（阻塞依赖）' : key === 'precedes' ? '（顺序依赖）' : '（弱关联）'}
-                </span>
-              </label>
-            ))}
+          <div className="flex flex-col gap-2">
+            {/* 关联线可见性 */}
+            <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
+              <p className="text-xs font-semibold text-gray-500 mb-2">显示关联线</p>
+              {Object.entries(LINK_STYLE).map(([key, s]) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer mb-1.5">
+                  <input
+                    type="checkbox"
+                    checked={linkVisibility[key] ?? false}
+                    onChange={ev => setLinkVisibility(prev => ({ ...prev, [key]: ev.target.checked }))}
+                    className="rounded"
+                  />
+                  <span className="text-xs font-medium" style={{ color: s.stroke }}>{s.label}</span>
+                  <span className="text-[10px] text-gray-400">
+                    {key === 'blocks' ? '（阻塞依赖）' : key === 'precedes' ? '（顺序依赖）' : '（弱关联）'}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {/* 板块高亮 */}
+            {activeDomain === '' && (domainList as any[]).length > 0 && (
+              <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
+                <p className="text-xs font-semibold text-gray-500 mb-2">板块高亮</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(domainList as any[]).map((d: any) => {
+                    const active = highlightDomains.has(d.name);
+                    return (
+                      <button
+                        key={d.id}
+                        onClick={() => setHighlightDomains(prev => {
+                          const next = new Set(prev);
+                          next.has(d.name) ? next.delete(d.name) : next.add(d.name);
+                          return next;
+                        })}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={active
+                          ? { backgroundColor: `${d.color}18`, color: d.color, boxShadow: `0 0 8px 2px ${d.color}30, inset 0 0 0 1.5px ${d.color}50` }
+                          : { color: '#6b7280' }
+                        }
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-shadow"
+                          style={{
+                            backgroundColor: d.color,
+                            boxShadow: active ? `0 0 6px 2px ${d.color}50` : 'none',
+                          }}
+                        />
+                        {d.taskPrefix || d.task_prefix}
+                      </button>
+                    );
+                  })}
+                  {highlightDomains.size > 0 && (
+                    <button
+                      onClick={() => setHighlightDomains(new Set())}
+                      className="px-2 py-1.5 rounded-lg text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 自定义字段筛选 */}
+            {(customFieldDefs as any[]).length > 0 && (
+              <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-500">字段筛选</p>
+                  {Object.values(fieldFilters).some(v => !!v) && (
+                    <button
+                      onClick={() => setFieldFilters({})}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      清除全部
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2 max-h-[280px] overflow-y-auto">
+                  {(customFieldDefs as any[]).map((fd: any) => {
+                    const fieldType = fd.fieldType || fd.field_type;
+                    const options: string[] = typeof fd.options === 'string' ? JSON.parse(fd.options || '[]') : (fd.options || []);
+                    const currentFilter = fieldFilters[fd.id] || '';
+
+                    return (
+                      <div key={fd.id}>
+                        <label className="text-[11px] text-gray-500 mb-0.5 block">{fd.name}</label>
+                        {fieldType === 'select' ? (
+                          <select
+                            value={currentFilter}
+                            onChange={e => setFieldFilters(prev => ({ ...prev, [fd.id]: e.target.value }))}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          >
+                            <option value="">全部</option>
+                            {options.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : fieldType === 'multi_select' ? (
+                          <div className="flex flex-wrap gap-1">
+                            {options.map(o => {
+                              const isOn = currentFilter === o;
+                              return (
+                                <button
+                                  key={o}
+                                  onClick={() => setFieldFilters(prev => ({ ...prev, [fd.id]: isOn ? '' : o }))}
+                                  className={cn('text-[10px] px-1.5 py-0.5 rounded-full border transition-all',
+                                    isOn ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-gray-50 text-gray-400 border-gray-100 hover:text-gray-600')}
+                                >
+                                  {o}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : fieldType === 'date' ? (
+                          <input
+                            type="date"
+                            value={currentFilter}
+                            onChange={e => setFieldFilters(prev => ({ ...prev, [fd.id]: e.target.value }))}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          />
+                        ) : fieldType === 'number' ? (
+                          <input
+                            type="number"
+                            value={currentFilter}
+                            onChange={e => setFieldFilters(prev => ({ ...prev, [fd.id]: e.target.value }))}
+                            placeholder="输入数值"
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={currentFilter}
+                            onChange={e => setFieldFilters(prev => ({ ...prev, [fd.id]: e.target.value }))}
+                            placeholder="搜索..."
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </Panel>
 
-        {/* 新建节点按钮 */}
+        {/* 域页签 + 新建按钮 */}
         <Panel position="top-left">
-          <button
-            onClick={() => setCreateModal({})}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-sm transition-colors"
-          >
-            + 新建根节点
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm p-1 gap-0.5">
+              <button
+                onClick={() => setActiveDomain('')}
+                className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  activeDomain === '' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100')}
+              >
+                全部
+              </button>
+              {(domainList as any[]).map((d: any) => (
+                <button
+                  key={d.id}
+                  onClick={() => setActiveDomain(d.name)}
+                  className={cn('flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                    activeDomain === d.name ? 'text-white' : 'text-gray-600 hover:bg-gray-100')}
+                  style={activeDomain === d.name ? { backgroundColor: d.color } : undefined}
+                >
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activeDomain === d.name ? '#fff' : d.color }} />
+                  {d.taskPrefix || d.task_prefix}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCreateModal({})}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-2 rounded-xl shadow-sm transition-colors"
+            >
+              + 新建根节点
+            </button>
+          </div>
         </Panel>
 
         {/* 快捷键提示 */}

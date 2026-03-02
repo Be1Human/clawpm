@@ -5,8 +5,8 @@ import { RiskService } from '../services/risk-service.js';
 import { MemberService } from '../services/member-service.js';
 import { ReqLinkService } from '../services/req-link-service.js';
 import { getDb } from '../db/connection.js';
-import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory } from '../db/schema.js';
+import { eq, and, desc, asc } from 'drizzle-orm';
 
 export async function registerRoutes(app: FastifyInstance) {
 
@@ -64,7 +64,23 @@ export async function registerRoutes(app: FastifyInstance) {
     const db = getDb();
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
     if (!task) return reply.code(404).send({ error: 'Not found' });
-    db.delete(tasks).where(eq(tasks.taskId, taskId)).run();
+
+    const allTasks = db.select().from(tasks).all();
+    const idsToDelete: number[] = [];
+    function collectChildren(parentId: number) {
+      idsToDelete.push(parentId);
+      for (const t of allTasks) {
+        if (t.parentTaskId === parentId) collectChildren(t.id);
+      }
+    }
+    collectChildren(task.id);
+
+    for (const id of idsToDelete) {
+      db.delete(taskNotes).where(eq(taskNotes.taskId, id)).run();
+      db.delete(progressHistory).where(eq(progressHistory.taskId, id)).run();
+      db.delete(taskFieldValues).where(eq(taskFieldValues.taskId, id)).run();
+      db.delete(tasks).where(eq(tasks.id, id)).run();
+    }
     return { ok: true };
   });
 
@@ -152,6 +168,47 @@ export async function registerRoutes(app: FastifyInstance) {
     return reply.code(201).send(d);
   });
 
+  app.patch('/api/v1/domains/:id', async (req, reply) => {
+    const db = getDb();
+    const { id } = req.params as any;
+    const { name, task_prefix, keywords, color } = req.body as any;
+    const domainId = parseInt(id);
+    const oldDomain = db.select().from(domains).where(eq(domains.id, domainId)).get();
+    if (!oldDomain) return reply.code(404).send({ error: 'Not found' });
+
+    const updates: any = {};
+    if (name !== undefined) updates.name = name;
+    if (task_prefix !== undefined) updates.taskPrefix = task_prefix;
+    if (keywords !== undefined) updates.keywords = JSON.stringify(keywords);
+    if (color !== undefined) updates.color = color;
+    db.update(domains).set(updates).where(eq(domains.id, domainId)).run();
+
+    if (task_prefix !== undefined && task_prefix !== oldDomain.taskPrefix) {
+      const domainTasks = db.select().from(tasks).where(eq(tasks.domainId, domainId)).all();
+      for (const t of domainTasks) {
+        const dashIdx = t.taskId.lastIndexOf('-');
+        if (dashIdx >= 0) {
+          const numPart = t.taskId.slice(dashIdx);
+          const newTaskId = `${task_prefix}${numPart}`;
+          db.update(tasks).set({ taskId: newTaskId } as any).where(eq(tasks.id, t.id)).run();
+        }
+      }
+    }
+
+    const d = db.select().from(domains).where(eq(domains.id, domainId)).get();
+    return d;
+  });
+
+  app.delete('/api/v1/domains/:id', async (req, reply) => {
+    const db = getDb();
+    const { id } = req.params as any;
+    const d = db.select().from(domains).where(eq(domains.id, parseInt(id))).get();
+    if (!d) return reply.code(404).send({ error: 'Not found' });
+    db.update(tasks).set({ domainId: null }).where(eq(tasks.domainId, parseInt(id))).run();
+    db.delete(domains).where(eq(domains.id, parseInt(id))).run();
+    return { ok: true };
+  });
+
   // ── Milestones ─────────────────────────────────────────────────────
   app.get('/api/v1/milestones', async () => {
     const db = getDb();
@@ -179,14 +236,26 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch('/api/v1/milestones/:id', async (req, reply) => {
     const db = getDb();
     const { id } = req.params as any;
-    const { name, target_date, status, description } = req.body as any;
+    const body = req.body as any;
     const updates: any = {};
-    if (name) updates.name = name;
-    if (target_date) updates.targetDate = target_date;
-    if (status) updates.status = status;
-    if (description) updates.description = description;
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.target_date !== undefined) updates.targetDate = body.target_date;
+    if (body.status !== undefined) updates.status = body.status;
+    if (body.description !== undefined) updates.description = body.description;
     db.update(milestones).set(updates).where(eq(milestones.id, parseInt(id))).run();
-    return db.select().from(milestones).where(eq(milestones.id, parseInt(id))).get();
+    const m = db.select().from(milestones).where(eq(milestones.id, parseInt(id))).get();
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    return m;
+  });
+
+  app.delete('/api/v1/milestones/:id', async (req, reply) => {
+    const db = getDb();
+    const { id } = req.params as any;
+    const m = db.select().from(milestones).where(eq(milestones.id, parseInt(id))).get();
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    db.update(tasks).set({ milestoneId: null }).where(eq(tasks.milestoneId, parseInt(id))).run();
+    db.delete(milestones).where(eq(milestones.id, parseInt(id))).run();
+    return { ok: true };
   });
 
   // ── Goals ──────────────────────────────────────────────────────────
@@ -305,6 +374,87 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete('/api/v1/req-links/:linkId', async (req, reply) => {
     const { linkId } = req.params as any;
     return ReqLinkService.delete(parseInt(linkId));
+  });
+
+  // ── Custom Fields ────────────────────────────────────────────────
+  app.get('/api/v1/custom-fields', async () => {
+    const db = getDb();
+    return db.select().from(customFields).orderBy(asc(customFields.sortOrder), asc(customFields.id)).all();
+  });
+
+  app.post('/api/v1/custom-fields', async (req, reply) => {
+    const db = getDb();
+    const { name, field_type, options, color, sort_order } = req.body as any;
+    db.insert(customFields).values({
+      name,
+      fieldType: field_type || 'text',
+      options: JSON.stringify(options || []),
+      color: color || null,
+      sortOrder: sort_order ?? 0,
+    }).run();
+    const f = db.select().from(customFields).orderBy(desc(customFields.id)).limit(1).get();
+    return reply.code(201).send(f);
+  });
+
+  app.patch('/api/v1/custom-fields/:id', async (req, reply) => {
+    const db = getDb();
+    const { id } = req.params as any;
+    const body = req.body as any;
+    const updates: any = {};
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.field_type !== undefined) updates.fieldType = body.field_type;
+    if (body.options !== undefined) updates.options = JSON.stringify(body.options);
+    if (body.color !== undefined) updates.color = body.color;
+    if (body.sort_order !== undefined) updates.sortOrder = body.sort_order;
+    db.update(customFields).set(updates).where(eq(customFields.id, parseInt(id))).run();
+    const f = db.select().from(customFields).where(eq(customFields.id, parseInt(id))).get();
+    if (!f) return reply.code(404).send({ error: 'Not found' });
+    return f;
+  });
+
+  app.delete('/api/v1/custom-fields/:id', async (req, reply) => {
+    const db = getDb();
+    const { id } = req.params as any;
+    const f = db.select().from(customFields).where(eq(customFields.id, parseInt(id))).get();
+    if (!f) return reply.code(404).send({ error: 'Not found' });
+    db.delete(taskFieldValues).where(eq(taskFieldValues.fieldId, parseInt(id))).run();
+    db.delete(customFields).where(eq(customFields.id, parseInt(id))).run();
+    return { ok: true };
+  });
+
+  app.get('/api/v1/tasks/:taskId/fields', async (req, reply) => {
+    const db = getDb();
+    const { taskId } = req.params as any;
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Not found' });
+    const values = db.select().from(taskFieldValues).where(eq(taskFieldValues.taskId, task.id)).all();
+    const fields = db.select().from(customFields).all();
+    return values.map(v => {
+      const field = fields.find(f => f.id === v.fieldId);
+      return { ...v, fieldName: field?.name, fieldType: field?.fieldType };
+    });
+  });
+
+  app.put('/api/v1/tasks/:taskId/fields', async (req, reply) => {
+    const db = getDb();
+    const { taskId } = req.params as any;
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Not found' });
+    const body = req.body as Record<string, string>;
+    for (const [fieldIdStr, value] of Object.entries(body)) {
+      const fieldId = parseInt(fieldIdStr);
+      const existing = db.select().from(taskFieldValues)
+        .where(and(eq(taskFieldValues.taskId, task.id), eq(taskFieldValues.fieldId, fieldId))).get();
+      if (value === '' || value === null || value === undefined) {
+        if (existing) db.delete(taskFieldValues).where(eq(taskFieldValues.id, existing.id)).run();
+      } else if (existing) {
+        db.update(taskFieldValues).set({ value: String(value) }).where(eq(taskFieldValues.id, existing.id)).run();
+      } else {
+        db.insert(taskFieldValues).values({ taskId: task.id, fieldId, value: String(value) }).run();
+      }
+    }
+    const updated = db.select().from(taskFieldValues).where(eq(taskFieldValues.taskId, task.id)).all();
+    return updated;
   });
 
   // ── Gantt ──────────────────────────────────────────────────────────

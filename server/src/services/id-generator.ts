@@ -21,7 +21,8 @@ export async function generateTaskId(domainId?: number): Promise<string> {
 
   let next = 1;
   if (last) {
-    const num = parseInt(last.taskId.split('-')[1] || '0');
+    const dashIdx = last.taskId.lastIndexOf('-');
+    const num = dashIdx >= 0 ? parseInt(last.taskId.slice(dashIdx + 1) || '0') : 0;
     next = num + 1;
   }
 

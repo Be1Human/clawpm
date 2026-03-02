@@ -53,8 +53,12 @@ export const api = {
   // Config
   getDomains: () => request<any[]>('/domains'),
   createDomain: (data: any) => request<any>('/domains', { method: 'POST', body: JSON.stringify(data) }),
+  updateDomain: (id: number, data: any) => request<any>(`/domains/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteDomain: (id: number) => request<any>(`/domains/${id}`, { method: 'DELETE' }),
   getMilestones: () => request<any[]>('/milestones'),
   createMilestone: (data: any) => request<any>('/milestones', { method: 'POST', body: JSON.stringify(data) }),
+  updateMilestone: (id: number, data: any) => request<any>(`/milestones/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMilestone: (id: number) => request<any>(`/milestones/${id}`, { method: 'DELETE' }),
 
   // Goals
   getGoals: () => request<any[]>('/goals'),
@@ -87,4 +91,15 @@ export const api = {
   // Reparent（节点迁移）
   reparentTask: (taskId: string, newParentTaskId: string | null) =>
     request<any>(`/tasks/${taskId}/reparent`, { method: 'PATCH', body: JSON.stringify({ new_parent_task_id: newParentTaskId }) }),
+
+  // Custom Fields
+  getCustomFields: () => request<any[]>('/custom-fields'),
+  createCustomField: (data: any) => request<any>('/custom-fields', { method: 'POST', body: JSON.stringify(data) }),
+  updateCustomField: (id: number, data: any) => request<any>(`/custom-fields/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCustomField: (id: number) => request<any>(`/custom-fields/${id}`, { method: 'DELETE' }),
+
+  // Task Field Values
+  getTaskFields: (taskId: string) => request<any[]>(`/tasks/${taskId}/fields`),
+  setTaskFields: (taskId: string, values: Record<number, string>) =>
+    request<any>(`/tasks/${taskId}/fields`, { method: 'PUT', body: JSON.stringify(values) }),
 };
