@@ -1,12 +1,43 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { useActiveProject } from '@/lib/useActiveProject';
+import { useActiveSpace, type Space } from '@/lib/useActiveSpace';
+import { useCurrentUser, clearCurrentUser } from '@/lib/useCurrentUser';
+import { api, setActiveProject } from '@/api/client';
+import IdentityPicker from './IdentityPicker';
 
-// ── 导航结构（分组） ─────────────────────────────────────────────
-const NAV_GROUPS = [
+// ── 导航结构（个人空间） ─────────────────────────────────────────
+const PERSONAL_NAV_GROUPS = [
   {
-    label: '工作台',
+    label: '我的工作台',
     items: [
-      { to: '/',     label: '仪表盘',  icon: OverviewIcon, exact: true },
+      { to: '/my/dashboard', label: '我的仪表盘', icon: OverviewIcon, exact: true },
+    ],
+  },
+  {
+    label: '我的任务',
+    items: [
+      { to: '/my/tasks/list',    label: '需求列表',   icon: ListIcon },
+      { to: '/my/tasks/tree',    label: '需求树',     icon: TreeIcon },
+      { to: '/my/tasks/mindmap', label: '需求思维导图', icon: MapIcon },
+    ],
+  },
+  {
+    label: '我的规划',
+    items: [
+      { to: '/my/gantt', label: '我的甘特图', icon: GanttIcon },
+    ],
+  },
+];
+
+// ── 导航结构（项目空间） ─────────────────────────────────────────
+const PROJECT_NAV_GROUPS = [
+  {
+    label: '项目总览',
+    items: [
+      { to: '/dashboard', label: '项目仪表盘', icon: OverviewIcon, exact: true },
     ],
   },
   {
@@ -20,24 +51,24 @@ const NAV_GROUPS = [
   {
     label: '执行跟踪',
     items: [
-      { to: '/board',        label: '看板',     icon: BoardIcon },
-      { to: '/tasks',        label: '任务列表', icon: ListIcon },
-      { to: '/backlog',      label: '需求池',   icon: PoolIcon },
+      { to: '/board',    label: '看板',     icon: BoardIcon },
+      { to: '/tasks',    label: '任务列表', icon: ListIcon },
+      { to: '/backlog',  label: '需求池',   icon: PoolIcon },
     ],
   },
   {
     label: '目标管理',
     items: [
-      { to: '/milestones',   label: '里程碑',   icon: MilestoneIcon },
-      { to: '/goals',        label: '目标',     icon: GoalIcon },
+      { to: '/milestones', label: '里程碑', icon: MilestoneIcon },
+      { to: '/goals',      label: '目标',   icon: GoalIcon },
     ],
   },
   {
     label: '设置',
     items: [
-      { to: '/domains',        label: '业务板块', icon: DomainIcon },
+      { to: '/domains',       label: '业务板块',   icon: DomainIcon },
       { to: '/custom-fields', label: '自定义字段', icon: FieldsIcon },
-      { to: '/members',       label: '成员',     icon: MembersIcon },
+      { to: '/members',       label: '成员',       icon: MembersIcon },
     ],
   },
 ];
@@ -50,6 +81,14 @@ function OverviewIcon({ className }: { className?: string }) {
       <rect x="9.5" y="1.5" width="5" height="5" rx="1" />
       <rect x="1.5" y="9.5" width="5" height="5" rx="1" />
       <rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+    </svg>
+  );
+}
+function MyTasksIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M5 8.5l2 2 4-4.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -166,6 +205,68 @@ function MembersIcon({ className }: { className?: string }) {
 
 // ── Sidebar 组件 ─────────────────────────────────────────────────
 export default function Layout({ children }: { children: React.ReactNode }) {
+  const qc = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [showIdentityPicker, setShowIdentityPicker] = useState(false);
+  const activeSlug = useActiveProject();
+  const currentUser = useCurrentUser();
+  const [space, setSpace] = useActiveSpace();
+
+  // 根据当前路由自动切换空间
+  useEffect(() => {
+    const isPersonalRoute = location.pathname.startsWith('/my/') || location.pathname === '/my';
+    if (isPersonalRoute && space !== 'personal') setSpace('personal');
+    else if (!isPersonalRoute && space !== 'project' && !location.pathname.startsWith('/tasks/')) setSpace('project');
+  }, [location.pathname]);
+
+  // 手动切换空间时导航到对应首页
+  const handleSwitchSpace = (target: 'personal' | 'project') => {
+    if (target === space) return;
+    setSpace(target);
+    if (target === 'personal') navigate('/my/dashboard');
+    else navigate('/dashboard');
+  };
+
+  const navGroups = space === 'personal' ? PERSONAL_NAV_GROUPS : PROJECT_NAV_GROUPS;
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => api.getProjects(),
+  });
+
+  const { data: members = [] } = useQuery({
+    queryKey: ['members'],
+    queryFn: () => api.getMembers(),
+  });
+
+  const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
+  const currentMember = (members as any[]).find((m: any) => m.identifier === currentUser);
+
+  // Auto-show identity picker on first visit if no identity set
+  useEffect(() => {
+    if (!currentUser && (members as any[]).length > 0) {
+      setShowIdentityPicker(true);
+    }
+  }, [currentUser, members]);
+
+  function handleSwitchProject(slug: string) {
+    setActiveProject(slug);
+    // 清除所有非 projects 的查询缓存，强制用新 slug 重新拉取
+    qc.removeQueries({ predicate: q => q.queryKey[0] !== 'projects' });
+    qc.invalidateQueries();
+  }
+
+  async function handleCreateProject() {
+    if (!newProjectName.trim()) return;
+    await api.createProject({ name: newProjectName.trim() });
+    setNewProjectName('');
+    setShowCreateProject(false);
+    qc.invalidateQueries({ queryKey: ['projects'] });
+  }
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
       {/* Sidebar */}
@@ -189,9 +290,70 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
+        {/* 项目切换器 */}
+        <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">项目</label>
+          <div className="relative">
+            <select
+              value={activeSlug}
+              onChange={e => handleSwitchProject(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all"
+            >
+              {(projects as any[]).map((p: any) => (
+                <option key={p.slug} value={p.slug}>{p.name}</option>
+              ))}
+            </select>
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#9ca3af" strokeWidth="1.5">
+                <path d="M2 3.5L5 6.5L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </div>
+          {showCreateProject ? (
+            <div className="mt-1.5 flex gap-1">
+              <input
+                autoFocus
+                value={newProjectName}
+                onChange={e => setNewProjectName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); if (e.key === 'Escape') setShowCreateProject(false); }}
+                placeholder="项目名称..."
+                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              />
+              <button onClick={handleCreateProject} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">确定</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCreateProject(true)}
+              className="mt-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors"
+            >
+              + 新建项目
+            </button>
+          )}
+        </div>
+
+        {/* 空间切换 Tab */}
+        <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
+          <div className="flex rounded-lg bg-gray-100 p-0.5">
+            {([['personal', '个人空间'], ['project', '项目空间']] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => handleSwitchSpace(key)}
+                className={cn(
+                  'flex-1 text-[11px] font-medium py-1.5 rounded-md transition-all duration-150',
+                  space === key
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.label}>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
                 {group.label}
@@ -224,19 +386,49 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div className="px-4 py-3 border-t" style={{ borderColor: '#e8eaed' }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-gray-400">v1.3</span>
-            <span className="text-[10px] text-gray-300">ClawPM</span>
-          </div>
+        {/* Footer — Identity */}
+        <div className="px-3 py-3 border-t" style={{ borderColor: '#e8eaed' }}>
+          {currentUser && currentMember ? (
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+                style={{ backgroundColor: currentMember.color || '#6366f1' }}
+              >
+                {(currentMember.name || '?')[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-800 truncate">{currentMember.name}</p>
+                <p className="text-[10px] text-gray-400 truncate">{currentMember.identifier}</p>
+              </div>
+              <button
+                onClick={() => setShowIdentityPicker(true)}
+                className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                title="切换身份"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M11.5 6A4.5 4.5 0 0 0 3 4.5M2.5 8A4.5 4.5 0 0 0 11 9.5" strokeLinecap="round" />
+                  <path d="M3 2v2.5H.5M11 12V9.5h2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowIdentityPicker(true)}
+              className="w-full text-xs text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 py-2 rounded-lg transition-colors cursor-pointer"
+            >
+              请选择身份...
+            </button>
+          )}
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto flex flex-col min-w-0">
+      <main className="flex-1 overflow-y-auto flex flex-col min-w-0 min-h-0">
         {children}
       </main>
+
+      {/* Identity Picker Modal */}
+      <IdentityPicker open={showIdentityPicker} onClose={() => setShowIdentityPicker(false)} />
     </div>
   );
 }

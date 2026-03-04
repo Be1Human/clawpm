@@ -3,10 +3,14 @@ import { getDb } from '../db/connection.js';
 import { members, tasks } from '../db/schema.js';
 
 export const MemberService = {
-  list(type?: string) {
+  list(type?: string, projectId?: number) {
     const db = getDb();
-    const rows = type
-      ? db.select().from(members).where(eq(members.type, type)).all()
+    const conditions: any[] = [];
+    if (type) conditions.push(eq(members.type, type));
+    if (projectId) conditions.push(eq(members.projectId, projectId));
+
+    const rows = conditions.length
+      ? db.select().from(members).where(and(...conditions)).all()
       : db.select().from(members).all();
 
     return rows.map(m => this._withStats(m));
@@ -19,7 +23,7 @@ export const MemberService = {
     return this._withStats(m);
   },
 
-  create(params: { name: string; identifier: string; type?: string; color?: string; description?: string }) {
+  create(params: { name: string; identifier: string; type?: string; color?: string; description?: string; projectId?: number }) {
     const db = getDb();
     db.insert(members).values({
       name: params.name,
@@ -27,7 +31,8 @@ export const MemberService = {
       type: params.type || 'human',
       color: params.color || this._randomColor(),
       description: params.description,
-    }).run();
+      projectId: params.projectId || 1,
+    } as any).run();
     return this.getByIdentifier(params.identifier)!;
   },
 

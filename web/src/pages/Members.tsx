@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 
 // ── 工具函数 ──────────────────────────────────────────────────────
@@ -159,13 +160,14 @@ function MemberCard({ member, onEdit, onDelete }: { member: any; onEdit: () => v
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function Members() {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [typeFilter, setTypeFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editMember, setEditMember] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
 
   const { data: members = [], isLoading } = useQuery({
-    queryKey: ['members', typeFilter],
+    queryKey: ['members', activeProject, typeFilter],
     queryFn: () => api.getMembers(typeFilter || undefined),
   });
 

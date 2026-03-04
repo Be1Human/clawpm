@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import KanbanBoard from './pages/KanbanBoard';
@@ -13,13 +13,34 @@ import GanttChart from './pages/GanttChart';
 import Members from './pages/Members';
 import Domains from './pages/Domains';
 import CustomFields from './pages/CustomFields';
+import MyTasks from './pages/MyTasks';
+import MyDashboard from './pages/MyDashboard';
+import MyGantt from './pages/MyGantt';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          {/* 默认入口 → 个人仪表盘 */}
+          <Route path="/" element={<Navigate to="/my/dashboard" replace />} />
+
+          {/* ── 个人空间 ── */}
+          <Route path="/my/dashboard" element={<MyDashboard />} />
+          <Route path="/my/tasks/list" element={<MyTasks defaultView="flat" />} />
+          <Route path="/my/tasks/tree" element={<MyTasks defaultView="tree" />} />
+          <Route path="/my/tasks/mindmap" element={<MyTasks defaultView="mindmap" />} />
+          <Route path="/my/gantt" element={<MyGantt />} />
+
+          {/* 向后兼容：旧路由重定向 */}
+          <Route path="/my-tasks" element={<Navigate to="/my/tasks/tree" replace />} />
+          <Route path="/my/tasks" element={<Navigate to="/my/tasks/tree" replace />} />
+          <Route path="/my/board" element={<Navigate to="/my/tasks/list" replace />} />
+          <Route path="/my/mindmap" element={<Navigate to="/my/tasks/mindmap" replace />} />
+          <Route path="/my/requirements" element={<Navigate to="/my/tasks/tree" replace />} />
+
+          {/* ── 项目空间 ── */}
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/board" element={<KanbanBoard />} />
           <Route path="/tasks" element={<TaskList />} />
           <Route path="/tasks/:taskId" element={<TaskDetail />} />

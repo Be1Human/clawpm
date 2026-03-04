@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { formatDate, cn } from '@/lib/utils';
 
 export default function Goals() {
   const qc = useQueryClient();
-  const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: api.getGoals });
+  const activeProject = useActiveProject();
+  const { data: goals = [] } = useQuery({ queryKey: ['goals', activeProject], queryFn: api.getGoals });
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', target_date: '', set_by: '' });
 

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { useState, useRef } from 'react';
@@ -134,13 +135,14 @@ function TaskCard({
 
 export default function KanbanBoard() {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [draggingOver, setDraggingOver] = useState<string | null>(null);
   const dragTaskId = useRef<string | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks'],
+    queryKey: ['tasks', activeProject],
     queryFn: () => api.getTasks(),
     refetchInterval: 15000,
   });

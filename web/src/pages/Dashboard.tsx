@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { useActiveProject } from '@/lib/useActiveProject';
+import { useCurrentUser } from '@/lib/useCurrentUser';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { Link } from 'react-router-dom';
 
@@ -61,9 +63,17 @@ function RiskBadge({ type }: { type: string }) {
 }
 
 export default function Dashboard() {
-  const { data: overview } = useQuery({ queryKey: ['overview'], queryFn: api.getOverview, refetchInterval: 30000 });
-  const { data: risks } = useQuery({ queryKey: ['risks'], queryFn: api.getRisks, refetchInterval: 30000 });
-  const { data: members = [] } = useQuery({ queryKey: ['members'], queryFn: () => api.getMembers() });
+  const activeProject = useActiveProject();
+  const currentUser = useCurrentUser();
+  const { data: overview } = useQuery({ queryKey: ['overview', activeProject], queryFn: api.getOverview, refetchInterval: 30000 });
+  const { data: risks } = useQuery({ queryKey: ['risks', activeProject], queryFn: api.getRisks, refetchInterval: 30000 });
+  const { data: members = [] } = useQuery({ queryKey: ['members', activeProject], queryFn: () => api.getMembers() });
+  const { data: myOverview } = useQuery({
+    queryKey: ['my-overview', activeProject, currentUser],
+    queryFn: api.getMyOverview,
+    enabled: !!currentUser,
+    refetchInterval: 30000,
+  });
 
   const pieData = (risks?.byDomain || []).map((d: any, i: number) => ({
     name: d.domain, value: d.total, color: DOMAIN_COLORS[i % DOMAIN_COLORS.length],
@@ -80,6 +90,10 @@ export default function Dashboard() {
   const healthLabel = health >= 80 ? '健康' : health >= 60 ? '需关注' : '高风险';
   const healthLabelColor = health >= 80 ? 'text-emerald-600' : health >= 60 ? 'text-amber-600' : 'text-red-600';
 
+  const currentMember = currentUser
+    ? (members as any[]).find((m: any) => m.identifier === currentUser)
+    : null;
+
   return (
     <div className="p-6 space-y-6 animate-fade-in max-w-7xl">
       {/* Header */}
@@ -95,6 +109,52 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* 我的概览条带 — 仅在已设置身份时显示 */}
+      {currentUser && myOverview && (
+        <Link to="/my/tasks/tree" className="block group">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex items-center justify-between transition-all hover:shadow-md hover:border-indigo-200">
+            <div className="flex items-center gap-3">
+              {currentMember?.color ? (
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                  style={{ backgroundColor: currentMember.color }}
+                >
+                  {(currentMember.name || currentUser)[0]?.toUpperCase()}
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-indigo-400 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                  {currentUser[0]?.toUpperCase()}
+                </div>
+              )}
+              <div>
+                <span className="text-sm font-semibold text-indigo-700">我的概览</span>
+                <span className="text-xs text-indigo-400 ml-2">{currentMember?.name || currentUser}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                <span className="text-xs text-indigo-600 font-medium">进行中</span>
+                <span className="text-sm font-bold text-indigo-700">{myOverview.active ?? 0}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="text-xs text-amber-600 font-medium">待验收</span>
+                <span className="text-sm font-bold text-amber-700">{myOverview.review ?? 0}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="text-xs text-red-600 font-medium">逾期</span>
+                <span className="text-sm font-bold text-red-700">{myOverview.overdue ?? 0}</span>
+              </div>
+              <svg className="w-4 h-4 text-indigo-400 group-hover:translate-x-0.5 transition-transform" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </div>
+        </Link>
+      )}
 
       {/* Stats 4 列 */}
       <div className="grid grid-cols-4 gap-4">

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 
 const PRESET_COLORS = [
@@ -166,17 +167,18 @@ function DomainCard({ domain, taskCount, onEdit, onDelete }: { domain: any; task
 
 export default function Domains() {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
   const [editDomain, setEditDomain] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
 
   const { data: domains = [], isLoading } = useQuery({
-    queryKey: ['domains'],
+    queryKey: ['domains', activeProject],
     queryFn: () => api.getDomains(),
   });
 
   const { data: allTasks = [] } = useQuery({
-    queryKey: ['tasks'],
+    queryKey: ['tasks', activeProject],
     queryFn: () => api.getTasks(),
   });
 

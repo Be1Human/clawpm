@@ -1,8 +1,8 @@
 import { getDb } from '../db/connection.js';
 import { tasks, backlogItems, domains } from '../db/schema.js';
-import { eq, like, desc } from 'drizzle-orm';
+import { eq, and, like, desc } from 'drizzle-orm';
 
-export async function generateTaskId(domainId?: number): Promise<string> {
+export async function generateTaskId(domainId?: number, projectId?: number): Promise<string> {
   const db = getDb();
   let prefix = 'T';
 
@@ -11,10 +11,14 @@ export async function generateTaskId(domainId?: number): Promise<string> {
     if (domain) prefix = domain.taskPrefix;
   }
 
+  // 在项目范围内查找最大编号
+  const conditions = [like(tasks.taskId, `${prefix}-%`)];
+  if (projectId) conditions.push(eq(tasks.projectId, projectId));
+
   const last = db
     .select({ taskId: tasks.taskId })
     .from(tasks)
-    .where(like(tasks.taskId, `${prefix}-%`))
+    .where(and(...conditions))
     .orderBy(desc(tasks.id))
     .limit(1)
     .get();
@@ -29,14 +33,15 @@ export async function generateTaskId(domainId?: number): Promise<string> {
   return `${prefix}-${String(next).padStart(3, '0')}`;
 }
 
-export async function generateBacklogId(): Promise<string> {
+export async function generateBacklogId(projectId?: number): Promise<string> {
   const db = getDb();
-  const last = db
-    .select({ backlogId: backlogItems.backlogId })
-    .from(backlogItems)
-    .orderBy(desc(backlogItems.id))
-    .limit(1)
-    .get();
+
+  const conditions: any[] = [];
+  if (projectId) conditions.push(eq(backlogItems.projectId, projectId));
+
+  const last = conditions.length
+    ? db.select({ backlogId: backlogItems.backlogId }).from(backlogItems).where(and(...conditions)).orderBy(desc(backlogItems.id)).limit(1).get()
+    : db.select({ backlogId: backlogItems.backlogId }).from(backlogItems).orderBy(desc(backlogItems.id)).limit(1).get();
 
   let next = 1;
   if (last) {

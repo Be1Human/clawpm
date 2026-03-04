@@ -4,33 +4,116 @@ import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
 import { MemberService } from '../services/member-service.js';
 import { ReqLinkService } from '../services/req-link-service.js';
+import { AttachmentService } from '../services/attachment-service.js';
+import { PermissionService } from '../services/permission-service.js';
+import { ProjectService } from '../services/project-service.js';
 import { getDb } from '../db/connection.js';
-import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory } from '../db/schema.js';
+import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
+
+/** 从请求中解析项目 slug → projectId */
+function getProjectId(req: any): number {
+  const slug = (req.query as any)?.project || (req.body as any)?.project;
+  return ProjectService.resolveProjectId(slug);
+}
 
 export async function registerRoutes(app: FastifyInstance) {
 
+  /** 权限校验：要求当前用户对指定任务有 edit 权限 */
+  async function requireEditPermission(req: any, taskId: string) {
+    const user = req.clawpmUser as string | null;
+    if (!user) return; // 未设身份 → 兼容模式，不拦截
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return; // 任务不存在由后续业务逻辑处理
+    const perm = PermissionService.getEffectivePermission(task.id, task.owner, user);
+    if (perm === 'none' || perm === 'view') {
+      const err: any = new Error('无编辑权限：你对此节点仅有查看权限或无权限');
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+
+  /** 权限校验：要求当前用户是指定任务的 Owner */
+  async function requireOwner(req: any, taskId: string) {
+    const user = req.clawpmUser as string | null;
+    if (!user) return;
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return;
+    if (task.owner !== user) {
+      const err: any = new Error('仅 Owner 可执行此操作');
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+
+  // ── Projects（v2.1 新增）────────────────────────────────────────────
+  app.get('/api/v1/projects', async () => {
+    return ProjectService.list();
+  });
+
+  app.post('/api/v1/projects', async (req, reply) => {
+    const { name, slug, description } = req.body as any;
+    if (!name) return reply.code(400).send({ error: 'name is required' });
+    const p = ProjectService.create({ name, slug, description });
+    return reply.code(201).send(p);
+  });
+
+  app.get('/api/v1/projects/:slug', async (req, reply) => {
+    const { slug } = req.params as any;
+    const p = ProjectService.getBySlug(slug);
+    if (!p) return reply.code(404).send({ error: 'Not found' });
+    return p;
+  });
+
+  app.patch('/api/v1/projects/:slug', async (req, reply) => {
+    const { slug } = req.params as any;
+    const p = ProjectService.update(slug, req.body as any);
+    if (!p) return reply.code(404).send({ error: 'Not found' });
+    return p;
+  });
+
+  app.delete('/api/v1/projects/:slug', async (req, reply) => {
+    const { slug } = req.params as any;
+    const ok = ProjectService.delete(slug);
+    if (!ok) return reply.code(400).send({ error: 'Cannot delete default project' });
+    return { ok: true };
+  });
+
   // ── Tasks ──────────────────────────────────────────────────────────
   app.post('/api/v1/tasks', async (req, reply) => {
-    const task = await TaskService.create(req.body as any);
+    const projectId = getProjectId(req);
+    const body = req.body as any;
+    // 创建子任务时校验父节点权限
+    if (body.parent_task_id) {
+      await requireEditPermission(req, body.parent_task_id);
+    }
+    const task = await TaskService.create({ ...body, projectId });
     return reply.code(201).send(task);
   });
 
   app.get('/api/v1/tasks', async (req) => {
     const q = req.query as any;
-    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, label: q.label });
+    const projectId = getProjectId(req);
+    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, label: q.label, projectId });
   });
 
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
   app.get('/api/v1/tasks/tree', async (req) => {
     const q = req.query as any;
-    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, label: q.label });
+    const projectId = getProjectId(req);
+    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, label: q.label, projectId });
   });
 
   // 节点迁移（换父节点）
   app.patch('/api/v1/tasks/:taskId/reparent', async (req, reply) => {
     const { taskId } = req.params as any;
     const { new_parent_task_id } = req.body as any;
+    await requireEditPermission(req, taskId);
+    if (new_parent_task_id) {
+      await requireEditPermission(req, new_parent_task_id);
+    }
     try {
       const task = TaskService.reparent(taskId, new_parent_task_id ?? null);
       if (!task) return reply.code(404).send({ error: 'Not found' });
@@ -40,20 +123,41 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
+  // 同级子节点排序
+  app.patch('/api/v1/tasks/reorder-children', async (req, reply) => {
+    const { parent_task_id, ordered_child_ids } = req.body as any;
+    if (!Array.isArray(ordered_child_ids)) return reply.code(400).send({ error: 'ordered_child_ids must be an array' });
+    const ok = TaskService.reorderChildren(parent_task_id ?? null, ordered_child_ids);
+    if (!ok) return reply.code(404).send({ error: 'Parent not found' });
+    return { ok: true };
+  });
+
   app.get('/api/v1/tasks/:taskId/children', async (req, reply) => {
     const { taskId } = req.params as any;
     return TaskService.getChildren(taskId);
+  });
+
+  app.get('/api/v1/tasks/:taskId/context', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const ctx = TaskService.getTaskContext(taskId);
+    if (!ctx) return reply.code(404).send({ error: 'Not found' });
+    return ctx;
   });
 
   app.get('/api/v1/tasks/:taskId', async (req, reply) => {
     const { taskId } = req.params as any;
     const task = TaskService.getByTaskId(taskId);
     if (!task) return reply.code(404).send({ error: 'Not found' });
+    const user = (req as any).clawpmUser as string | null;
+    if (user) {
+      (task as any)._myPermission = PermissionService.getEffectivePermission(task.id, task.owner, user);
+    }
     return task;
   });
 
   app.patch('/api/v1/tasks/:taskId', async (req, reply) => {
     const { taskId } = req.params as any;
+    await requireEditPermission(req, taskId);
     const task = TaskService.update(taskId, req.body as any);
     if (!task) return reply.code(404).send({ error: 'Not found' });
     return task;
@@ -61,31 +165,15 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.delete('/api/v1/tasks/:taskId', async (req, reply) => {
     const { taskId } = req.params as any;
-    const db = getDb();
-    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
-    if (!task) return reply.code(404).send({ error: 'Not found' });
-
-    const allTasks = db.select().from(tasks).all();
-    const idsToDelete: number[] = [];
-    function collectChildren(parentId: number) {
-      idsToDelete.push(parentId);
-      for (const t of allTasks) {
-        if (t.parentTaskId === parentId) collectChildren(t.id);
-      }
-    }
-    collectChildren(task.id);
-
-    for (const id of idsToDelete) {
-      db.delete(taskNotes).where(eq(taskNotes.taskId, id)).run();
-      db.delete(progressHistory).where(eq(progressHistory.taskId, id)).run();
-      db.delete(taskFieldValues).where(eq(taskFieldValues.taskId, id)).run();
-      db.delete(tasks).where(eq(tasks.id, id)).run();
-    }
+    await requireOwner(req, taskId);
+    const ok = TaskService.deleteTask(taskId);
+    if (!ok) return reply.code(404).send({ error: 'Not found' });
     return { ok: true };
   });
 
   app.post('/api/v1/tasks/:taskId/progress', async (req, reply) => {
     const { taskId } = req.params as any;
+    await requireEditPermission(req, taskId);
     const { progress, summary } = req.body as any;
     const task = TaskService.updateProgress(taskId, progress, summary);
     if (!task) return reply.code(404).send({ error: 'Not found' });
@@ -94,6 +182,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/tasks/:taskId/complete', async (req, reply) => {
     const { taskId } = req.params as any;
+    await requireEditPermission(req, taskId);
     const { summary } = (req.body as any) || {};
     const task = TaskService.complete(taskId, summary);
     if (!task) return reply.code(404).send({ error: 'Not found' });
@@ -102,6 +191,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/tasks/:taskId/blocker', async (req, reply) => {
     const { taskId } = req.params as any;
+    await requireEditPermission(req, taskId);
     const { blocker } = req.body as any;
     const task = TaskService.reportBlocker(taskId, blocker);
     if (!task) return reply.code(404).send({ error: 'Not found' });
@@ -128,13 +218,15 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // ── Backlog ────────────────────────────────────────────────────────
   app.post('/api/v1/backlog', async (req, reply) => {
-    const item = await BacklogService.create(req.body as any);
+    const projectId = getProjectId(req);
+    const item = await BacklogService.create({ ...(req.body as any), projectId });
     return reply.code(201).send(item);
   });
 
   app.get('/api/v1/backlog', async (req) => {
     const q = req.query as any;
-    return BacklogService.list({ domain: q.domain, priority: q.priority, status: q.status });
+    const projectId = getProjectId(req);
+    return BacklogService.list({ domain: q.domain, priority: q.priority, status: q.status, projectId });
   });
 
   app.patch('/api/v1/backlog/:backlogId', async (req, reply) => {
@@ -152,18 +244,21 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // ── Domains ────────────────────────────────────────────────────────
-  app.get('/api/v1/domains', async () => {
-    return getDb().select().from(domains).all();
+  app.get('/api/v1/domains', async (req) => {
+    const projectId = getProjectId(req);
+    return getDb().select().from(domains).where(eq(domains.projectId, projectId)).all();
   });
 
   app.post('/api/v1/domains', async (req, reply) => {
     const db = getDb();
+    const projectId = getProjectId(req);
     const { name, task_prefix, keywords, color } = req.body as any;
     db.insert(domains).values({
       name, taskPrefix: task_prefix,
       keywords: JSON.stringify(keywords || []),
       color: color || '#6366f1',
-    }).run();
+      projectId,
+    } as any).run();
     const d = db.select().from(domains).where(eq(domains.name, name)).get();
     return reply.code(201).send(d);
   });
@@ -210,9 +305,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // ── Milestones ─────────────────────────────────────────────────────
-  app.get('/api/v1/milestones', async () => {
+  app.get('/api/v1/milestones', async (req) => {
     const db = getDb();
-    const ms = db.select().from(milestones).all();
+    const projectId = getProjectId(req);
+    const ms = db.select().from(milestones).where(eq(milestones.projectId, projectId)).all();
     return ms.map(m => {
       const allTasks = db.select().from(tasks).where(eq(tasks.milestoneId, m.id)).all();
       const done = allTasks.filter(t => t.status === 'done').length;
@@ -227,8 +323,9 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/milestones', async (req, reply) => {
     const db = getDb();
+    const projectId = getProjectId(req);
     const { name, target_date, description } = req.body as any;
-    db.insert(milestones).values({ name, targetDate: target_date, description }).run();
+    db.insert(milestones).values({ name, targetDate: target_date, description, projectId } as any).run();
     const m = db.select().from(milestones).where(eq(milestones.name, name)).get();
     return reply.code(201).send(m);
   });
@@ -259,9 +356,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // ── Goals ──────────────────────────────────────────────────────────
-  app.get('/api/v1/goals', async () => {
+  app.get('/api/v1/goals', async (req) => {
     const db = getDb();
-    const goalList = db.select().from(goals).all();
+    const projectId = getProjectId(req);
+    const goalList = db.select().from(goals).where(eq(goals.projectId, projectId)).all();
     return goalList.map(g => {
       const objs = db.select().from(objectives).where(eq(objectives.goalId, g.id)).all();
       return { ...g, objectives: objs };
@@ -270,8 +368,9 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/goals', async (req, reply) => {
     const db = getDb();
+    const projectId = getProjectId(req);
     const { title, description, target_date, set_by, objectives: objList } = req.body as any;
-    db.insert(goals).values({ title, description, targetDate: target_date, setBy: set_by }).run();
+    db.insert(goals).values({ title, description, targetDate: target_date, setBy: set_by, projectId } as any).run();
     const goal = db.select().from(goals).orderBy(desc(goals.id)).limit(1).get()!;
 
     if (objList?.length) {
@@ -296,18 +395,21 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // ── Dashboard ──────────────────────────────────────────────────────
-  app.get('/api/v1/dashboard/overview', async () => {
-    return RiskService.getProjectStatus();
+  app.get('/api/v1/dashboard/overview', async (req) => {
+    const projectId = getProjectId(req);
+    return RiskService.getProjectStatus(projectId);
   });
 
-  app.get('/api/v1/dashboard/risks', async () => {
-    return RiskService.analyze();
+  app.get('/api/v1/dashboard/risks', async (req) => {
+    const projectId = getProjectId(req);
+    return RiskService.analyze(projectId);
   });
 
-  app.get('/api/v1/dashboard/resources', async () => {
+  app.get('/api/v1/dashboard/resources', async (req) => {
     const db = getDb();
+    const projectId = getProjectId(req);
     const activeTasks = db.select().from(tasks)
-      .where(and(eq(tasks.status, 'active'))).all();
+      .where(and(eq(tasks.status, 'active'), eq(tasks.projectId, projectId))).all();
 
     const byOwner: Record<string, any> = {};
     for (const t of activeTasks) {
@@ -328,11 +430,13 @@ export async function registerRoutes(app: FastifyInstance) {
   // ── Members ────────────────────────────────────────────────────────
   app.get('/api/v1/members', async (req) => {
     const q = req.query as any;
-    return MemberService.list(q.type);
+    const projectId = getProjectId(req);
+    return MemberService.list(q.type, projectId);
   });
 
   app.post('/api/v1/members', async (req, reply) => {
-    const m = MemberService.create(req.body as any);
+    const projectId = getProjectId(req);
+    const m = MemberService.create({ ...(req.body as any), projectId });
     return reply.code(201).send(m);
   });
 
@@ -457,11 +561,149 @@ export async function registerRoutes(app: FastifyInstance) {
     return updated;
   });
 
+  // ── Attachments（节点附件 v2.2）─────────────────────────────────
+  app.get('/api/v1/tasks/:taskId/attachments', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const { type } = req.query as any;
+    return AttachmentService.list(taskId, type);
+  });
+
+  app.post('/api/v1/tasks/:taskId/attachments', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const body = req.body as any;
+    const attachment = AttachmentService.add(taskId, {
+      type: body.type,
+      title: body.title,
+      content: body.content,
+      metadata: body.metadata,
+      created_by: body.created_by,
+    });
+    if (!attachment) return reply.code(404).send({ error: 'Task not found' });
+    return reply.code(201).send(attachment);
+  });
+
+  app.get('/api/v1/attachments/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    const a = AttachmentService.getById(parseInt(id));
+    if (!a) return reply.code(404).send({ error: 'Not found' });
+    return a;
+  });
+
+  app.patch('/api/v1/attachments/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    const body = req.body as any;
+    const a = AttachmentService.update(parseInt(id), {
+      title: body.title,
+      content: body.content,
+      metadata: body.metadata,
+      sort_order: body.sort_order,
+    });
+    if (!a) return reply.code(404).send({ error: 'Not found' });
+    return a;
+  });
+
+  app.delete('/api/v1/attachments/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    const ok = AttachmentService.delete(parseInt(id));
+    if (!ok) return reply.code(404).send({ error: 'Not found' });
+    return { ok: true };
+  });
+
+  app.patch('/api/v1/tasks/:taskId/attachments/reorder', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const { ordered_ids } = req.body as any;
+    const ok = AttachmentService.reorder(taskId, ordered_ids);
+    if (!ok) return reply.code(404).send({ error: 'Task not found' });
+    return { ok: true };
+  });
+
+  // ── My Overview（个人概览 v2.4）────────────────────────────────────
+  app.get('/api/v1/my/overview', async (req, reply) => {
+    const user = (req as any).clawpmUser as string | null;
+    if (!user) return reply.code(400).send({ error: 'No identity set. Send X-ClawPM-User header.' });
+
+    const projectId = getProjectId(req);
+    const userTasks = TaskService.list({ owner: user, projectId });
+
+    const now = new Date().toISOString().slice(0, 10);
+    return {
+      active: userTasks.filter((t: any) => t.status === 'active').length,
+      review: userTasks.filter((t: any) => t.status === 'review').length,
+      planned: userTasks.filter((t: any) => t.status === 'planned').length,
+      overdue: userTasks.filter((t: any) => t.dueDate && t.dueDate < now && t.status !== 'done').length,
+      total: userTasks.length,
+    };
+  });
+
+  // ── Permissions（节点权限控制 v2.5）────────────────────────────────
+  app.get('/api/v1/tasks/:taskId/permissions', async (req, reply) => {
+    const db = getDb();
+    const { taskId } = req.params as any;
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Task not found' });
+
+    const permissions = PermissionService.listForTask(task.id);
+    // 附加当前用户的有效权限
+    const user = (req as any).clawpmUser as string | null;
+    const myPermission = user ? PermissionService.getEffectivePermission(task.id, task.owner, user) : null;
+    return { taskId: task.taskId, owner: task.owner, permissions, myPermission };
+  });
+
+  app.post('/api/v1/tasks/:taskId/permissions', async (req, reply) => {
+    const db = getDb();
+    const { taskId } = req.params as any;
+    const { grantee, level } = req.body as any;
+
+    if (!grantee || !level) return reply.code(400).send({ error: 'grantee and level are required' });
+    if (!['edit', 'view'].includes(level)) return reply.code(400).send({ error: 'level must be "edit" or "view"' });
+
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Task not found' });
+
+    // 仅 Owner 可管理权限
+    const user = (req as any).clawpmUser as string | null;
+    if (user && task.owner !== user) {
+      return reply.code(403).send({ error: '仅 Owner 可管理权限' });
+    }
+
+    // 验证被授权人是项目成员
+    const projectId = getProjectId(req);
+    const allMembers = db.select().from(members).where(eq(members.projectId, projectId)).all();
+    if (!allMembers.find(m => m.identifier === grantee)) {
+      return reply.code(400).send({ error: `被授权人 "${grantee}" 不是项目成员` });
+    }
+
+    // 不能给自己授权
+    if (grantee === task.owner) {
+      return reply.code(400).send({ error: 'Owner 无需授权自己' });
+    }
+
+    const perm = PermissionService.grant(task.id, grantee, level, user || task.owner || 'system');
+    return reply.code(200).send({ taskId: task.taskId, grantee: perm.grantee, level: perm.level, grantedBy: perm.grantedBy });
+  });
+
+  app.delete('/api/v1/tasks/:taskId/permissions/:grantee', async (req, reply) => {
+    const db = getDb();
+    const { taskId, grantee } = req.params as any;
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return reply.code(404).send({ error: 'Task not found' });
+
+    const user = (req as any).clawpmUser as string | null;
+    if (user && task.owner !== user) {
+      return reply.code(403).send({ error: '仅 Owner 可管理权限' });
+    }
+
+    const ok = PermissionService.revoke(task.id, grantee);
+    if (!ok) return reply.code(404).send({ error: 'Permission not found' });
+    return reply.code(204).send();
+  });
+
   // ── Gantt ──────────────────────────────────────────────────────────
   app.get('/api/v1/gantt', async (req) => {
     const db = getDb();
     const q = req.query as any;
-    let allTasks = db.select().from(tasks).all();
+    const projectId = getProjectId(req);
+    let allTasks = db.select().from(tasks).where(eq(tasks.projectId, projectId)).all();
 
     if (q.domain) {
       const d = db.select().from(domains).where(eq(domains.name, q.domain)).get();
@@ -469,8 +711,8 @@ export async function registerRoutes(app: FastifyInstance) {
     }
     if (q.owner) allTasks = allTasks.filter(t => t.owner === q.owner);
 
-    const allMilestones = db.select().from(milestones).all();
-    const allDomains = db.select().from(domains).all();
+    const allMilestones = db.select().from(milestones).where(eq(milestones.projectId, projectId)).all();
+    const allDomains = db.select().from(domains).where(eq(domains.projectId, projectId)).all();
 
     return {
       tasks: allTasks.map(t => {

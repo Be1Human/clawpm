@@ -17,19 +17,28 @@ await app.register(cors, {
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
 });
 
-// ── Auth hook ──────────────────────────────────────────────────────
+// ── Auth hook + User identity extraction ──────────────────────────
+app.decorateRequest('clawpmUser', null);
+
 app.addHook('onRequest', async (req, reply) => {
-  // Skip auth for MCP SSE endpoint initial connection and static files
+  // Skip auth for health check and static files
   if (req.url === '/health' || req.url?.startsWith('/assets') || req.url === '/') return;
 
+  // Support token via Authorization header OR ?token= query param (for SSE clients)
   const auth = req.headers.authorization;
-  if (!auth || auth !== `Bearer ${config.apiToken}`) {
-    // Allow unauthenticated access in dev for Web UI API calls from same origin
+  const queryToken = (req.query as any).token;
+  const isAuthed = auth === `Bearer ${config.apiToken}` || queryToken === config.apiToken;
+
+  if (!isAuthed) {
+    // Allow unauthenticated access in dev for Web UI
     if (config.isDev && !req.url?.startsWith('/api') && !req.url?.startsWith('/mcp')) return;
     if (req.url?.startsWith('/api') || req.url?.startsWith('/mcp')) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
   }
+
+  // Extract user identity from X-ClawPM-User header (optional, for personal views)
+  (req as any).clawpmUser = (req.headers['x-clawpm-user'] as string) || null;
 });
 
 // ── Health check ───────────────────────────────────────────────────
@@ -41,11 +50,10 @@ const transports: Record<string, SSEServerTransport> = {};
 
 app.get('/mcp/sse', async (req, reply) => {
   const transport = new SSEServerTransport('/mcp/messages', reply.raw);
-  const sessionId = Math.random().toString(36).slice(2);
+  // _sessionId 在构造函数里生成，与发给客户端的 endpoint URL 中的 sessionId 一致
+  const sessionId = (transport as any)._sessionId as string;
   transports[sessionId] = transport;
-
   reply.raw.on('close', () => { delete transports[sessionId]; });
-
   await mcp.connect(transport);
 });
 
@@ -53,7 +61,8 @@ app.post('/mcp/messages', async (req, reply) => {
   const sessionId = (req.query as any).sessionId;
   const transport = sessionId ? transports[sessionId] : Object.values(transports)[0];
   if (!transport) return reply.code(404).send({ error: 'No MCP session' });
-  await transport.handlePostMessage(req.raw, reply.raw);
+  // 将 Fastify 已解析的 body 直接传入，避免 SDK 重复读取 stream
+  await transport.handlePostMessage(req.raw, reply.raw, req.body);
 });
 
 // ── REST API ───────────────────────────────────────────────────────

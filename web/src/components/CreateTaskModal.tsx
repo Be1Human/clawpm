@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 
 const PRESET_LABELS = [
@@ -14,10 +15,12 @@ const PRESET_LABELS = [
 interface Props {
   onClose: () => void;
   defaultParentId?: string;
+  defaultDomain?: string;
 }
 
-export default function CreateTaskModal({ onClose, defaultParentId }: Props) {
+export default function CreateTaskModal({ onClose, defaultParentId, defaultDomain }: Props) {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
 
   const [showMore, setShowMore] = useState(false);
   const [form, setForm] = useState({
@@ -28,14 +31,14 @@ export default function CreateTaskModal({ onClose, defaultParentId }: Props) {
     priority: 'P2',
     owner: '',
     due_date: '',
-    domain: '',
+    domain: defaultDomain || '',
     milestone: '',
     customLabel: '',
   });
 
-  const { data: domains = [] } = useQuery({ queryKey: ['domains'], queryFn: api.getDomains });
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: api.getMilestones });
-  const { data: members = [] } = useQuery({ queryKey: ['members'], queryFn: () => api.getMembers() });
+  const { data: domains = [] } = useQuery({ queryKey: ['domains', activeProject], queryFn: api.getDomains });
+  const { data: milestones = [] } = useQuery({ queryKey: ['milestones', activeProject], queryFn: api.getMilestones });
+  const { data: members = [] } = useQuery({ queryKey: ['members', activeProject], queryFn: () => api.getMembers() });
 
   function toggleLabel(val: string) {
     setForm(f => ({

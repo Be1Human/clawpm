@@ -1,10 +1,21 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
+export const projects = sqliteTable('projects', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  archived: integer('archived').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
 export const domains = sqliteTable('domains', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull().unique(),
-  taskPrefix: text('task_prefix').notNull().unique(),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
+  name: text('name').notNull(),
+  taskPrefix: text('task_prefix').notNull(),
   keywords: text('keywords').notNull().default('[]'),
   color: text('color').notNull().default('#6366f1'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
@@ -12,6 +23,7 @@ export const domains = sqliteTable('domains', {
 
 export const milestones = sqliteTable('milestones', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
   name: text('name').notNull(),
   targetDate: text('target_date'),
   status: text('status').notNull().default('active'),
@@ -22,6 +34,7 @@ export const milestones = sqliteTable('milestones', {
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   taskId: text('task_id').notNull().unique(),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
   title: text('title').notNull(),
   description: text('description'),
   domainId: integer('domain_id').references(() => domains.id),
@@ -39,6 +52,7 @@ export const tasks = sqliteTable('tasks', {
   healthScore: integer('health_score').notNull().default(100),
   tags: text('tags').notNull().default('[]'),
   labels: text('labels').notNull().default('[]'),
+  sortOrder: integer('sort_order').notNull().default(0),
   posX: real('pos_x'),
   posY: real('pos_y'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
@@ -72,6 +86,7 @@ export const progressHistory = sqliteTable('progress_history', {
 export const backlogItems = sqliteTable('backlog_items', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   backlogId: text('backlog_id').notNull().unique(),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
   title: text('title').notNull(),
   description: text('description'),
   domainId: integer('domain_id').references(() => domains.id),
@@ -88,6 +103,7 @@ export const backlogItems = sqliteTable('backlog_items', {
 
 export const goals = sqliteTable('goals', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
   title: text('title').notNull(),
   description: text('description'),
   targetDate: text('target_date'),
@@ -132,10 +148,34 @@ export const taskFieldValues = sqliteTable('task_field_values', {
   value: text('value').notNull().default(''),
 });
 
+export const taskAttachments = sqliteTable('task_attachments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // 'doc' | 'link' | 'tapd'
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  metadata: text('metadata').default('{}'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const taskPermissions = sqliteTable('task_permissions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  grantee: text('grantee').notNull(),
+  level: text('level').notNull().default('view'),   // 'edit' | 'view'
+  grantedBy: text('granted_by').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
   name: text('name').notNull(),
-  identifier: text('identifier').notNull().unique(), // tasks.owner 存的值
+  identifier: text('identifier').notNull(), // tasks.owner 存的值
   type: text('type').notNull().default('human'),      // 'human' | 'agent'
   color: text('color').notNull().default('#6366f1'),
   description: text('description'),

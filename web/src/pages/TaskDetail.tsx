@@ -2,9 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
+import { useCurrentUser } from '@/lib/useCurrentUser';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, formatRelative, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import PermissionPanel from '@/components/PermissionPanel';
+
+const ATTACHMENT_TYPES = [
+  { key: 'doc', label: '文档', icon: '📄' },
+  { key: 'link', label: '链接', icon: '🔗' },
+  { key: 'tapd', label: 'TAPD', icon: '🎫' },
+] as const;
+
+const LINK_ICONS: Record<string, string> = {
+  'iwiki.woa.com': '📖',
+  'feishu.cn': '📋',
+  'figma.com': '🎨',
+  'github.com': '🐙',
+  'tapd.cn': '🎫',
+  'docs.google.com': '📝',
+  'notion.so': '📓',
+};
 
 const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
   epic: { bg: '#ede9fe', text: '#7c3aed' }, feature: { bg: '#dbeafe', text: '#1d4ed8' },
@@ -29,8 +48,8 @@ const STATUS_DOT: Record<string, string> = {
   review: 'bg-amber-500', done: 'bg-emerald-500',
 };
 
-function EditableField({ value, onSave, type = 'text', placeholder, className }: {
-  value: string; onSave: (v: string) => void; type?: string; placeholder?: string; className?: string;
+function EditableField({ value, onSave, type = 'text', placeholder, className, disabled }: {
+  value: string; onSave: (v: string) => void; type?: string; placeholder?: string; className?: string; disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value);
@@ -47,9 +66,9 @@ function EditableField({ value, onSave, type = 'text', placeholder, className }:
   if (!editing) {
     return (
       <span
-        onClick={() => { setVal(value); setEditing(true); }}
-        className={cn('cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1 transition-colors', className)}
-        title="点击编辑"
+        onClick={() => { if (!disabled) { setVal(value); setEditing(true); } }}
+        className={cn('rounded px-1 -mx-1 transition-colors', disabled ? 'cursor-default' : 'cursor-pointer hover:bg-gray-100', className)}
+        title={disabled ? undefined : '点击编辑'}
       >
         {value || <span className="text-gray-400">{placeholder || '点击设置'}</span>}
       </span>
@@ -70,15 +89,15 @@ function EditableField({ value, onSave, type = 'text', placeholder, className }:
   );
 }
 
-function SelectField({ value, options, onSave, renderValue }: {
+function SelectField({ value, options, onSave, renderValue, disabled }: {
   value: string; options: { value: string; label: string }[]; onSave: (v: string) => void;
-  renderValue?: (v: string) => React.ReactNode;
+  renderValue?: (v: string) => React.ReactNode; disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
     return (
-      <span onClick={() => setEditing(true)} className="cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1 transition-colors" title="点击修改">
+      <span onClick={() => { if (!disabled) setEditing(true); }} className={cn('rounded px-1 -mx-1 transition-colors', disabled ? 'cursor-default' : 'cursor-pointer hover:bg-gray-100')} title={disabled ? undefined : '点击修改'}>
         {renderValue ? renderValue(value) : options.find(o => o.value === value)?.label || value}
       </span>
     );
@@ -97,19 +116,24 @@ function SelectField({ value, options, onSave, renderValue }: {
   );
 }
 
-export default function TaskDetail() {
-  const { taskId } = useParams<{ taskId: string }>();
+export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: string; onClose?: () => void } = {}) {
+  const params = useParams<{ taskId: string }>();
+  const resolvedTaskId = propTaskId || params.taskId;
+  const taskId = resolvedTaskId;
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
+  const currentUser = useCurrentUser();
 
   const { data: task, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => api.getTask(taskId!) });
   const { data: history = [] } = useQuery({ queryKey: ['task-history', taskId], queryFn: () => api.getTaskHistory(taskId!) });
   const { data: notes = [] } = useQuery({ queryKey: ['task-notes', taskId], queryFn: () => api.getTaskNotes(taskId!) });
   const { data: children = [] } = useQuery({ queryKey: ['task-children', taskId], queryFn: () => api.getTaskChildren(taskId!) });
-  const { data: domains = [] } = useQuery({ queryKey: ['domains'], queryFn: () => api.getDomains() });
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: () => api.getMilestones() });
-  const { data: members = [] } = useQuery({ queryKey: ['members'], queryFn: () => api.getMembers() });
-  const { data: customFieldDefs = [] } = useQuery({ queryKey: ['custom-fields'], queryFn: () => api.getCustomFields() });
+  const { data: domains = [] } = useQuery({ queryKey: ['domains', activeProject], queryFn: () => api.getDomains() });
+  const { data: milestones = [] } = useQuery({ queryKey: ['milestones', activeProject], queryFn: () => api.getMilestones() });
+  const { data: members = [] } = useQuery({ queryKey: ['members', activeProject], queryFn: () => api.getMembers() });
+  const { data: customFieldDefs = [] } = useQuery({ queryKey: ['custom-fields', activeProject], queryFn: () => api.getCustomFields() });
+  const { data: attachments = [] } = useQuery({ queryKey: ['attachments', taskId], queryFn: () => api.getAttachments(taskId!) });
 
   const [progressVal, setProgressVal] = useState('');
   const [progressSummary, setProgressSummary] = useState('');
@@ -120,12 +144,20 @@ export default function TaskDetail() {
   const [childTitle, setChildTitle] = useState('');
   const [editingDesc, setEditingDesc] = useState(false);
   const [descVal, setDescVal] = useState('');
+  const [attachTab, setAttachTab] = useState<'doc' | 'link' | 'tapd'>('doc');
+  const [showAddAttach, setShowAddAttach] = useState(false);
+  const [attachTitle, setAttachTitle] = useState('');
+  const [attachContent, setAttachContent] = useState('');
+  const [editingAttachId, setEditingAttachId] = useState<number | null>(null);
+  const [editingAttachContent, setEditingAttachContent] = useState('');
+  const [previewAttachId, setPreviewAttachId] = useState<number | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task', taskId] });
     qc.invalidateQueries({ queryKey: ['task-history', taskId] });
     qc.invalidateQueries({ queryKey: ['tasks'] });
     qc.invalidateQueries({ queryKey: ['task-tree'] });
+    qc.invalidateQueries({ queryKey: ['attachments', taskId] });
   };
 
   const setFieldMut = useMutation({
@@ -153,10 +185,7 @@ export default function TaskDetail() {
     onSuccess: () => { invalidate(); setProgressVal(''); setProgressSummary(''); },
   });
 
-  const completeMut = useMutation({
-    mutationFn: () => api.completeTask(taskId!),
-    onSuccess: invalidate,
-  });
+
 
   const noteMut = useMutation({
     mutationFn: () => api.addNote(taskId!, noteContent),
@@ -168,6 +197,21 @@ export default function TaskDetail() {
     onSuccess: () => { invalidate(); setShowBlocker(false); setBlockerText(''); },
   });
 
+  const addAttachMut = useMutation({
+    mutationFn: (data: { type: string; title: string; content: string }) => api.addAttachment(taskId!, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['attachments', taskId] }); invalidate(); setShowAddAttach(false); setAttachTitle(''); setAttachContent(''); },
+  });
+
+  const updateAttachMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateAttachment(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['attachments', taskId] }); setEditingAttachId(null); setEditingAttachContent(''); },
+  });
+
+  const deleteAttachMut = useMutation({
+    mutationFn: (id: number) => api.deleteAttachment(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['attachments', taskId] }); invalidate(); },
+  });
+
   const chartData = (history as any[]).map((h: any) => ({
     date: new Date(h.recordedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
     progress: h.progress,
@@ -176,17 +220,33 @@ export default function TaskDetail() {
   if (isLoading) return <div className="p-6 text-gray-500">加载中...</div>;
   if (!task) return <div className="p-6 text-gray-500">节点不存在</div>;
 
+  const myPerm = task._myPermission as string | undefined;
+  const canEdit = !currentUser || !myPerm || myPerm === 'owner' || myPerm === 'edit';
+  const isOwner = !currentUser || myPerm === 'owner' || currentUser === task.owner;
+
   const labels: string[] = (() => { try { return Array.isArray(task.labels) ? task.labels : JSON.parse(task.labels || '[]'); } catch { return []; } })();
 
   function toggleLabel(label: string) {
+    if (!canEdit) return;
     const next = labels.includes(label) ? labels.filter(l => l !== label) : [...labels, label];
     updateMut.mutate({ labels: next });
   }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
+      {/* 只读模式提示 */}
+      {!canEdit && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          你对此节点仅有查看权限，无法编辑
+        </div>
+      )}
+
       <div className="flex items-start gap-4 mb-6">
-        <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-gray-700 mt-1 transition-colors">← 返回</button>
+        <button onClick={() => onClose ? onClose() : navigate(-1)} className="text-gray-400 hover:text-gray-700 mt-1 transition-colors">{onClose ? '✕ 关闭' : '← 返回'}</button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="font-mono text-sm text-gray-400">{task.taskId}</span>
@@ -195,12 +255,14 @@ export default function TaskDetail() {
               options={STATUS_OPTIONS}
               onSave={v => updateMut.mutate({ status: v })}
               renderValue={() => <StatusBadge status={task.status} />}
+              disabled={!canEdit}
             />
             <SelectField
               value={task.priority}
               options={PRIORITY_OPTIONS.map(p => ({ value: p, label: p }))}
               onSave={v => updateMut.mutate({ priority: v })}
               renderValue={() => <PriorityBadge priority={task.priority} />}
+              disabled={!canEdit}
             />
           </div>
           <EditableField
@@ -208,14 +270,28 @@ export default function TaskDetail() {
             onSave={v => updateMut.mutate({ title: v })}
             className="text-xl font-semibold text-gray-900 block w-full"
             placeholder="输入标题"
+            disabled={!canEdit}
           />
         </div>
-        {task.status !== 'done' && (
-          <button onClick={() => completeMut.mutate()}
-            className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors flex-shrink-0">
-            标记完成
-          </button>
-        )}
+        {(() => {
+          if (!canEdit) return null;
+          const flow = STATUS_OPTIONS.map(s => s.value);
+          const idx = flow.indexOf(task.status);
+          if (idx < 0 || idx >= flow.length - 1) return null; // 已是最后状态(done)则不显示
+          const next = STATUS_OPTIONS[idx + 1];
+          const colors: Record<string, string> = {
+            planned: 'bg-blue-600 hover:bg-blue-700',
+            active: 'bg-indigo-600 hover:bg-indigo-700',
+            review: 'bg-amber-600 hover:bg-amber-700',
+            done: 'bg-emerald-600 hover:bg-emerald-700',
+          };
+          return (
+            <button onClick={() => updateMut.mutate({ status: next.value })}
+              className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors flex-shrink-0 ${colors[next.value] || 'bg-gray-600 hover:bg-gray-700'}`}>
+              → {next.label}
+            </button>
+          );
+        })()}
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -224,7 +300,7 @@ export default function TaskDetail() {
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">描述</h3>
-              {!editingDesc && (
+              {!editingDesc && canEdit && (
                 <button onClick={() => { setDescVal(task.description || ''); setEditingDesc(true); }}
                   className="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">编辑</button>
               )}
@@ -249,6 +325,162 @@ export default function TaskDetail() {
                 {task.description || <span className="text-gray-400">暂无描述，点击"编辑"添加</span>}
               </p>
             )}
+          </div>
+
+          {/* 附件（v2.2） */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+                附件
+                {(attachments as any[]).length > 0 && (
+                  <span className="ml-1.5 text-gray-400">({(attachments as any[]).length})</span>
+                )}
+              </h3>
+              <button
+                onClick={() => setShowAddAttach(v => !v)}
+                className={cn('text-xs px-2.5 py-1 rounded-lg border transition-colors',
+                  showAddAttach
+                    ? 'border-indigo-300 text-indigo-600 bg-indigo-50'
+                    : 'border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200',
+                  !canEdit && 'hidden')}
+              >
+                {showAddAttach ? '收起' : '+ 添加'}
+              </button>
+            </div>
+
+            {/* 类型 Tab */}
+            <div className="flex gap-1 mb-3">
+              {ATTACHMENT_TYPES.map(t => {
+                const count = (attachments as any[]).filter((a: any) => a.type === t.key).length;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setAttachTab(t.key)}
+                    className={cn('flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      attachTab === t.key ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'text-gray-500 hover:bg-gray-50')}
+                  >
+                    <span>{t.icon}</span>
+                    <span>{t.label}</span>
+                    {count > 0 && <span className="text-[10px] text-gray-400">({count})</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 添加附件表单 */}
+            {showAddAttach && (
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
+                <input
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                  placeholder={attachTab === 'doc' ? '文档标题（如"需求文档"）' : attachTab === 'link' ? '链接标题（如"Figma设计稿"）' : 'TAPD 单标题'}
+                  value={attachTitle} onChange={e => setAttachTitle(e.target.value)} autoFocus
+                />
+                {attachTab === 'doc' ? (
+                  <textarea
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm min-h-[80px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 font-mono"
+                    placeholder="Markdown 内容..."
+                    value={attachContent} onChange={e => setAttachContent(e.target.value)}
+                  />
+                ) : (
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                    placeholder={attachTab === 'link' ? 'https://...' : 'TAPD 单 ID 或 URL'}
+                    value={attachContent} onChange={e => setAttachContent(e.target.value)}
+                  />
+                )}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { setShowAddAttach(false); setAttachTitle(''); setAttachContent(''); }}
+                    className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+                  <button
+                    onClick={() => { if (attachTitle.trim() && attachContent.trim()) addAttachMut.mutate({ type: attachTab, title: attachTitle.trim(), content: attachContent.trim() }); }}
+                    disabled={!attachTitle.trim() || !attachContent.trim() || addAttachMut.isPending}
+                    className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >{addAttachMut.isPending ? '...' : '添加'}</button>
+                </div>
+              </div>
+            )}
+
+            {/* 附件列表 */}
+            <div className="space-y-2">
+              {(attachments as any[]).filter((a: any) => a.type === attachTab).length === 0 && !showAddAttach && (
+                <p className="text-xs text-gray-400 py-1">暂无{ATTACHMENT_TYPES.find(t => t.key === attachTab)?.label}</p>
+              )}
+              {(attachments as any[]).filter((a: any) => a.type === attachTab).map((att: any) => (
+                <div key={att.id} className="group relative">
+                  {att.type === 'doc' ? (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => setPreviewAttachId(previewAttachId === att.id ? null : att.id)}
+                        className="w-full flex items-center gap-2 p-2.5 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <span className="text-sm">📄</span>
+                        <span className="flex-1 text-sm font-medium text-gray-700">{att.title}</span>
+                        <span className="text-[10px] text-gray-400">{previewAttachId === att.id ? '收起' : '预览'}</span>
+                      </button>
+                      {previewAttachId === att.id && (
+                        <div className="border-t border-gray-100">
+                          {editingAttachId === att.id ? (
+                            <div className="p-3 space-y-2">
+                              <textarea
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm min-h-[120px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 font-mono"
+                                value={editingAttachContent} onChange={e => setEditingAttachContent(e.target.value)} autoFocus
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => { setEditingAttachId(null); setEditingAttachContent(''); }}
+                                  className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg">取消</button>
+                                <button onClick={() => updateAttachMut.mutate({ id: att.id, data: { content: editingAttachContent } })}
+                                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3">
+                              <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap text-sm leading-relaxed">
+                                {att.content}
+                              </div>
+                              <button
+                                onClick={() => { setEditingAttachId(att.id); setEditingAttachContent(att.content); }}
+                                className="mt-2 text-xs text-indigo-500 hover:text-indigo-700"
+                              >编辑</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : att.type === 'link' ? (
+                    <a href={att.content} target="_blank" rel="noopener noreferrer"
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); const url = att.content.startsWith('http') ? att.content : 'https://' + att.content; window.open(url, '_blank', 'noopener,noreferrer'); }}
+                      className="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer">
+                      <span className="text-sm">{(() => { try { const h = new URL(att.content).hostname; return LINK_ICONS[h] || '🔗'; } catch { return '🔗'; } })()}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-700 truncate">{att.title}</div>
+                        <div className="text-[10px] text-gray-400 truncate">{(() => { try { return new URL(att.content).hostname; } catch { return att.content; } })()}</div>
+                      </div>
+                      <span className="text-gray-300 text-sm flex-shrink-0">↗</span>
+                    </a>
+                  ) : (
+                    <a href={att.content.startsWith('http') ? att.content : `https://www.tapd.cn/${att.metadata?.workspaceId || ''}/bugtrace/bugs/view/${att.content}`}
+                      target="_blank" rel="noopener noreferrer"
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); const url = att.content.startsWith('http') ? att.content : `https://www.tapd.cn/${(att.metadata as any)?.workspaceId || ''}/bugtrace/bugs/view/${att.content}`; window.open(url, '_blank', 'noopener,noreferrer'); }}
+                      className="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer">
+                      <span className="text-sm">🎫</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-700 truncate">{att.title}</div>
+                        <div className="text-[10px] text-gray-400 truncate">
+                          {att.metadata?.tapdType && <span className="mr-1">{att.metadata.tapdType}</span>}
+                          #{att.content}
+                          {att.metadata?.status && <span className="ml-1">· {att.metadata.status}</span>}
+                        </div>
+                      </div>
+                      <span className="text-gray-300 text-sm flex-shrink-0">↗</span>
+                    </a>
+                  )}
+                  <button
+                    onClick={() => { if (confirm('确认删除此附件？')) deleteAttachMut.mutate(att.id); }}
+                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 w-5 h-5 rounded flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all text-xs"
+                  >×</button>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* 标签（可编辑） */}
@@ -280,7 +512,7 @@ export default function TaskDetail() {
             </div>
           )}
 
-          {task.status !== 'done' && (
+          {task.status !== 'done' && canEdit && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">更新进度</h3>
               <div className="flex gap-3 mb-3">
@@ -352,6 +584,9 @@ export default function TaskDetail() {
         </div>
 
         <div className="space-y-4">
+          {/* 树上下文小视图 */}
+          <TreeContextWidget taskId={task.taskId} />
+
           {/* 节点信息（可编辑） */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-4">节点信息</h3>
@@ -376,6 +611,7 @@ export default function TaskDetail() {
                       color: (domains as any[]).find((d: any) => d.name === v)?.color || '#6366f1',
                     }}>{v}</span>
                   ) : <span className="text-sm text-gray-400">—</span>}
+                  disabled={!canEdit}
                 />
               </MetaRow>
 
@@ -385,6 +621,7 @@ export default function TaskDetail() {
                   options={[{ value: '', label: '无' }, ...(milestones as any[]).map((m: any) => ({ value: m.name, label: m.name }))]}
                   onSave={v => updateMut.mutate({ milestone: v || undefined })}
                   renderValue={(v) => <span className="text-sm text-gray-700">{v || '—'}</span>}
+                  disabled={!canEdit}
                 />
               </MetaRow>
 
@@ -401,6 +638,7 @@ export default function TaskDetail() {
                       <span className="text-sm text-gray-700">{v}</span>
                     </div>
                   ) : <span className="text-sm text-gray-400">—</span>}
+                  disabled={!canEdit}
                 />
               </MetaRow>
 
@@ -411,6 +649,7 @@ export default function TaskDetail() {
                   type="date"
                   className="text-sm text-gray-600"
                   placeholder="点击设置"
+                  disabled={!canEdit}
                 />
               </MetaRow>
               <MetaRow label="截止日期">
@@ -420,6 +659,7 @@ export default function TaskDetail() {
                   type="date"
                   className="text-sm text-gray-600"
                   placeholder="点击设置"
+                  disabled={!canEdit}
                 />
               </MetaRow>
 
@@ -528,7 +768,8 @@ export default function TaskDetail() {
                 className={cn('text-xs px-2.5 py-1 rounded-lg border transition-colors',
                   showAddChild
                     ? 'border-indigo-300 text-indigo-600 bg-indigo-50'
-                    : 'border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200')}
+                    : 'border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200',
+                  !canEdit && 'hidden')}
               >
                 {showAddChild ? '收起' : '+ 添加'}
               </button>
@@ -577,6 +818,9 @@ export default function TaskDetail() {
               ))}
             </div>
           </div>
+
+          {/* 权限管理（v2.5） */}
+          <PermissionPanel taskId={task.taskId} owner={task.owner} />
         </div>
       </div>
     </div>
@@ -588,6 +832,164 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
     <div className="flex items-center justify-between">
       <span className="text-xs text-gray-500">{label}</span>
       <div className="max-w-[60%]">{children}</div>
+    </div>
+  );
+}
+
+// ── 树上下文小视图 ──────────────────────────────────────────────────
+
+const CTX_STATUS_DOT: Record<string, string> = {
+  backlog: 'bg-slate-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
+  review: 'bg-amber-500', done: 'bg-emerald-500',
+};
+
+function TreeContextWidget({ taskId }: { taskId: string }) {
+  const navigate = useNavigate();
+  const { data: ctx, isLoading } = useQuery({
+    queryKey: ['task-context', taskId],
+    queryFn: () => api.getTaskContext(taskId),
+    enabled: !!taskId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">节点位置</h3>
+        <div className="text-xs text-gray-400">加载中...</div>
+      </div>
+    );
+  }
+
+  if (!ctx) return null;
+
+  const { current, ancestors, siblings, children } = ctx;
+
+  const goToTask = (tid: string) => navigate(`/tasks/${tid}`);
+  const goToMindMap = () => navigate(`/my/tasks/mindmap?focus=${taskId}`);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">节点位置</h3>
+        <button
+          onClick={goToMindMap}
+          className="text-xs text-indigo-600 hover:text-indigo-700 hover:underline transition-colors flex items-center gap-1"
+          title="在脑图中定位"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+          脑图定位
+        </button>
+      </div>
+
+      <div className="space-y-0.5">
+        {/* 祖先链 */}
+        {ancestors.map((a: any, i: number) => (
+          <CtxTreeRow
+            key={a.taskId}
+            task={a}
+            depth={i}
+            isCurrent={false}
+            onClick={() => goToTask(a.taskId)}
+          />
+        ))}
+
+        {/* 当前节点 */}
+        <CtxTreeRow
+          task={current}
+          depth={ancestors.length}
+          isCurrent={true}
+          onClick={undefined}
+        />
+
+        {/* 子节点 */}
+        {children.map((c: any) => (
+          <CtxTreeRow
+            key={c.taskId}
+            task={c}
+            depth={ancestors.length + 1}
+            isCurrent={false}
+            onClick={() => goToTask(c.taskId)}
+          />
+        ))}
+
+        {/* 同级节点（折叠显示） */}
+        {siblings.length > 0 && (
+          <CtxSiblings siblings={siblings} depth={ancestors.length} onNavigate={goToTask} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CtxTreeRow({ task, depth, isCurrent, onClick }: {
+  task: any; depth: number; isCurrent: boolean; onClick?: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 py-1 px-1.5 rounded-md text-xs transition-colors',
+        isCurrent
+          ? 'bg-indigo-50 border border-indigo-200 font-medium text-indigo-700'
+          : 'hover:bg-gray-50 cursor-pointer text-gray-600',
+      )}
+      style={{ paddingLeft: `${depth * 16 + 6}px` }}
+      onClick={onClick}
+    >
+      {/* 树线指示 */}
+      {depth > 0 && (
+        <svg className="w-3 h-3 text-gray-300 flex-shrink-0" viewBox="0 0 12 12" fill="none">
+          <path d="M2 0v6h10" stroke="currentColor" strokeWidth="1.5" fill="none" />
+        </svg>
+      )}
+      <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', CTX_STATUS_DOT[task.status] || 'bg-gray-400')} />
+      <span className="truncate flex-1">{task.title}</span>
+      {isCurrent && (
+        <span className="text-[10px] text-indigo-400 flex-shrink-0">当前</span>
+      )}
+    </div>
+  );
+}
+
+function CtxSiblings({ siblings, depth, onNavigate }: {
+  siblings: any[]; depth: number; onNavigate: (taskId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? siblings : siblings.slice(0, 2);
+
+  return (
+    <div className="mt-0.5">
+      <div
+        className="flex items-center gap-1 py-0.5 px-1.5 text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
+        style={{ paddingLeft: `${depth * 16 + 6}px` }}
+        onClick={() => setExpanded(v => !v)}
+      >
+        <svg className={cn('w-3 h-3 transition-transform', expanded && 'rotate-90')} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        同级节点 ({siblings.length})
+      </div>
+      {shown.map((s: any) => (
+        <div
+          key={s.taskId}
+          className="flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[11px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors"
+          style={{ paddingLeft: `${depth * 16 + 22}px` }}
+          onClick={() => onNavigate(s.taskId)}
+        >
+          <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', CTX_STATUS_DOT[s.status] || 'bg-gray-400')} />
+          <span className="truncate">{s.title}</span>
+        </div>
+      ))}
+      {!expanded && siblings.length > 2 && (
+        <div
+          className="text-[10px] text-gray-400 cursor-pointer hover:text-indigo-500 transition-colors"
+          style={{ paddingLeft: `${depth * 16 + 22}px` }}
+          onClick={() => setExpanded(true)}
+        >
+          ... 还有 {siblings.length - 2} 个
+        </div>
+      )}
     </div>
   );
 }

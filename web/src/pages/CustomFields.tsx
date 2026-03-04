@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 
 const FIELD_TYPES = [
@@ -199,12 +200,13 @@ function FieldCard({ field, onEdit, onDelete }: { field: any; onEdit: () => void
 
 export default function CustomFields() {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
   const [editField, setEditField] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
 
   const { data: fields = [], isLoading } = useQuery({
-    queryKey: ['custom-fields'],
+    queryKey: ['custom-fields', activeProject],
     queryFn: () => api.getCustomFields(),
   });
 

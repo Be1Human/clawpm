@@ -3,14 +3,15 @@ import { getDb } from '../db/connection.js';
 import { tasks, domains } from '../db/schema.js';
 
 export const RiskService = {
-  analyze() {
+  analyze(projectId?: number) {
     const db = getDb();
     const today = new Date().toISOString().split('T')[0];
     const in3Days = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
 
-    const allActive = db.select().from(tasks)
+    let allActive = db.select().from(tasks)
       .where(ne(tasks.status, 'done'))
       .all();
+    if (projectId) allActive = allActive.filter(t => (t as any).projectId === projectId);
 
     const overdue = allActive.filter(t =>
       t.dueDate && t.dueDate < today && t.status !== 'done'
@@ -35,7 +36,8 @@ export const RiskService = {
       : 100;
 
     // By domain breakdown
-    const domainList = db.select().from(domains).all();
+    let domainList = db.select().from(domains).all();
+    if (projectId) domainList = domainList.filter(d => (d as any).projectId === projectId);
     const byDomain = domainList.map(d => {
       const domainTasks = allActive.filter(t => t.domainId === d.id);
       const done = domainTasks.filter(t => t.status === 'done').length;
@@ -46,11 +48,15 @@ export const RiskService = {
       return { domain: d.name, color: d.color, total, done, progress: avgP };
     }).filter(d => d.total > 0);
 
+    let allTasksCount = db.select().from(tasks).all();
+    if (projectId) allTasksCount = allTasksCount.filter(t => (t as any).projectId === projectId);
+    const doneCount = allTasksCount.filter(t => t.status === 'done').length;
+
     return {
       summary: {
-        total: db.select().from(tasks).all().length,
+        total: allTasksCount.length,
         active: allActive.filter(t => t.status === 'active').length,
-        done: db.select().from(tasks).where(eq(tasks.status, 'done')).all().length,
+        done: doneCount,
         overdue: overdue.length,
         blocked: blocked.length,
         avgHealth,
@@ -63,9 +69,10 @@ export const RiskService = {
     };
   },
 
-  getProjectStatus() {
+  getProjectStatus(projectId?: number) {
     const db = getDb();
-    const all = db.select().from(tasks).all();
+    let all = db.select().from(tasks).all();
+    if (projectId) all = all.filter(t => (t as any).projectId === projectId);
     const total = all.length;
     const done = all.filter(t => t.status === 'done').length;
     const active = all.filter(t => t.status === 'active').length;

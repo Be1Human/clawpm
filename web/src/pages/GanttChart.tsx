@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 
@@ -39,11 +40,12 @@ function fmtDate(d: Date) {
 
 // ── 主组件 ────────────────────────────────────────────────────────────
 export default function GanttChart() {
+  const activeProject = useActiveProject();
   const { data, isLoading } = useQuery({
-    queryKey: ['gantt'],
+    queryKey: ['gantt', activeProject],
     queryFn: () => api.getGanttData(),
   });
-  const { data: members = [] } = useQuery({ queryKey: ['members'], queryFn: () => api.getMembers() });
+  const { data: members = [] } = useQuery({ queryKey: ['members', activeProject], queryFn: () => api.getMembers() });
 
   const [groupBy, setGroupBy] = useState<'domain' | 'owner'>('domain');
   const [grain, setGrain] = useState<'day' | 'week'>('week');

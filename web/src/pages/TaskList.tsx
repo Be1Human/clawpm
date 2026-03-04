@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import CreateTaskModal from '@/components/CreateTaskModal';
@@ -22,12 +23,13 @@ export default function TaskList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
+  const activeProject = useActiveProject();
 
   const statusFilter = searchParams.get('status') || '';
   const labelFilter = searchParams.get('label') || '';
 
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', statusFilter, labelFilter],
+    queryKey: ['tasks', activeProject, statusFilter, labelFilter],
     queryFn: () => {
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;

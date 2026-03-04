@@ -1,12 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { PriorityBadge } from '@/components/ui/Badge';
 import { formatRelative, cn } from '@/lib/utils';
 
 function CreateBacklogModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: domains = [] } = useQuery({ queryKey: ['domains'], queryFn: api.getDomains });
+  const activeProject = useActiveProject();
+  const { data: domains = [] } = useQuery({ queryKey: ['domains', activeProject], queryFn: api.getDomains });
   const [form, setForm] = useState({ title: '', description: '', priority: 'P2', domain: '', source: '', estimated_scope: '' });
 
   const mut = useMutation({
@@ -71,7 +73,8 @@ function CreateBacklogModal({ onClose }: { onClose: () => void }) {
 
 function ScheduleModal({ item, onClose }: { item: any; onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: api.getMilestones });
+  const activeProject = useActiveProject();
+  const { data: milestones = [] } = useQuery({ queryKey: ['milestones', activeProject], queryFn: api.getMilestones });
   const [form, setForm] = useState({ milestone: '', owner: '', due_date: '', priority: item.priority });
 
   const mut = useMutation({
@@ -123,9 +126,10 @@ export default function Backlog() {
   const [showCreate, setShowCreate] = useState(false);
   const [scheduleItem, setScheduleItem] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState('pool');
+  const activeProject = useActiveProject();
 
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['backlog', statusFilter],
+    queryKey: ['backlog', activeProject, statusFilter],
     queryFn: () => api.getBacklog(statusFilter ? { status: statusFilter } : undefined),
   });
 

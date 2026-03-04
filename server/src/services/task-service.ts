@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, like, or, isNull, lt, lte, sql } from 'drizzle-orm';
 import { getDb } from '../db/connection.js';
-import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues } from '../db/schema.js';
+import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues, taskAttachments } from '../db/schema.js';
 import { generateTaskId } from './id-generator.js';
 
 export interface CreateTaskParams {
@@ -17,6 +17,7 @@ export interface CreateTaskParams {
   tags?: string[];
   source?: string;
   status?: string;
+  projectId?: number;
 }
 
 export interface UpdateTaskParams {
@@ -45,6 +46,7 @@ export interface TaskFilters {
   priority?: string;
   search?: string;
   label?: string;
+  projectId?: number;
 }
 
 export const TaskService = {
@@ -72,10 +74,12 @@ export const TaskService = {
       }
     }
 
-    const taskId = await generateTaskId(domainId);
+    const projectId = params.projectId || 1;
+    const taskId = await generateTaskId(domainId, projectId);
 
     db.insert(tasks).values({
       taskId,
+      projectId,
       title: params.title,
       description: params.description,
       domainId,
@@ -115,6 +119,7 @@ export const TaskService = {
 
     const conditions = [];
 
+    if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
     if (filters.owner) conditions.push(eq(tasks.owner, filters.owner));
     if (filters.priority) conditions.push(eq(tasks.priority, filters.priority));
@@ -313,9 +318,14 @@ export const TaskService = {
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
   },
 
-  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string } = {}) {
+  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string; projectId?: number } = {}) {
     const db = getDb();
     let allTasks = db.select().from(tasks).all();
+
+    // 项目过滤
+    if (filters.projectId) {
+      allTasks = allTasks.filter(t => (t as any).projectId === filters.projectId);
+    }
 
     if (domainName) {
       const d = db.select().from(domains).where(eq(domains.name, domainName)).get();
@@ -360,7 +370,8 @@ export const TaskService = {
     }
 
     const enriched = allTasks.map(t => this._enrichTask(t));
-    const roots = enriched.filter(t => !t.parentTaskId);
+    const roots = enriched.filter(t => !t.parentTaskId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     return roots.map(r => this._buildSubtree(r, enriched));
   },
 
@@ -372,9 +383,47 @@ export const TaskService = {
     return children.map(t => this._enrichTask(t));
   },
 
+  /** 获取任务的树上下文：祖先链 + 同级节点 + 直接子节点 */
+  getTaskContext(taskId: string) {
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return null;
+
+    // 1. 构建祖先链（从根到当前节点的路径）
+    const ancestors: any[] = [];
+    let cur = task;
+    while (cur.parentTaskId) {
+      const parent = db.select().from(tasks).where(eq(tasks.id, cur.parentTaskId)).get();
+      if (!parent) break;
+      ancestors.unshift(this._enrichTask(parent));
+      cur = parent;
+    }
+
+    // 2. 获取同级节点（共同父节点下的其他节点）
+    const siblings = task.parentTaskId
+      ? db.select().from(tasks).where(eq(tasks.parentTaskId, task.parentTaskId)).all()
+          .filter(t => t.id !== task.id)
+          .sort((a, b) => ((a as any).sortOrder ?? 0) - ((b as any).sortOrder ?? 0))
+          .map(t => this._enrichTask(t))
+      : [];
+
+    // 3. 获取直接子节点
+    const children = db.select().from(tasks).where(eq(tasks.parentTaskId, task.id)).all()
+      .sort((a, b) => ((a as any).sortOrder ?? 0) - ((b as any).sortOrder ?? 0))
+      .map(t => this._enrichTask(t));
+
+    return {
+      current: this._enrichTask(task),
+      ancestors,
+      siblings,
+      children,
+    };
+  },
+
   _buildSubtree(node: any, allTasks: any[]): any {
     const children = allTasks
       .filter(t => t.parentTaskId === node.id)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .map(c => this._buildSubtree(c, allTasks));
     return { ...node, children };
   },
@@ -411,9 +460,40 @@ export const TaskService = {
       newParentId = parent.id;
     }
 
-    db.update(tasks).set({ parentTaskId: newParentId, updatedAt: new Date().toISOString() } as any)
-      .where(eq(tasks.taskId, taskId)).run();
+    // 计算新父节点下的最大 sortOrder，放到末尾
+    const siblings = newParentId
+      ? db.select().from(tasks).where(eq(tasks.parentTaskId, newParentId)).all()
+      : db.select().from(tasks).where(isNull(tasks.parentTaskId)).all();
+    const maxSort = siblings.reduce((max, s) => Math.max(max, (s as any).sortOrder ?? 0), 0);
+
+    db.update(tasks).set({
+      parentTaskId: newParentId,
+      sortOrder: maxSort + 1,
+      updatedAt: new Date().toISOString(),
+    } as any).where(eq(tasks.taskId, taskId)).run();
     return this.getByTaskId(taskId)!;
+  },
+
+  // 同级排序：接受父节点 ID + 子节点 taskId 有序数组，批量更新 sortOrder
+  reorderChildren(parentTaskId: string | null, orderedChildIds: string[]) {
+    const db = getDb();
+
+    // 解析父节点的内部 ID
+    let parentId: number | null = null;
+    if (parentTaskId) {
+      const parent = db.select().from(tasks).where(eq(tasks.taskId, parentTaskId)).get();
+      if (!parent) return false;
+      parentId = parent.id;
+    }
+
+    // 验证所有子节点确实属于该父节点
+    for (let i = 0; i < orderedChildIds.length; i++) {
+      const child = db.select().from(tasks).where(eq(tasks.taskId, orderedChildIds[i])).get();
+      if (!child) continue;
+      db.update(tasks).set({ sortOrder: i, updatedAt: new Date().toISOString() } as any)
+        .where(eq(tasks.taskId, orderedChildIds[i])).run();
+    }
+    return true;
   },
 
   // 检查 candidateId 是否是 ancestorId 的子孙
@@ -461,14 +541,51 @@ export const TaskService = {
       return { fieldId: v.fieldId, fieldName: field?.name, fieldType: field?.fieldType, value: v.value };
     });
 
+    const attachmentCount = db.select().from(taskAttachments).where(eq(taskAttachments.taskId, task.id)).all().length;
+
+    // 解析父节点的 taskId 字符串
+    let parentTaskIdStr: string | null = null;
+    if (task.parentTaskId) {
+      const parentRow = db.select().from(tasks).where(eq(tasks.id, task.parentTaskId)).get();
+      if (parentRow) parentTaskIdStr = parentRow.taskId;
+    }
+
     return {
       ...task,
       tags: JSON.parse(task.tags || '[]'),
       labels,
+      parentTaskIdStr,
       domain: domain ? { id: domain.id, name: domain.name, color: domain.color } : null,
       milestone: milestone ? { id: milestone.id, name: milestone.name } : null,
       customFields: customFieldsMap,
       customFieldValues: customFieldValuesList,
+      attachmentCount,
     };
+  },
+
+  /** 删除任务及其所有子任务（级联删除备注/进度/字段值/附件） */
+  deleteTask(taskId: string): boolean {
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return false;
+
+    const allTasks = db.select().from(tasks).all();
+    const idsToDelete: number[] = [];
+    function collectChildren(parentId: number) {
+      idsToDelete.push(parentId);
+      for (const t of allTasks) {
+        if (t.parentTaskId === parentId) collectChildren(t.id);
+      }
+    }
+    collectChildren(task.id);
+
+    for (const id of idsToDelete) {
+      db.delete(taskNotes).where(eq(taskNotes.taskId, id)).run();
+      db.delete(progressHistory).where(eq(progressHistory.taskId, id)).run();
+      db.delete(taskFieldValues).where(eq(taskFieldValues.taskId, id)).run();
+      db.delete(taskAttachments).where(eq(taskAttachments.taskId, id)).run();
+      db.delete(tasks).where(eq(tasks.id, id)).run();
+    }
+    return true;
   },
 };

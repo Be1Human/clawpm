@@ -1,14 +1,45 @@
+import { getCurrentUser } from '../lib/useCurrentUser';
+
 const BASE = '/api/v1';
 const TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
+/** 当前活跃项目 slug，全局状态（带订阅通知） */
+let _activeProjectSlug = localStorage.getItem('clawpm-activeProject') || 'default';
+const _listeners = new Set<() => void>();
+
+export function getActiveProject(): string { return _activeProjectSlug; }
+export function setActiveProject(slug: string) {
+  if (slug === _activeProjectSlug) return;
+  _activeProjectSlug = slug;
+  localStorage.setItem('clawpm-activeProject', slug);
+  _listeners.forEach(fn => fn());
+}
+export function subscribeActiveProject(listener: () => void): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
+/** 给 URL 附加 ?project=slug 参数 */
+function withProject(path: string): string {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}project=${_activeProjectSlug}`;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${TOKEN}`,
+    ...options?.headers as Record<string, string>,
+  };
+  if (options?.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const currentUser = getCurrentUser();
+  if (currentUser) {
+    headers['X-ClawPM-User'] = currentUser;
+  }
   const res = await fetch(`${BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TOKEN}`,
-      ...options?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -18,17 +49,30 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Projects
+  getProjects: () => request<any[]>('/projects'),
+  createProject: (data: { name: string; slug?: string; description?: string }) =>
+    request<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  getProject: (slug: string) => request<any>(`/projects/${slug}`),
+  updateProject: (slug: string, data: any) =>
+    request<any>(`/projects/${slug}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteProject: (slug: string) => request<any>(`/projects/${slug}`, { method: 'DELETE' }),
+
   // Tasks
-  getTasks: (params?: Record<string, string>) =>
-    request<any[]>(`/tasks${params ? '?' + new URLSearchParams(params) : ''}`),
+  getTasks: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    return request<any[]>(withProject(`/tasks${qs}`));
+  },
   getTaskTree: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params) : '';
-    return request<any[]>(`/tasks/tree${qs}`);
+    return request<any[]>(withProject(`/tasks/tree${qs}`));
   },
   getTaskChildren: (taskId: string) =>
     request<any[]>(`/tasks/${taskId}/children`),
+  getTaskContext: (taskId: string) =>
+    request<any>(`/tasks/${taskId}/context`),
   getTask: (id: string) => request<any>(`/tasks/${id}`),
-  createTask: (data: any) => request<any>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
+  createTask: (data: any) => request<any>(withProject('/tasks'), { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: string, data: any) => request<any>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTask: (id: string) => request<any>(`/tasks/${id}`, { method: 'DELETE' }),
   updateProgress: (id: string, progress: number, summary?: string) =>
@@ -43,54 +87,63 @@ export const api = {
   getTaskNotes: (id: string) => request<any[]>(`/tasks/${id}/notes`),
 
   // Backlog
-  getBacklog: (params?: Record<string, string>) =>
-    request<any[]>(`/backlog${params ? '?' + new URLSearchParams(params) : ''}`),
-  createBacklogItem: (data: any) => request<any>('/backlog', { method: 'POST', body: JSON.stringify(data) }),
+  getBacklog: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    return request<any[]>(withProject(`/backlog${qs}`));
+  },
+  createBacklogItem: (data: any) => request<any>(withProject('/backlog'), { method: 'POST', body: JSON.stringify(data) }),
   updateBacklogItem: (id: string, data: any) => request<any>(`/backlog/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   scheduleBacklogItem: (id: string, data: any) =>
     request<any>(`/backlog/${id}/schedule`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Config
-  getDomains: () => request<any[]>('/domains'),
-  createDomain: (data: any) => request<any>('/domains', { method: 'POST', body: JSON.stringify(data) }),
+  getDomains: () => request<any[]>(withProject('/domains')),
+  createDomain: (data: any) => request<any>(withProject('/domains'), { method: 'POST', body: JSON.stringify(data) }),
   updateDomain: (id: number, data: any) => request<any>(`/domains/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDomain: (id: number) => request<any>(`/domains/${id}`, { method: 'DELETE' }),
-  getMilestones: () => request<any[]>('/milestones'),
-  createMilestone: (data: any) => request<any>('/milestones', { method: 'POST', body: JSON.stringify(data) }),
+  getMilestones: () => request<any[]>(withProject('/milestones')),
+  createMilestone: (data: any) => request<any>(withProject('/milestones'), { method: 'POST', body: JSON.stringify(data) }),
   updateMilestone: (id: number, data: any) => request<any>(`/milestones/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteMilestone: (id: number) => request<any>(`/milestones/${id}`, { method: 'DELETE' }),
 
   // Goals
-  getGoals: () => request<any[]>('/goals'),
-  createGoal: (data: any) => request<any>('/goals', { method: 'POST', body: JSON.stringify(data) }),
+  getGoals: () => request<any[]>(withProject('/goals')),
+  createGoal: (data: any) => request<any>(withProject('/goals'), { method: 'POST', body: JSON.stringify(data) }),
 
   // Dashboard
-  getOverview: () => request<any>('/dashboard/overview'),
-  getRisks: () => request<any>('/dashboard/risks'),
-  getResources: () => request<any>('/dashboard/resources'),
+  getOverview: () => request<any>(withProject('/dashboard/overview')),
+  getRisks: () => request<any>(withProject('/dashboard/risks')),
+  getResources: () => request<any>(withProject('/dashboard/resources')),
 
   // Members
-  getMembers: (type?: string) => request<any[]>(`/members${type ? '?type=' + type : ''}`),
+  getMembers: (type?: string) => {
+    const base = withProject('/members');
+    return request<any[]>(type ? `${base}&type=${type}` : base);
+  },
   getMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`),
-  createMember: (data: any) => request<any>('/members', { method: 'POST', body: JSON.stringify(data) }),
+  createMember: (data: any) => request<any>(withProject('/members'), { method: 'POST', body: JSON.stringify(data) }),
   updateMember: (identifier: string, data: any) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
 
   // Gantt
   getGanttData: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params) : '';
-    return request<any>(`/gantt${qs}`);
+    return request<any>(withProject(`/gantt${qs}`));
   },
 
-  // Req Links（需求关联）
+  // Req Links
   getReqLinks: () => request<any[]>('/req-links'),
   createReqLink: (sourceTaskId: string, targetTaskId: string, linkType: string) =>
     request<any>('/req-links', { method: 'POST', body: JSON.stringify({ source_task_id: sourceTaskId, target_task_id: targetTaskId, link_type: linkType }) }),
   deleteReqLink: (linkId: number) => request<any>(`/req-links/${linkId}`, { method: 'DELETE' }),
 
-  // Reparent（节点迁移）
+  // Reparent
   reparentTask: (taskId: string, newParentTaskId: string | null) =>
     request<any>(`/tasks/${taskId}/reparent`, { method: 'PATCH', body: JSON.stringify({ new_parent_task_id: newParentTaskId }) }),
+
+  // Reorder children
+  reorderChildren: (parentTaskId: string | null, orderedChildIds: string[]) =>
+    request<any>('/tasks/reorder-children', { method: 'PATCH', body: JSON.stringify({ parent_task_id: parentTaskId, ordered_child_ids: orderedChildIds }) }),
 
   // Custom Fields
   getCustomFields: () => request<any[]>('/custom-fields'),
@@ -102,4 +155,26 @@ export const api = {
   getTaskFields: (taskId: string) => request<any[]>(`/tasks/${taskId}/fields`),
   setTaskFields: (taskId: string, values: Record<number, string>) =>
     request<any>(`/tasks/${taskId}/fields`, { method: 'PUT', body: JSON.stringify(values) }),
+
+  // Attachments
+  getAttachments: (taskId: string, type?: string) =>
+    request<any[]>(`/tasks/${taskId}/attachments${type ? '?type=' + type : ''}`),
+  addAttachment: (taskId: string, data: { type: string; title: string; content: string; metadata?: any; created_by?: string }) =>
+    request<any>(`/tasks/${taskId}/attachments`, { method: 'POST', body: JSON.stringify(data) }),
+  getAttachment: (id: number) => request<any>(`/attachments/${id}`),
+  updateAttachment: (id: number, data: { title?: string; content?: string; metadata?: any; sort_order?: number }) =>
+    request<any>(`/attachments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteAttachment: (id: number) => request<any>(`/attachments/${id}`, { method: 'DELETE' }),
+  reorderAttachments: (taskId: string, orderedIds: number[]) =>
+    request<any>(`/tasks/${taskId}/attachments/reorder`, { method: 'PATCH', body: JSON.stringify({ ordered_ids: orderedIds }) }),
+
+  // My Overview (v2.4)
+  getMyOverview: () => request<any>(withProject('/my/overview')),
+
+  // Permissions (v2.5)
+  getTaskPermissions: (taskId: string) => request<any>(`/tasks/${taskId}/permissions`),
+  grantPermission: (taskId: string, grantee: string, level: 'edit' | 'view') =>
+    request<any>(`/tasks/${taskId}/permissions`, { method: 'POST', body: JSON.stringify({ grantee, level }) }),
+  revokePermission: (taskId: string, grantee: string) =>
+    request<any>(`/tasks/${taskId}/permissions/${encodeURIComponent(grantee)}`, { method: 'DELETE' }),
 };

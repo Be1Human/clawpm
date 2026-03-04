@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
+import { useActiveProject } from '@/lib/useActiveProject';
 import CreateTaskModal from '@/components/CreateTaskModal';
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string }> = {
@@ -136,13 +137,14 @@ function TreeNode({
 export default function Requirements() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [globalExpanded, setGlobalExpanded] = useState<boolean | null>(null);
   const [createModal, setCreateModal] = useState<{ parentId?: string } | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterMilestone, setFilterMilestone] = useState('');
   const [filterLabel, setFilterLabel] = useState('');
 
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones'], queryFn: () => api.getMilestones() });
+  const { data: milestones = [] } = useQuery({ queryKey: ['milestones', activeProject], queryFn: () => api.getMilestones() });
 
   const treeParams: Record<string, string> = {};
   if (filterStatus) treeParams.status = filterStatus;
@@ -150,7 +152,7 @@ export default function Requirements() {
   if (filterLabel) treeParams.label = filterLabel;
 
   const { data: tree = [], isLoading } = useQuery({
-    queryKey: ['task-tree', filterStatus, filterMilestone, filterLabel],
+    queryKey: ['task-tree', activeProject, filterStatus, filterMilestone, filterLabel],
     queryFn: () => api.getTaskTree(Object.keys(treeParams).length ? treeParams : undefined),
   });
 

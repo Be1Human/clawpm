@@ -13,6 +13,7 @@ export interface CreateBacklogParams {
   source_context?: string;
   estimated_scope?: string;
   tags?: string[];
+  projectId?: number;
 }
 
 export interface ScheduleParams {
@@ -25,7 +26,8 @@ export interface ScheduleParams {
 export const BacklogService = {
   async create(params: CreateBacklogParams) {
     const db = getDb();
-    const backlogId = await generateBacklogId();
+    const backlogId = await generateBacklogId(projectId);
+    const projectId = params.projectId || 1;
 
     let domainId: number | undefined;
     if (params.domain) {
@@ -35,6 +37,7 @@ export const BacklogService = {
 
     db.insert(backlogItems).values({
       backlogId,
+      projectId,
       title: params.title,
       description: params.description,
       domainId,
@@ -44,7 +47,7 @@ export const BacklogService = {
       estimatedScope: params.estimated_scope,
       tags: JSON.stringify(params.tags || []),
       status: 'pool',
-    }).run();
+    } as any).run();
 
     return this.getByBacklogId(backlogId)!;
   },
@@ -56,10 +59,11 @@ export const BacklogService = {
     return this._enrich(item);
   },
 
-  list(filters: { domain?: string; priority?: string; status?: string } = {}) {
+  list(filters: { domain?: string; priority?: string; status?: string; projectId?: number } = {}) {
     const db = getDb();
     const conditions: any[] = [];
 
+    if (filters.projectId) conditions.push(eq(backlogItems.projectId, filters.projectId));
     if (filters.status) conditions.push(eq(backlogItems.status, filters.status));
     if (filters.priority) conditions.push(eq(backlogItems.priority, filters.priority));
     if (filters.domain) {
@@ -115,6 +119,7 @@ export const BacklogService = {
       source: 'backlog',
       status: 'planned',
       tags: JSON.parse(item.tags || '[]'),
+      projectId: (item as any).projectId || 1,
     });
 
     db.update(backlogItems).set({

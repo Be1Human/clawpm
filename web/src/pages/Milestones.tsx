@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
@@ -192,13 +193,14 @@ function MilestoneCard({ m, onEdit, onDelete }: { m: any; onEdit: () => void; on
 
 export default function Milestones() {
   const qc = useQueryClient();
+  const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
   const [editMs, setEditMs] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState('');
 
   const { data: milestones = [], isLoading } = useQuery({
-    queryKey: ['milestones'],
+    queryKey: ['milestones', activeProject],
     queryFn: api.getMilestones,
   });
 

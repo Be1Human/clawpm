@@ -166,6 +166,35 @@ function runMigrations(sqlite: Database.Database) {
       link_type TEXT NOT NULL DEFAULT 'relates',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- 节点附件（v2.2：文档/链接/TAPD 关联）
+    CREATE TABLE IF NOT EXISTS task_attachments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      content     TEXT NOT NULL,
+      metadata    TEXT DEFAULT '{}',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_by  TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_attachments_task ON task_attachments(task_id);
+
+    -- 节点权限控制（v2.5）
+    CREATE TABLE IF NOT EXISTS task_permissions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      grantee     TEXT NOT NULL,
+      level       TEXT NOT NULL DEFAULT 'view',
+      granted_by  TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(task_id, grantee)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_permissions_task ON task_permissions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_permissions_grantee ON task_permissions(grantee);
   `);
 
   // 增量迁移：为旧数据库添加新字段（新建的表已包含这些列，ALTER 会被 catch 跳过）
@@ -173,6 +202,7 @@ function runMigrations(sqlite: Database.Database) {
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_x REAL`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN pos_y REAL`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // v2.0 数据迁移
   try { sqlite.exec(`UPDATE tasks SET status = 'active' WHERE status = 'blocked'`); } catch {}
@@ -184,4 +214,30 @@ function runMigrations(sqlite: Database.Database) {
       sqlite.prepare("UPDATE tasks SET labels = ? WHERE task_id = ?").run(JSON.stringify([row.type]), row.task_id);
     }
   } catch {}
+
+  // v2.1 项目迁移：创建 projects 表，为业务表添加 project_id
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug        TEXT NOT NULL UNIQUE,
+      name        TEXT NOT NULL,
+      description TEXT,
+      archived    INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  // 确保默认项目存在
+  sqlite.exec(`INSERT OR IGNORE INTO projects (slug, name, description) VALUES ('default', '默认项目', '自动创建的默认项目')`);
+
+  // 为业务表添加 project_id（现有数据归入 default 项目 id=1）
+  const tablesNeedProjectId = ['tasks', 'domains', 'milestones', 'backlog_items', 'goals', 'members'];
+  for (const table of tablesNeedProjectId) {
+    try { sqlite.exec(`ALTER TABLE ${table} ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1`); } catch {}
+  }
+
+  // 项目内唯一约束
+  try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_project_name ON domains(project_id, name)`); } catch {}
+  try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_project_prefix ON domains(project_id, task_prefix)`); } catch {}
+  try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_members_project_identifier ON members(project_id, identifier)`); } catch {}
 }
