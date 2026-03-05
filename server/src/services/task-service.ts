@@ -1,7 +1,8 @@
 import { eq, and, desc, asc, like, or, isNull, lt, lte, sql } from 'drizzle-orm';
 import { getDb } from '../db/connection.js';
-import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues, taskAttachments } from '../db/schema.js';
+import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues, taskAttachments, taskIterations } from '../db/schema.js';
 import { generateTaskId } from './id-generator.js';
+import { NotificationService } from './notification-service.js';
 
 export interface CreateTaskParams {
   title: string;
@@ -47,6 +48,7 @@ export interface TaskFilters {
   search?: string;
   label?: string;
   projectId?: number;
+  includeArchived?: boolean;
 }
 
 export const TaskService = {
@@ -118,6 +120,9 @@ export const TaskService = {
     let query = db.select().from(tasks).$dynamic();
 
     const conditions = [];
+
+    // 默认过滤已归档任务
+    if (!filters.includeArchived) conditions.push(isNull(tasks.archivedAt));
 
     if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
@@ -203,6 +208,32 @@ export const TaskService = {
     }
 
     db.update(tasks).set(updates as any).where(eq(tasks.taskId, taskId)).run();
+
+    // 通知触发
+    try {
+      const projectId = task.projectId || 1;
+      if (params.owner !== undefined && params.owner && params.owner !== task.owner) {
+        NotificationService.create({
+          projectId,
+          recipientId: params.owner,
+          type: 'task_assigned',
+          title: `你被指派了任务: ${task.title}`,
+          content: `任务 ${taskId} 已分配给你`,
+          taskId,
+        });
+      }
+      if (params.status !== undefined && params.status !== task.status && task.owner) {
+        NotificationService.create({
+          projectId,
+          recipientId: task.owner,
+          type: 'status_changed',
+          title: `任务状态变更: ${task.title}`,
+          content: `任务 ${taskId} 状态从 ${task.status} 变为 ${params.status}`,
+          taskId,
+        });
+      }
+    } catch {}
+
     return this.getByTaskId(taskId)!;
   },
 
@@ -272,6 +303,21 @@ export const TaskService = {
     if (!task) return null;
 
     db.insert(taskNotes).values({ taskId: task.id, content, author }).run();
+
+    // 通知触发：备注通知任务 owner
+    try {
+      if (task.owner && author && author !== task.owner) {
+        NotificationService.create({
+          projectId: task.projectId || 1,
+          recipientId: task.owner,
+          type: 'note_added',
+          title: `${author} 在任务 ${taskId} 添加了备注`,
+          content: content.slice(0, 100),
+          taskId,
+        });
+      }
+    } catch {}
+
     return db.select().from(taskNotes).where(eq(taskNotes.taskId, task.id))
       .orderBy(desc(taskNotes.createdAt)).limit(1).get();
   },
@@ -318,9 +364,14 @@ export const TaskService = {
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
   },
 
-  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string; projectId?: number } = {}) {
+  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string; projectId?: number; includeArchived?: boolean } = {}) {
     const db = getDb();
     let allTasks = db.select().from(tasks).all();
+
+    // 默认过滤已归档任务
+    if (!filters.includeArchived) {
+      allTasks = allTasks.filter(t => !(t as any).archivedAt);
+    }
 
     // 项目过滤
     if (filters.projectId) {
@@ -563,6 +614,74 @@ export const TaskService = {
     };
   },
 
+  /** 归档任务 */
+  archive(taskId: string) {
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return null;
+    db.update(tasks).set({
+      archivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any).where(eq(tasks.taskId, taskId)).run();
+    return this.getByTaskId(taskId)!;
+  },
+
+  /** 恢复归档任务 */
+  unarchive(taskId: string) {
+    const db = getDb();
+    const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    if (!task) return null;
+    db.update(tasks).set({
+      archivedAt: null,
+      updatedAt: new Date().toISOString(),
+    } as any).where(eq(tasks.taskId, taskId)).run();
+    return this.getByTaskId(taskId)!;
+  },
+
+  /** 列出已归档任务 */
+  listArchived(projectId: number) {
+    const db = getDb();
+    const rows = db.select().from(tasks)
+      .where(and(eq(tasks.projectId, projectId), sql`${tasks.archivedAt} IS NOT NULL`))
+      .orderBy(desc(tasks.updatedAt))
+      .all();
+    return rows.map(t => this._enrichTask(t));
+  },
+
+  /** 批量更新任务 */
+  batchUpdate(taskIds: string[], updates: { status?: string; owner?: string; priority?: string; labels?: string[] }) {
+    const db = getDb();
+    const results: any[] = [];
+    for (const tid of taskIds) {
+      const task = db.select().from(tasks).where(eq(tasks.taskId, tid)).get();
+      if (!task) continue;
+      const setObj: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+      if (updates.status !== undefined) setObj.status = updates.status;
+      if (updates.owner !== undefined) setObj.owner = updates.owner;
+      if (updates.priority !== undefined) setObj.priority = updates.priority;
+      if (updates.labels !== undefined) setObj.labels = JSON.stringify(updates.labels);
+      db.update(tasks).set(setObj as any).where(eq(tasks.taskId, tid)).run();
+
+      // 通知触发
+      try {
+        const projectId = task.projectId || 1;
+        if (updates.owner && updates.owner !== task.owner) {
+          NotificationService.create({
+            projectId,
+            recipientId: updates.owner,
+            type: 'task_assigned',
+            title: `你被指派了任务: ${task.title}`,
+            content: `任务 ${tid} 已分配给你（批量操作）`,
+            taskId: tid,
+          });
+        }
+      } catch {}
+
+      results.push(this.getByTaskId(tid));
+    }
+    return results.filter(Boolean);
+  },
+
   /** 删除任务及其所有子任务（级联删除备注/进度/字段值/附件） */
   deleteTask(taskId: string): boolean {
     const db = getDb();
@@ -584,6 +703,7 @@ export const TaskService = {
       db.delete(progressHistory).where(eq(progressHistory.taskId, id)).run();
       db.delete(taskFieldValues).where(eq(taskFieldValues.taskId, id)).run();
       db.delete(taskAttachments).where(eq(taskAttachments.taskId, id)).run();
+      db.delete(taskIterations).where(eq(taskIterations.taskId, id)).run();
       db.delete(tasks).where(eq(tasks.id, id)).run();
     }
     return true;

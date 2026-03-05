@@ -55,6 +55,7 @@ export const tasks = sqliteTable('tasks', {
   sortOrder: integer('sort_order').notNull().default(0),
   posX: real('pos_x'),
   posY: real('pos_y'),
+  archivedAt: text('archived_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
@@ -179,5 +180,56 @@ export const members = sqliteTable('members', {
   type: text('type').notNull().default('human'),      // 'human' | 'agent'
   color: text('color').notNull().default('#6366f1'),
   description: text('description'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// v3.0: 迭代表
+export const iterations = sqliteTable('iterations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  name: text('name').notNull(),
+  description: text('description'),
+  startDate: text('start_date'),
+  endDate: text('end_date'),
+  status: text('status').notNull().default('planned'), // 'planned' | 'active' | 'completed'
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// v3.0: 任务-迭代关联表（多对多）
+export const taskIterations = sqliteTable('task_iterations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  iterationId: integer('iteration_id').notNull().references(() => iterations.id, { onDelete: 'cascade' }),
+});
+
+// v3.1: Intake 收件箱
+export const intakeItems = sqliteTable('intake_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  intakeId: text('intake_id').notNull().unique(),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  title: text('title').notNull(),
+  description: text('description'),
+  category: text('category').notNull().default('feedback'), // 'bug' | 'feature' | 'feedback'
+  submitter: text('submitter').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending'|'accepted'|'rejected'|'deferred'|'duplicate'
+  priority: text('priority').notNull().default('P2'),
+  reviewedBy: text('reviewed_by'),
+  reviewNote: text('review_note'),
+  taskId: text('task_id'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// v3.0: 通知表
+export const notifications = sqliteTable('notifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  recipientId: text('recipient_id').notNull(),
+  type: text('type').notNull(), // 'task_assigned' | 'status_changed' | 'note_added'
+  title: text('title').notNull(),
+  content: text('content'),
+  taskId: text('task_id'),
+  isRead: integer('is_read').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });

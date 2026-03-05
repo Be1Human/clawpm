@@ -4,6 +4,8 @@ import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
 import { MemberService } from '../services/member-service.js';
 import { ReqLinkService } from '../services/req-link-service.js';
+import { IterationService } from '../services/iteration-service.js';
+import { NotificationService } from '../services/notification-service.js';
 import { AttachmentService } from '../services/attachment-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
@@ -130,6 +132,21 @@ export async function registerRoutes(app: FastifyInstance) {
     const ok = TaskService.reorderChildren(parent_task_id ?? null, ordered_child_ids);
     if (!ok) return reply.code(404).send({ error: 'Parent not found' });
     return { ok: true };
+  });
+
+  // ── Batch Operations（批量操作 v3.0）— 必须在 :taskId 路由之前 ──
+  app.patch('/api/v1/tasks/batch', async (req, reply) => {
+    const { task_ids, updates } = req.body as any;
+    if (!Array.isArray(task_ids) || !task_ids.length) return reply.code(400).send({ error: 'task_ids array is required' });
+    if (!updates || typeof updates !== 'object') return reply.code(400).send({ error: 'updates object is required' });
+    const results = TaskService.batchUpdate(task_ids, updates);
+    return results;
+  });
+
+  // ── Archive 列表（v3.0）— 必须在 :taskId 路由之前 ──
+  app.get('/api/v1/tasks/archived', async (req) => {
+    const projectId = getProjectId(req);
+    return TaskService.listArchived(projectId);
   });
 
   app.get('/api/v1/tasks/:taskId/children', async (req, reply) => {
@@ -696,6 +713,194 @@ export async function registerRoutes(app: FastifyInstance) {
     const ok = PermissionService.revoke(task.id, grantee);
     if (!ok) return reply.code(404).send({ error: 'Permission not found' });
     return reply.code(204).send();
+  });
+
+  // ── Archive（归档 v3.0）────────────────────────────────────────────
+  app.post('/api/v1/tasks/:taskId/archive', async (req, reply) => {
+    const { taskId } = req.params as any;
+    await requireEditPermission(req, taskId);
+    const task = TaskService.archive(taskId);
+    if (!task) return reply.code(404).send({ error: 'Not found' });
+    return task;
+  });
+
+  app.post('/api/v1/tasks/:taskId/unarchive', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const task = TaskService.unarchive(taskId);
+    if (!task) return reply.code(404).send({ error: 'Not found' });
+    return task;
+  });
+
+  // ── Iterations（迭代管理 v3.0）────────────────────────────────────
+  app.get('/api/v1/iterations', async (req) => {
+    const projectId = getProjectId(req);
+    const q = req.query as any;
+    return IterationService.list(projectId, q.status);
+  });
+
+  app.post('/api/v1/iterations', async (req, reply) => {
+    const projectId = getProjectId(req);
+    const { name, description, start_date, end_date } = req.body as any;
+    if (!name) return reply.code(400).send({ error: 'name is required' });
+    const iter = IterationService.create({ name, description, startDate: start_date, endDate: end_date, projectId });
+    return reply.code(201).send(iter);
+  });
+
+  app.get('/api/v1/iterations/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    const iter = IterationService.getById(parseInt(id));
+    if (!iter) return reply.code(404).send({ error: 'Not found' });
+    return iter;
+  });
+
+  app.patch('/api/v1/iterations/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    const body = req.body as any;
+    const iter = IterationService.update(parseInt(id), {
+      name: body.name,
+      description: body.description,
+      startDate: body.start_date,
+      endDate: body.end_date,
+      status: body.status,
+    });
+    if (!iter) return reply.code(404).send({ error: 'Not found' });
+    return iter;
+  });
+
+  app.delete('/api/v1/iterations/:id', async (req, reply) => {
+    const { id } = req.params as any;
+    IterationService.delete(parseInt(id));
+    return { ok: true };
+  });
+
+  app.post('/api/v1/iterations/:id/tasks', async (req, reply) => {
+    const { id } = req.params as any;
+    const { task_id } = req.body as any;
+    if (!task_id) return reply.code(400).send({ error: 'task_id is required' });
+    try {
+      IterationService.addTask(parseInt(id), task_id);
+      return { ok: true };
+    } catch (e: any) {
+      return reply.code(404).send({ error: e.message });
+    }
+  });
+
+  app.delete('/api/v1/iterations/:id/tasks/:taskId', async (req, reply) => {
+    const { id, taskId } = req.params as any;
+    IterationService.removeTask(parseInt(id), taskId);
+    return { ok: true };
+  });
+
+  // ── Notifications（通知 v3.0）──────────────────────────────────────
+  app.get('/api/v1/notifications', async (req, reply) => {
+    const user = (req as any).clawpmUser as string | null;
+    if (!user) return reply.code(400).send({ error: 'No identity set. Send X-ClawPM-User header.' });
+    const projectId = getProjectId(req);
+    const q = req.query as any;
+    return NotificationService.listByRecipient(user, projectId, { unreadOnly: q.unread_only === 'true' });
+  });
+
+  app.get('/api/v1/notifications/unread-count', async (req, reply) => {
+    const user = (req as any).clawpmUser as string | null;
+    if (!user) return { count: 0 };
+    const projectId = getProjectId(req);
+    return { count: NotificationService.getUnreadCount(user, projectId) };
+  });
+
+  app.patch('/api/v1/notifications/:id/read', async (req, reply) => {
+    const { id } = req.params as any;
+    NotificationService.markAsRead(parseInt(id));
+    return { ok: true };
+  });
+
+  app.post('/api/v1/notifications/read-all', async (req, reply) => {
+    const user = (req as any).clawpmUser as string | null;
+    if (!user) return reply.code(400).send({ error: 'No identity set' });
+    const projectId = getProjectId(req);
+    NotificationService.markAllAsRead(user, projectId);
+    return { ok: true };
+  });
+
+  // ── Intake 收件箱（v3.1）──────────────────────────────────────────
+
+  // 提交 Intake（公开接口，无需认证）
+  app.post('/api/v1/intake', async (req, reply) => {
+    const body = req.body as any;
+    if (!body.title) return reply.code(400).send({ error: 'title is required' });
+    if (!body.submitter) return reply.code(400).send({ error: 'submitter is required' });
+
+    // 通过 project slug 解析 projectId
+    const projectId = ProjectService.resolveProjectId(body.project);
+
+    const item = await IntakeService.submit({
+      title: body.title,
+      description: body.description,
+      category: body.category,
+      submitter: body.submitter,
+      priority: body.priority,
+      projectId,
+    });
+    return reply.code(201).send(item);
+  });
+
+  // Intake 列表（需认证）
+  app.get('/api/v1/intake', async (req) => {
+    const q = req.query as any;
+    const projectId = getProjectId(req);
+    return IntakeService.list(projectId, { status: q.status, category: q.category });
+  });
+
+  // Intake 统计
+  app.get('/api/v1/intake/stats', async (req) => {
+    const projectId = getProjectId(req);
+    return IntakeService.getStats(projectId);
+  });
+
+  // Intake 详情
+  app.get('/api/v1/intake/:intakeId', async (req, reply) => {
+    const { intakeId } = req.params as any;
+    const projectId = getProjectId(req);
+    const item = IntakeService.getByIntakeId(intakeId, projectId);
+    if (!item) return reply.code(404).send({ error: 'Not found' });
+    return item;
+  });
+
+  // 审核操作
+  app.post('/api/v1/intake/:intakeId/review', async (req, reply) => {
+    const { intakeId } = req.params as any;
+    const body = req.body as any;
+    const projectId = getProjectId(req);
+    const reviewedBy = (req as any).clawpmUser || body.reviewed_by || 'unknown';
+
+    if (!body.action) return reply.code(400).send({ error: 'action is required' });
+
+    try {
+      const result = await IntakeService.review(intakeId, {
+        action: body.action,
+        reviewedBy,
+        reviewNote: body.review_note,
+        parentTaskId: body.parent_task_id,
+        owner: body.owner,
+        priority: body.priority,
+        extraLabels: body.extra_labels,
+        projectId,
+      });
+      return result;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  // 暂缓恢复
+  app.post('/api/v1/intake/:intakeId/reopen', async (req, reply) => {
+    const { intakeId } = req.params as any;
+    const projectId = getProjectId(req);
+    try {
+      const item = IntakeService.reopen(intakeId, projectId);
+      return item;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
   });
 
   // ── Gantt ──────────────────────────────────────────────────────────

@@ -4,10 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useRecentTasks } from '@/lib/useRecentTasks';
+import { useFavorites } from '@/lib/useFavorites';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, formatRelative, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import PermissionPanel from '@/components/PermissionPanel';
+import MarkdownPreview from '@/components/MarkdownPreview';
 
 const ATTACHMENT_TYPES = [
   { key: 'doc', label: '文档', icon: '📄' },
@@ -124,6 +127,8 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const currentUser = useCurrentUser();
+  const { recordVisit } = useRecentTasks();
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   const { data: task, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => api.getTask(taskId!) });
   const { data: history = [] } = useQuery({ queryKey: ['task-history', taskId], queryFn: () => api.getTaskHistory(taskId!) });
@@ -159,6 +164,11 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
     qc.invalidateQueries({ queryKey: ['task-tree'] });
     qc.invalidateQueries({ queryKey: ['attachments', taskId] });
   };
+
+  // Record recent visit
+  useEffect(() => {
+    if (task && taskId) recordVisit(taskId, (task as any).title);
+  }, [task, taskId]);
 
   const setFieldMut = useMutation({
     mutationFn: (values: Record<number, string>) => api.setTaskFields(taskId!, values),
@@ -264,6 +274,29 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
               renderValue={() => <PriorityBadge priority={task.priority} />}
               disabled={!canEdit}
             />
+            {/* 收藏星标 */}
+            <button
+              onClick={() => toggleFavorite(task.taskId, task.title)}
+              className={`w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors ${isFavorite(task.taskId) ? 'text-amber-400' : 'text-gray-300 hover:text-amber-400'}`}
+              title={isFavorite(task.taskId) ? '取消收藏' : '收藏'}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 16 16" fill={isFavorite(task.taskId) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+                <path d="M8 1.5l1.8 3.7 4 .6-2.9 2.8.7 4-3.6-1.9L4.4 12.6l.7-4-2.9-2.8 4-.6L8 1.5z" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {/* 归档按钮 */}
+            {canEdit && !task.archivedAt && (
+              <button
+                onClick={async () => { await api.archiveTask(task.taskId); invalidate(); navigate('/tasks'); }}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-2"
+                title="归档此任务"
+              >
+                归档
+              </button>
+            )}
+            {task.archivedAt && (
+              <span className="text-xs text-amber-500 bg-amber-50 px-2 py-0.5 rounded ml-2">已归档</span>
+            )}
           </div>
           <EditableField
             value={task.title}
@@ -296,34 +329,48 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-5">
-          {/* 描述（可编辑） */}
+          {/* 描述（Markdown 编辑/预览） */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">描述</h3>
-              {!editingDesc && canEdit && (
-                <button onClick={() => { setDescVal(task.description || ''); setEditingDesc(true); }}
-                  className="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">编辑</button>
-              )}
+              <div className="flex items-center gap-2">
+                {editingDesc && (
+                  <span className="text-[10px] text-gray-400">支持 Markdown 语法</span>
+                )}
+                {!editingDesc && canEdit && (
+                  <button onClick={() => { setDescVal(task.description || ''); setEditingDesc(true); }}
+                    className="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">编辑</button>
+                )}
+              </div>
             </div>
             {editingDesc ? (
               <div>
                 <textarea
                   value={descVal}
                   onChange={e => setDescVal(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[150px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 font-mono"
                   autoFocus
-                  placeholder="添加描述..."
+                  placeholder="添加描述（支持 Markdown）..."
+                  onKeyDown={e => { if (e.ctrlKey && e.key === 'Enter') { updateMut.mutate({ description: descVal }); setEditingDesc(false); } }}
                 />
-                <div className="flex gap-2 mt-2 justify-end">
+                <div className="flex items-center gap-2 mt-2 justify-end">
+                  <span className="text-[10px] text-gray-400 mr-auto">Ctrl+Enter 保存</span>
                   <button onClick={() => setEditingDesc(false)} className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
                   <button onClick={() => { updateMut.mutate({ description: descVal }); setEditingDesc(false); }}
                     className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">保存</button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                {task.description || <span className="text-gray-400">暂无描述，点击"编辑"添加</span>}
-              </p>
+              <div
+                onClick={() => { if (canEdit) { setDescVal(task.description || ''); setEditingDesc(true); } }}
+                className={canEdit ? 'cursor-text' : ''}
+              >
+                {task.description ? (
+                  <MarkdownPreview content={task.description} />
+                ) : (
+                  <p className="text-sm text-gray-400">暂无描述，点击编辑添加</p>
+                )}
+              </div>
             )}
           </div>
 

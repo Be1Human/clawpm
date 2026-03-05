@@ -1,12 +1,16 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useActiveSpace, type Space } from '@/lib/useActiveSpace';
 import { useCurrentUser, clearCurrentUser } from '@/lib/useCurrentUser';
+import { useRecentTasks } from '@/lib/useRecentTasks';
+import { useFavorites } from '@/lib/useFavorites';
 import { api, setActiveProject } from '@/api/client';
 import IdentityPicker from './IdentityPicker';
+import CommandPalette from './CommandPalette';
+import NotificationBell from './NotificationPanel';
 
 // ── 导航结构（个人空间） ─────────────────────────────────────────
 const PERSONAL_NAV_GROUPS = [
@@ -51,9 +55,11 @@ const PROJECT_NAV_GROUPS = [
   {
     label: '执行跟踪',
     items: [
-      { to: '/board',    label: '看板',     icon: BoardIcon },
-      { to: '/tasks',    label: '任务列表', icon: ListIcon },
-      { to: '/backlog',  label: '需求池',   icon: PoolIcon },
+      { to: '/board',       label: '看板',     icon: BoardIcon },
+      { to: '/tasks',       label: '任务列表', icon: ListIcon },
+      { to: '/backlog',     label: '需求池',   icon: PoolIcon },
+      { to: '/iterations',  label: '迭代',     icon: IterationIcon },
+      { to: '/intake',      label: '收件箱',   icon: InboxIcon },
     ],
   },
   {
@@ -69,6 +75,7 @@ const PROJECT_NAV_GROUPS = [
       { to: '/domains',       label: '业务板块',   icon: DomainIcon },
       { to: '/custom-fields', label: '自定义字段', icon: FieldsIcon },
       { to: '/members',       label: '成员',       icon: MembersIcon },
+      { to: '/archive',       label: '归档箱',     icon: ArchiveIcon },
     ],
   },
 ];
@@ -202,6 +209,46 @@ function MembersIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function IterationIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4v4l3 2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function ArchiveIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="1.5" y="2" width="13" height="3.5" rx="1" />
+      <path d="M2.5 5.5v7.5a1 1 0 001 1h9a1 1 0 001-1V5.5" />
+      <path d="M6 8.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function InboxIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 9.5h3.5l1 2h3l1-2H14" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 2.5h9l1.5 7v4a1 1 0 01-1 1H3a1 1 0 01-1-1v-4l1.5-7z" />
+    </svg>
+  );
+}
+function StarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 1.5l1.8 3.7 4 .6-2.9 2.8.7 4-3.6-1.9L4.4 12.6l.7-4-2.9-2.8 4-.6L8 1.5z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // ── Sidebar 组件 ─────────────────────────────────────────────────
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -211,9 +258,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showIdentityPicker, setShowIdentityPicker] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
   const activeSlug = useActiveProject();
   const currentUser = useCurrentUser();
   const [space, setSpace] = useActiveSpace();
+  const { recentTasks } = useRecentTasks();
+  const { favorites } = useFavorites();
+
+  // Cmd+K / Ctrl+K global shortcut
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdkOpen(prev => !prev);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 根据当前路由自动切换空间
   useEffect(() => {
@@ -245,10 +307,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
   const currentMember = (members as any[]).find((m: any) => m.identifier === currentUser);
 
-  // Auto-show identity picker on first visit if no identity set
+  // Auto-show identity picker on first visit if no identity set,
+  // or if current user identifier no longer exists in members list
   useEffect(() => {
-    if (!currentUser && (members as any[]).length > 0) {
-      setShowIdentityPicker(true);
+    if ((members as any[]).length > 0) {
+      if (!currentUser) {
+        setShowIdentityPicker(true);
+      } else if (!(members as any[]).find((m: any) => m.identifier === currentUser)) {
+        // stored identifier not found in current project members — clear stale value
+        clearCurrentUser();
+        setShowIdentityPicker(true);
+      }
     }
   }, [currentUser, members]);
 
@@ -353,6 +422,48 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+          {/* 收藏 */}
+          {favorites.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
+                收藏
+              </p>
+              <div className="space-y-0.5">
+                {favorites.slice(0, 5).map(f => (
+                  <button
+                    key={f.taskId}
+                    onClick={() => navigate(`/tasks/${f.taskId}`)}
+                    className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-[12px] text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                  >
+                    <StarIcon className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                    <span className="truncate">{f.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 最近访问 */}
+          {recentTasks.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
+                最近访问
+              </p>
+              <div className="space-y-0.5">
+                {recentTasks.slice(0, 5).map(t => (
+                  <button
+                    key={t.taskId}
+                    onClick={() => navigate(`/tasks/${t.taskId}`)}
+                    className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-[12px] text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                  >
+                    <ClockIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="truncate">{t.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {navGroups.map((group) => (
             <div key={group.label}>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
@@ -423,9 +534,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto flex flex-col min-w-0 min-h-0">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Top bar with search and notifications */}
+        <div className="h-[52px] flex items-center justify-between px-4 border-b flex-shrink-0" style={{ backgroundColor: '#ffffff', borderColor: '#e8eaed' }}>
+          <button
+            onClick={() => setCmdkOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors w-64"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" strokeLinecap="round" />
+            </svg>
+            <span>搜索任务...</span>
+            <kbd className="ml-auto text-[10px] text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Ctrl+K</kbd>
+          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+          </div>
+        </div>
+        <main className="flex-1 overflow-y-auto flex flex-col min-w-0 min-h-0">
+          {children}
+        </main>
+      </div>
+
+      {/* Command Palette */}
+      <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
 
       {/* Identity Picker Modal */}
       <IdentityPicker open={showIdentityPicker} onClose={() => setShowIdentityPicker(false)} />

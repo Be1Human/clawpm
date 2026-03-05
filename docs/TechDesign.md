@@ -1,8 +1,8 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v2.2  
-> **日期**: 2026-03-02  
-> **关联 PRD**: [PRD.md](./PRD.md) v2.2  
+> **版本**: v3.1  
+> **日期**: 2026-03-05  
+> **关联 PRD**: [PRD.md](./PRD.md) v3.1  
 > **状态**: 迭代中  
 > **变更记录**:  
 > - v1.1 ~ v1.4: 需求树、人员管理、甘特图、标签/关联图谱等迭代  
@@ -13,6 +13,8 @@
 > - **v2.4 (2026-03-04): 协作与个人工作台** — 轻量身份识别机制（X-ClawPM-User Header）、"我的需求子树"个人工作台、MCP Agent 身份绑定、仪表盘个人视角
 > - **v2.5 (2026-03-04): 节点权限控制** — 新增 task_permissions 表，Owner 可授权 edit/view 权限，写操作中间件校验，MCP 权限工具
 > - **v2.6 (2026-03-04): 我的任务三视图** — 平铺视图（按状态分组）、树状视图（现有）、思维导图视图（ReactFlow），localStorage 视图偏好记忆
+> - **v3.0 (2026-03-05): Plane 借鉴增强** — Cmd+K 命令面板(cmdk)、统一筛选 FilterBar/useFilters、迭代管理(iterations 表)、Markdown 描述编辑器(react-markdown)、归档机制(archived_at)、批量操作(batch API)、收藏/最近访问(localStorage)、站内通知(notifications 表+轮询)
+> - **v3.1 (2026-03-05): Intake 收件箱** — 新增 intake_items 表，公开提交页面(无需认证)，审核流转(pending→accepted/rejected/deferred/duplicate)，接受后自动创建 Task 节点并打标签，MCP 工具支持
 
 ---
 
@@ -1621,3 +1623,640 @@ const grouped = Object.groupBy(flatNodes, n => n.status);
 - 当前激活视图：`bg-indigo-100 text-indigo-600`
 - 非激活视图：`text-gray-400 hover:text-gray-600`
 - 使用 SVG 图标区分
+
+---
+
+## 十七、Plane 借鉴增强技术设计 (v3.0)
+
+### 17.1 新增依赖
+
+| 包名 | 用途 | 大小 |
+|------|------|------|
+| `cmdk` | Cmd+K 命令面板 | ~3KB gzip |
+| `react-markdown` | Markdown 渲染 | ~12KB gzip |
+| `remark-gfm` | GitHub Flavored Markdown 支持 | ~2KB gzip |
+
+### 17.2 数据库变更
+
+#### 17.2.1 新增表
+
+```sql
+-- 迭代表
+CREATE TABLE IF NOT EXISTS iterations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id),
+  name        TEXT NOT NULL,
+  description TEXT,
+  start_date  TEXT,
+  end_date    TEXT,
+  status      TEXT NOT NULL DEFAULT 'planned',  -- planned | active | completed
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 任务-迭代关联表（多对多）
+CREATE TABLE IF NOT EXISTS task_iterations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  iteration_id  INTEGER NOT NULL REFERENCES iterations(id) ON DELETE CASCADE,
+  UNIQUE(task_id, iteration_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_iterations_task ON task_iterations(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_iterations_iteration ON task_iterations(iteration_id);
+
+-- 通知表
+CREATE TABLE IF NOT EXISTS notifications (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id    INTEGER NOT NULL REFERENCES projects(id),
+  recipient_id  TEXT NOT NULL,             -- member.identifier
+  type          TEXT NOT NULL,             -- task_assigned | status_changed | note_added
+  title         TEXT NOT NULL,
+  content       TEXT,
+  task_id       TEXT,                      -- 关联的任务 taskId（业务ID）
+  is_read       INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, is_read);
+```
+
+#### 17.2.2 现有表变更
+
+```sql
+-- tasks 表新增归档字段
+ALTER TABLE tasks ADD COLUMN archived_at TEXT;  -- ISO datetime or NULL
+```
+
+#### 17.2.3 Drizzle Schema 新增
+
+```typescript
+export const iterations = sqliteTable('iterations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  name: text('name').notNull(),
+  description: text('description'),
+  startDate: text('start_date'),
+  endDate: text('end_date'),
+  status: text('status').notNull().default('planned'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const taskIterations = sqliteTable('task_iterations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  iterationId: integer('iteration_id').notNull().references(() => iterations.id, { onDelete: 'cascade' }),
+});
+
+export const notifications = sqliteTable('notifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  recipientId: text('recipient_id').notNull(),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  content: text('content'),
+  taskId: text('task_id'),
+  isRead: integer('is_read').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// tasks 表新增字段
+// archivedAt: text('archived_at'),  -- 添加到现有 tasks 表定义
+```
+
+### 17.3 后端服务层
+
+#### 17.3.1 iteration-service.ts（新建）
+
+```typescript
+class IterationService {
+  create(params: { name, description?, startDate?, endDate?, projectId }): Promise<Iteration>;
+  list(projectId: number, status?: string): Promise<Iteration[]>;
+  getById(id: number): Promise<Iteration & { tasks: Task[], stats: IterationStats }>;
+  update(id: number, params: Partial<CreateParams>): Promise<Iteration>;
+  delete(id: number): Promise<void>;
+  addTask(iterationId: number, taskId: string): Promise<void>;
+  removeTask(iterationId: number, taskId: string): Promise<void>;
+  getTasksByIteration(iterationId: number): Promise<Task[]>;
+}
+
+interface IterationStats {
+  totalTasks: number;
+  completedTasks: number;
+  completionRate: number;  // 0-100
+  statusBreakdown: Record<string, number>;
+}
+```
+
+#### 17.3.2 notification-service.ts（新建）
+
+```typescript
+class NotificationService {
+  create(params: { projectId, recipientId, type, title, content?, taskId? }): Promise<void>;
+  listByRecipient(recipientId: string, projectId: number, opts?: { unreadOnly? }): Promise<Notification[]>;
+  markAsRead(id: number): Promise<void>;
+  markAllAsRead(recipientId: string, projectId: number): Promise<void>;
+  getUnreadCount(recipientId: string, projectId: number): Promise<number>;
+}
+```
+
+#### 17.3.3 task-service.ts 增强
+
+```typescript
+// 现有方法变更：
+list(): 增加 archived_at IS NULL 默认过滤（除非传 includeArchived=true）
+getTree(): 同上
+
+// 新增方法：
+archive(taskId: string): Promise<void>;      // 设置 archived_at = now()
+unarchive(taskId: string): Promise<void>;    // 设置 archived_at = null
+batchUpdate(taskIds: string[], updates: Partial<UpdateParams>): Promise<Task[]>;
+listArchived(projectId: number): Promise<Task[]>;  // 查询已归档任务
+
+// 通知触发点（在方法末尾调用 NotificationService.create）：
+update(): 当 owner 变更时 → task_assigned 通知
+update(): 当 status 变更时 → status_changed 通知
+addNote(): → note_added 通知
+```
+
+### 17.4 REST API 新增
+
+#### 17.4.1 迭代 API
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/iterations` | 迭代列表（?project=&status=） |
+| POST | `/api/v1/iterations` | 创建迭代 |
+| GET | `/api/v1/iterations/:id` | 迭代详情（含关联任务和统计） |
+| PATCH | `/api/v1/iterations/:id` | 更新迭代 |
+| DELETE | `/api/v1/iterations/:id` | 删除迭代 |
+| POST | `/api/v1/iterations/:id/tasks` | 添加任务到迭代 `{ task_id }` |
+| DELETE | `/api/v1/iterations/:id/tasks/:taskId` | 从迭代移除任务 |
+
+#### 17.4.2 批量操作 API
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| PATCH | `/api/v1/tasks/batch` | 批量更新 `{ task_ids: string[], updates: { status?, owner?, priority? } }` |
+
+#### 17.4.3 归档 API
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| POST | `/api/v1/tasks/:taskId/archive` | 归档任务 |
+| POST | `/api/v1/tasks/:taskId/unarchive` | 恢复任务 |
+| GET | `/api/v1/tasks/archived` | 获取已归档任务列表 |
+
+#### 17.4.4 通知 API
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/notifications` | 通知列表（?unread_only=true） |
+| GET | `/api/v1/notifications/unread-count` | 未读数量 |
+| PATCH | `/api/v1/notifications/:id/read` | 标记单条已读 |
+| POST | `/api/v1/notifications/read-all` | 全部标记已读 |
+
+### 17.5 MCP 工具新增
+
+```
+-- 迭代管理
+create_iteration(name, start_date?, end_date?, description?, project?)
+list_iterations(status?, project?)
+add_task_to_iteration(iteration_id, task_id, project?)
+remove_task_from_iteration(iteration_id, task_id, project?)
+
+-- 归档
+archive_task(task_id, project?)
+unarchive_task(task_id, project?)
+
+-- 通知
+list_notifications(unread_only?, project?)
+mark_notification_read(notification_id, project?)
+```
+
+### 17.6 前端新增文件
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `components/CommandPalette.tsx` | 新建 | cmdk 全局命令面板 |
+| `components/FilterBar.tsx` | 新建 | 统一筛选栏组件 |
+| `components/NotificationPanel.tsx` | 新建 | 通知弹出面板 |
+| `components/BatchActionBar.tsx` | 新建 | 批量操作底部悬浮栏 |
+| `components/MarkdownPreview.tsx` | 新建 | Markdown 渲染组件 |
+| `lib/useFilters.ts` | 新建 | 统一筛选状态 Hook |
+| `lib/useRecentTasks.ts` | 新建 | 最近访问记录 Hook |
+| `lib/useFavorites.ts` | 新建 | 收藏管理 Hook |
+| `pages/Iterations.tsx` | 新建 | 迭代列表页 |
+| `pages/IterationDetail.tsx` | 新建 | 迭代详情页 |
+| `pages/Archive.tsx` | 新建 | 归档箱页面 |
+
+### 17.7 前端现有文件变更
+
+| 文件 | 变更内容 |
+|------|----------|
+| `Layout.tsx` | 注册 Cmd+K 快捷键；侧边栏增加迭代/归档箱导航；顶部增加通知铃铛；增加收藏/最近访问分组 |
+| `App.tsx` | 新增迭代列表/详情、归档箱路由 |
+| `api/client.ts` | 新增迭代/批量/归档/通知相关 API 方法 |
+| `TaskDetail.tsx` | description 升级为 Markdown 编辑/预览；增加归档按钮；记录最近访问 |
+| `TaskList.tsx` | 替换筛选为 FilterBar；增加批量选择复选框和 BatchActionBar |
+| `KanbanBoard.tsx` | 替换筛选为 FilterBar |
+| `Requirements.tsx` | 替换筛选为 FilterBar |
+
+### 17.8 关键技术决策
+
+| 决策点 | 方案 | 理由 |
+|--------|------|------|
+| 命令面板 | `cmdk` 库 | MIT 协议，3KB，无额外 UI 框架依赖 |
+| Markdown 渲染 | `react-markdown` + `remark-gfm` | 轻量，GFM 支持好，与已有附件系统方案一致 |
+| 通知获取 | 30s 轮询 | 不引入 WebSocket，保持架构简单，SQLite 无连接压力 |
+| 收藏/最近访问 | localStorage | 纯前端，无需后端存储，足够轻量 |
+| 批量操作 | 事务包裹 | SQLite 事务保证原子性 |
+| 归档字段 | `archived_at TEXT` | 存 ISO datetime 可追溯归档时间，NULL 表示未归档 |
+
+### 17.9 向后兼容
+
+| 变更点 | 兼容策略 |
+|--------|----------|
+| 新增 3 张表 | `CREATE TABLE IF NOT EXISTS`，不影响现有表 |
+| tasks.archived_at | `ALTER TABLE ADD COLUMN`（try/catch），默认 NULL，现有数据不受影响 |
+| TaskService.list() | 默认过滤 `archived_at IS NULL`，现有查询行为不变 |
+| 新增 API 端点 | 纯新增，不修改现有端点签名 |
+| FilterBar 替换 | 现有筛选逻辑迁移到 FilterBar，功能完全等价 |
+| 新增 MCP 工具 | 纯新增，不影响现有工具 |
+
+---
+
+## 十八、Intake 收件箱技术设计 (v3.1)
+
+### 18.1 数据库设计
+
+#### 18.1.1 新增 intake_items 表
+
+```sql
+CREATE TABLE IF NOT EXISTS intake_items (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  intake_id     TEXT NOT NULL UNIQUE,                 -- 业务 ID: "IN-001"
+  project_id    INTEGER NOT NULL REFERENCES projects(id),
+  title         TEXT NOT NULL,
+  description   TEXT,                                 -- Markdown 格式
+  category      TEXT NOT NULL DEFAULT 'feedback',     -- bug | feature | feedback
+  submitter     TEXT NOT NULL,                        -- 提交人名称（自由填写）
+  status        TEXT NOT NULL DEFAULT 'pending',      -- pending | accepted | rejected | deferred | duplicate
+  priority      TEXT NOT NULL DEFAULT 'P2',           -- 建议优先级
+  reviewed_by   TEXT,                                 -- 审核人 member.identifier
+  review_note   TEXT,                                 -- 审核备注
+  task_id       TEXT,                                 -- 接受后关联的 task.task_id
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intake_project_status ON intake_items(project_id, status);
+```
+
+#### 18.1.2 Drizzle Schema
+
+```typescript
+export const intakeItems = sqliteTable('intake_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  intakeId: text('intake_id').notNull().unique(),
+  projectId: integer('project_id').notNull().references(() => projects.id),
+  title: text('title').notNull(),
+  description: text('description'),
+  category: text('category').notNull().default('feedback'), // 'bug' | 'feature' | 'feedback'
+  submitter: text('submitter').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending'|'accepted'|'rejected'|'deferred'|'duplicate'
+  priority: text('priority').notNull().default('P2'),
+  reviewedBy: text('reviewed_by'),
+  reviewNote: text('review_note'),
+  taskId: text('task_id'),          // 接受后关联的节点 taskId
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+```
+
+### 18.2 后端服务层
+
+#### 18.2.1 intake-service.ts（新建）
+
+```typescript
+class IntakeService {
+  // 生成 Intake 业务 ID（IN-001, IN-002, ...）
+  private async generateIntakeId(projectId: number): Promise<string>;
+  
+  // 提交 Intake（公开接口，无需认证）
+  async submit(params: {
+    title: string;
+    description?: string;
+    category?: 'bug' | 'feature' | 'feedback';
+    submitter: string;
+    priority?: string;
+    projectId: number;
+  }): Promise<IntakeItem>;
+  
+  // 列表查询
+  async list(projectId: number, filters?: {
+    status?: string;
+    category?: string;
+  }): Promise<IntakeItem[]>;
+  
+  // 获取单条详情
+  async getById(id: number): Promise<IntakeItem | null>;
+  async getByIntakeId(intakeId: string, projectId: number): Promise<IntakeItem | null>;
+  
+  // 获取统计
+  async getStats(projectId: number): Promise<Record<string, number>>;
+  
+  // 审核操作
+  async review(intakeId: string, params: {
+    action: 'accept' | 'reject' | 'defer' | 'duplicate';
+    reviewedBy: string;
+    reviewNote?: string;
+    // accept 时的额外参数
+    parentTaskId?: string;
+    owner?: string;
+    priority?: string;
+    extraLabels?: string[];
+    projectId: number;
+  }): Promise<IntakeItem & { task?: Task }>;
+  
+  // 暂缓恢复
+  async reopen(intakeId: string, projectId: number): Promise<IntakeItem>;
+}
+```
+
+#### 18.2.2 审核-接受 核心逻辑
+
+```typescript
+async review(intakeId, params) {
+  const item = await this.getByIntakeId(intakeId, params.projectId);
+  if (!item || item.status !== 'pending') throw new Error('只能审核 pending 状态的条目');
+  
+  if (params.action === 'accept') {
+    // 1. 根据 category 确定自动标签
+    const categoryLabelMap = { bug: 'bug', feature: 'feature', feedback: 'feedback' };
+    const labels = [categoryLabelMap[item.category], ...(params.extraLabels || [])];
+    
+    // 2. 创建 Task 节点
+    const task = await TaskService.create({
+      title: item.title,
+      description: item.description || undefined,
+      labels,
+      priority: params.priority || item.priority,
+      owner: params.owner,
+      parent_task_id: params.parentTaskId,
+      projectId: params.projectId,
+    });
+    
+    // 3. 更新 Intake 状态
+    await db.update(intakeItems)
+      .set({
+        status: 'accepted',
+        reviewedBy: params.reviewedBy,
+        reviewNote: params.reviewNote,
+        taskId: task.taskId,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(intakeItems.intakeId, intakeId));
+    
+    return { ...item, status: 'accepted', taskId: task.taskId, task };
+  }
+  
+  // reject / defer / duplicate
+  const statusMap = { reject: 'rejected', defer: 'deferred', duplicate: 'duplicate' };
+  await db.update(intakeItems)
+    .set({
+      status: statusMap[params.action],
+      reviewedBy: params.reviewedBy,
+      reviewNote: params.reviewNote,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(intakeItems.intakeId, intakeId));
+}
+```
+
+### 18.3 REST API
+
+#### 18.3.1 公开接口（无需认证）
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| POST | `/api/v1/intake` | 提交 Intake（公开，无需 Bearer Token） |
+
+请求体：
+```json
+{
+  "title": "登录页点击按钮无反应",
+  "description": "## 复现步骤\n1. 打开登录页\n2. 点击登录按钮\n3. 无反应",
+  "category": "bug",
+  "submitter": "张三",
+  "priority": "P1",
+  "project": "letsgo"
+}
+```
+
+响应：
+```json
+{
+  "intakeId": "IN-042",
+  "title": "登录页点击按钮无反应",
+  "status": "pending",
+  "createdAt": "2026-03-05T10:30:00.000Z"
+}
+```
+
+#### 18.3.2 项目成员接口（需认证）
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/v1/intake` | Intake 列表（?project=&status=&category=） |
+| GET | `/api/v1/intake/:intakeId` | Intake 详情 |
+| GET | `/api/v1/intake/stats` | 各状态数量统计 |
+| POST | `/api/v1/intake/:intakeId/review` | 审核操作 |
+| POST | `/api/v1/intake/:intakeId/reopen` | 暂缓恢复为 pending |
+
+审核请求体：
+```json
+{
+  "action": "accept",
+  "review_note": "确认是 Bug，分配给前端处理",
+  "parent_task_id": "FE-1",
+  "owner": "frontend-agent",
+  "priority": "P1",
+  "extra_labels": ["urgent"]
+}
+```
+
+#### 18.3.3 认证豁免
+
+提交接口 `POST /api/v1/intake` 需要豁免 Bearer Token 认证，允许未登录用户提交。其他 Intake 端点仍需认证。
+
+在 auth hook 中添加白名单：
+
+```typescript
+// 认证豁免路径
+const PUBLIC_PATHS = ['/api/v1/intake'];
+const PUBLIC_METHODS = ['POST'];
+
+// auth hook 中
+if (PUBLIC_PATHS.some(p => req.url.startsWith(p)) && PUBLIC_METHODS.includes(req.method)) {
+  // 跳过认证（仅限 POST 提交）
+}
+```
+
+### 18.4 MCP 工具
+
+```typescript
+// submit_intake — 提交收件箱条目（如 AI Agent 从飞书消息提取 Bug）
+server.tool('submit_intake', {
+  title: z.string().describe('标题'),
+  description: z.string().optional().describe('详细描述 (Markdown)'),
+  category: z.enum(['bug', 'feature', 'feedback']).optional().describe('类别'),
+  submitter: z.string().describe('提交人名称'),
+  priority: z.string().optional().describe('建议优先级'),
+  project: z.string().optional(),
+}, async (params) => {
+  return IntakeService.submit({ ... });
+});
+
+// list_intake — 查看收件箱
+server.tool('list_intake', {
+  status: z.string().optional().describe('状态筛选'),
+  category: z.string().optional().describe('类别筛选'),
+  project: z.string().optional(),
+}, async (params) => {
+  return IntakeService.list(projectId, params);
+});
+
+// review_intake — 审核
+server.tool('review_intake', {
+  intake_id: z.string().describe('Intake 业务 ID'),
+  action: z.enum(['accept', 'reject', 'defer', 'duplicate']).describe('审核动作'),
+  review_note: z.string().optional().describe('审核备注'),
+  parent_task_id: z.string().optional().describe('接受时指定父节点'),
+  owner: z.string().optional().describe('接受时指定负责人'),
+  priority: z.string().optional().describe('接受时调整优先级'),
+  project: z.string().optional(),
+}, async (params) => {
+  return IntakeService.review(params.intake_id, { ... });
+});
+```
+
+### 18.5 前端设计
+
+#### 18.5.1 新增文件
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `pages/IntakeSubmit.tsx` | 新建 | 公开提交表单页面 |
+| `pages/IntakeList.tsx` | 新建 | 项目成员的 Intake 管理列表 |
+| `services/intake-service.ts` | 新建 | 后端 Intake 服务 |
+
+#### 18.5.2 路由
+
+```
+/p/:slug/intake/submit  → IntakeSubmit（公开，无需身份选择）
+/p/:slug/intake         → IntakeList（需认证）
+```
+
+#### 18.5.3 提交页面（IntakeSubmit）
+
+```typescript
+function IntakeSubmit() {
+  const { slug } = useParams();
+  const [submitted, setSubmitted] = useState(false);
+  const [intakeId, setIntakeId] = useState('');
+  
+  if (submitted) return <SubmitSuccess intakeId={intakeId} />;
+  
+  return (
+    <div className="max-w-2xl mx-auto p-8">
+      <h1>提交反馈 — {projectName}</h1>
+      <form onSubmit={handleSubmit}>
+        <Input label="标题" required />
+        <Select label="类别" options={[
+          { value: 'bug', label: '🐛 Bug 报告' },
+          { value: 'feature', label: '✨ 功能建议' },
+          { value: 'feedback', label: '💬 一般反馈' },
+        ]} />
+        <Textarea label="详细描述" placeholder="支持 Markdown 格式" />
+        <Input label="你的名字" required />
+        <Select label="建议优先级" options={['P0','P1','P2','P3']} />
+        <Button type="submit">提交</Button>
+      </form>
+    </div>
+  );
+}
+```
+
+#### 18.5.4 管理列表页（IntakeList）
+
+```typescript
+function IntakeList() {
+  const { data: items } = useQuery(['intake', slug], () => api.listIntake(slug));
+  const { data: stats } = useQuery(['intake-stats', slug], () => api.getIntakeStats(slug));
+  
+  return (
+    <div>
+      {/* 顶部统计卡片 */}
+      <StatsBar stats={stats} />
+      
+      {/* 筛选栏 */}
+      <FilterRow status={statusFilter} category={categoryFilter} />
+      
+      {/* 条目列表 */}
+      {items?.map(item => (
+        <IntakeCard key={item.id} item={item} onReview={handleReview} />
+      ))}
+    </div>
+  );
+}
+```
+
+#### 18.5.5 类别色标
+
+```typescript
+const CATEGORY_CONFIG = {
+  bug:      { label: 'Bug 报告', color: '#dc2626', bgColor: '#fef2f2', icon: '🐛' },
+  feature:  { label: '功能建议', color: '#2563eb', bgColor: '#eff6ff', icon: '✨' },
+  feedback: { label: '一般反馈', color: '#6366f1', bgColor: '#eef2ff', icon: '💬' },
+};
+
+const INTAKE_STATUS_CONFIG = {
+  pending:   { label: '待审核', color: '#f59e0b', bgColor: '#fffbeb' },
+  accepted:  { label: '已接受', color: '#16a34a', bgColor: '#f0fdf4' },
+  rejected:  { label: '已拒绝', color: '#dc2626', bgColor: '#fef2f2' },
+  deferred:  { label: '已暂缓', color: '#6366f1', bgColor: '#eef2ff' },
+  duplicate: { label: '重复',   color: '#64748b', bgColor: '#f1f5f9' },
+};
+```
+
+#### 18.5.6 侧边栏集成
+
+`Layout.tsx` 侧边栏增加收件箱导航项：
+
+```typescript
+// "工作台" 分组
+{ name: '收件箱', path: `/${slug}/intake`, icon: InboxIcon, badge: pendingCount }
+```
+
+### 18.6 API client 新增方法
+
+```typescript
+// api/client.ts
+submitIntake(params: SubmitIntakeParams): Promise<IntakeItem>;       // POST /api/v1/intake（无 token）
+listIntake(project: string, filters?): Promise<IntakeItem[]>;        // GET /api/v1/intake
+getIntakeStats(project: string): Promise<Record<string, number>>;   // GET /api/v1/intake/stats
+reviewIntake(intakeId: string, params: ReviewParams): Promise<IntakeItem>; // POST /api/v1/intake/:id/review
+reopenIntake(intakeId: string): Promise<IntakeItem>;                 // POST /api/v1/intake/:id/reopen
+```
+
+注意 `submitIntake` 方法需要特殊处理——不携带 Authorization Header。
+
+### 18.7 向后兼容
+
+| 变更点 | 兼容策略 |
+|--------|----------|
+| 新增 `intake_items` 表 | `CREATE TABLE IF NOT EXISTS`，不影响现有表 |
+| 新增 API 端点 `/api/v1/intake` | 纯新增，不修改现有端点 |
+| 新增前端页面 | 纯新增路由，不影响现有页面 |
+| 认证豁免 | 仅 `POST /api/v1/intake` 豁免，其他端点不受影响 |
+| 侧边栏 | 新增导航项，不影响现有导航 |
+| 新增 MCP 工具 | 纯新增，不影响现有工具 |

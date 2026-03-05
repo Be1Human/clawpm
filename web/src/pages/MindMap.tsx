@@ -32,6 +32,9 @@ const NODE_H  = 68;
 const H_GAP   = 76;
 const V_GAP   = 18;
 const ROOT_GAP = 52;
+const PROJECT_NODE_W = 140;
+const PROJECT_NODE_H = 48;
+const PROJECT_NODE_ID = '__project_root__';
 
 // ── 标签色系 ──────────────────────────────────────────────────────
 const LABEL_COLORS: Record<string, { border: string; bg: string; pill: string; text: string }> = {
@@ -807,14 +810,12 @@ function TaskNode({ data, selected }: NodeProps) {
 
         {/* 底部 meta */}
         <div className="flex items-center justify-between mt-1.5">
-          <button
-            className="text-[10px] font-mono text-indigo-400 hover:text-indigo-600 hover:underline transition-colors cursor-pointer"
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); (data as any).onOpenDetail(task.taskId); }}
-            title="打开详情"
+          <span
+            className="text-[10px] font-mono text-indigo-400 hover:text-indigo-600 transition-colors cursor-default select-none"
+            title={task.taskId}
           >
             {task.taskId}
-          </button>
+          </span>
           <div className="flex items-center gap-1.5">
             {(task.attachmentCount ?? 0) > 0 && (
               <span className="text-[10px] text-gray-400 flex items-center gap-0.5" title={`${task.attachmentCount} 个附件`}>
@@ -886,7 +887,29 @@ function TaskNode({ data, selected }: NodeProps) {
   );
 }
 
-const NODE_TYPES = { taskNode: TaskNode };
+// ── 项目虚拟根节点 ──────────────────────────────────────────────────
+function ProjectRootNode({ data }: NodeProps) {
+  const projectName = (data as any).projectName || '项目';
+  return (
+    <div
+      className="relative flex items-center justify-center rounded-2xl select-none"
+      style={{
+        width: PROJECT_NODE_W,
+        height: PROJECT_NODE_H,
+        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+        boxShadow: '0 4px 16px rgba(99,102,241,0.3), 0 0 0 3px rgba(99,102,241,0.1)',
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-white/90 text-lg">🏠</span>
+        <span className="text-white text-sm font-bold truncate max-w-[90px]">{projectName}</span>
+      </div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+    </div>
+  );
+}
+
+const NODE_TYPES = { taskNode: TaskNode, projectRoot: ProjectRootNode };
 const EDGE_TYPES = { treeEdge: TreeEdge, assocEdge: AssocEdge };
 
 // ── localStorage 持久化 ──────────────────────────────────────────
@@ -1105,11 +1128,48 @@ function MindMapCanvas() {
       fieldFilters, customFieldDefs as any[], coreFilters, renamingId, nodeStyles,
       null, // dropTargetId 由独立 effect 处理
     );
+
+    // 注入虚拟项目根节点：连接所有实际根节点
+    const visibleRoots = (treeData as any[]).filter(r => isVisible(r));
+    if (visibleRoots.length > 0) {
+      // 计算所有根节点的纵向中心
+      let minY = Infinity, maxY = -Infinity;
+      for (const root of visibleRoots) {
+        const pos = positions.get(root.taskId);
+        if (pos) {
+          minY = Math.min(minY, pos.y);
+          maxY = Math.max(maxY, pos.y + NODE_H);
+        }
+      }
+      const centerY = (minY + maxY) / 2;
+      const projectRootX = -(PROJECT_NODE_W + H_GAP);
+      const projectRootY = centerY - PROJECT_NODE_H / 2;
+
+      ns.unshift({
+        id: PROJECT_NODE_ID,
+        type: 'projectRoot',
+        position: { x: projectRootX, y: projectRootY },
+        draggable: false,
+        selectable: false,
+        data: { projectName: activeProject === 'default' ? 'ClawPM' : activeProject },
+      });
+
+      for (const root of visibleRoots) {
+        es.unshift({
+          id: `project-root→${root.taskId}`,
+          source: PROJECT_NODE_ID,
+          target: root.taskId,
+          type: 'treeEdge',
+          data: {},
+        });
+      }
+    }
+
     nodeDataMap.current.clear();
     ns.forEach(n => nodeDataMap.current.set(n.id, (n.data as any).task));
     setNodes(ns);
     setEdges(es);
-  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles]);
+  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, activeProject]);
 
   // 独立更新拖拽放置目标高亮（避免整图重建导致拖拽中断）
   useEffect(() => {
@@ -1154,6 +1214,7 @@ function MindMapCanvas() {
   }
 
   const onNodeDragStart = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.id === PROJECT_NODE_ID) return;
     const snap = new Map<string, { x: number; y: number }>();
     setNodes(curr => { curr.forEach(n => snap.set(n.id, { ...n.position })); return curr; });
     dragSnap.current = snap;
@@ -1190,6 +1251,7 @@ function MindMapCanvas() {
 
     for (const n of nodesRef.current) {
       if (n.id === node.id) continue;
+      if (n.id === PROJECT_NODE_ID) continue;
       if (descendants.has(n.id)) continue;
       const nx = n.position.x;
       const ny = n.position.y;

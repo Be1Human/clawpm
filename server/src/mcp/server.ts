@@ -7,6 +7,8 @@ import { AttachmentService } from '../services/attachment-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
 import { MemberService } from '../services/member-service.js';
+import { IterationService } from '../services/iteration-service.js';
+import { NotificationService } from '../services/notification-service.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks } from '../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
@@ -467,6 +469,223 @@ export function createMcpServer(options?: { agentId?: string }) {
     const permissions = PermissionService.listForTask(task.id);
     const result = { taskId: task.taskId, owner: task.owner, permissions };
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  });
+
+  // ── Iteration Tools（v3.0 迭代管理）──────────────────────────────
+  mcp.tool('create_iteration', '创建迭代（Cycle）', {
+    name: z.string().describe('迭代名称'),
+    description: z.string().optional(),
+    start_date: z.string().optional().describe('开始日期 YYYY-MM-DD'),
+    end_date: z.string().optional().describe('结束日期 YYYY-MM-DD'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const iter = IterationService.create({ name: p.name, description: p.description, startDate: p.start_date, endDate: p.end_date, projectId });
+    return { content: [{ type: 'text' as const, text: `迭代已创建：${iter.name}\n${JSON.stringify(iter, null, 2)}` }] };
+  });
+
+  mcp.tool('list_iterations', '查询迭代列表', {
+    status: z.enum(['planned', 'active', 'completed']).optional().describe('按状态筛选'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const list = IterationService.list(projectId, p.status);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }] };
+  });
+
+  mcp.tool('get_iteration', '获取迭代详情（含任务列表和统计）', {
+    iteration_id: z.number().describe('迭代 ID'),
+  }, async (p) => {
+    const iter = IterationService.getById(p.iteration_id);
+    if (!iter) return { content: [{ type: 'text' as const, text: '迭代不存在' }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(iter, null, 2) }] };
+  });
+
+  mcp.tool('update_iteration', '更新迭代信息', {
+    iteration_id: z.number().describe('迭代 ID'),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    status: z.enum(['planned', 'active', 'completed']).optional(),
+  }, async (p) => {
+    const { iteration_id, ...rest } = p;
+    const iter = IterationService.update(iteration_id, { name: rest.name, description: rest.description, startDate: rest.start_date, endDate: rest.end_date, status: rest.status });
+    if (!iter) return { content: [{ type: 'text' as const, text: '迭代不存在' }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(iter, null, 2) }] };
+  });
+
+  mcp.tool('delete_iteration', '删除迭代', {
+    iteration_id: z.number().describe('迭代 ID'),
+  }, async (p) => {
+    const iter = IterationService.getById(p.iteration_id);
+    if (!iter) return { content: [{ type: 'text' as const, text: '迭代不存在' }] };
+    IterationService.delete(p.iteration_id);
+    return { content: [{ type: 'text' as const, text: '迭代已删除' }] };
+  });
+
+  mcp.tool('add_task_to_iteration', '将任务添加到迭代', {
+    iteration_id: z.number().describe('迭代 ID'),
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    try {
+      IterationService.addTask(p.iteration_id, p.task_id);
+      return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 已添加到迭代` }] };
+    } catch (e: any) {
+      return { content: [{ type: 'text' as const, text: `添加失败：${e.message}` }] };
+    }
+  });
+
+  mcp.tool('remove_task_from_iteration', '将任务从迭代移除', {
+    iteration_id: z.number().describe('迭代 ID'),
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    IterationService.removeTask(p.iteration_id, p.task_id);
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 已从迭代移除` }] };
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 已从迭代移除` }] };
+  });
+
+  // ── Archive Tools（v3.0 归档）──────────────────────────────────────
+  mcp.tool('archive_task', '归档任务', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    const task = TaskService.archive(p.task_id);
+    if (!task) return { content: [{ type: 'text' as const, text: '任务不存在' }] };
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 已归档` }] };
+  });
+
+  mcp.tool('unarchive_task', '恢复已归档任务', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    const task = TaskService.unarchive(p.task_id);
+    if (!task) return { content: [{ type: 'text' as const, text: '任务不存在' }] };
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 已恢复` }] };
+  });
+
+  mcp.tool('list_archived_tasks', '查看已归档任务列表', {
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const list = TaskService.listArchived(projectId);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }] };
+  });
+
+  // ── Notification Tools（v3.0 通知）─────────────────────────────────
+  mcp.tool('list_notifications', '获取通知列表', {
+    recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const effectiveRecipient = p.recipient || agentId;
+    if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
+    const projectId = resolveProject(p.project);
+    const list = NotificationService.listByRecipient(effectiveRecipient, projectId);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }] };
+  });
+
+  mcp.tool('get_unread_notification_count', '获取未读通知数量', {
+    recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const effectiveRecipient = p.recipient || agentId;
+    if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
+    const projectId = resolveProject(p.project);
+    const count = NotificationService.getUnreadCount(effectiveRecipient, projectId);
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ unreadCount: count }) }] };
+  });
+
+  mcp.tool('mark_notification_read', '标记通知为已读', {
+    notification_id: z.number().describe('通知 ID'),
+  }, async (p) => {
+    NotificationService.markAsRead(p.notification_id);
+    return { content: [{ type: 'text' as const, text: '[OK] 通知已标记为已读' }] };
+  });
+
+  mcp.tool('mark_all_notifications_read', '标记所有通知为已读', {
+    recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const effectiveRecipient = p.recipient || agentId;
+    if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
+    const projectId = resolveProject(p.project);
+    NotificationService.markAllAsRead(effectiveRecipient, projectId);
+    return { content: [{ type: 'text' as const, text: '[OK] 所有通知已标记为已读' }] };
+  });
+
+  // ── Batch Operations Tools（v3.0 批量操作）─────────────────────────
+  mcp.tool('batch_update_tasks', '批量更新任务', {
+    task_ids: z.array(z.string()).describe('任务 ID 数组，如 ["U-001", "U-002"]'),
+    status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
+    priority: z.string().optional(),
+    owner: z.string().optional(),
+    labels: z.array(z.string()).optional(),
+  }, async (p) => {
+    const { task_ids, ...updates } = p;
+    const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+    if (Object.keys(cleanUpdates).length === 0) {
+      return { content: [{ type: 'text' as const, text: '至少需要提供一个更新字段' }] };
+    }
+    const results = TaskService.batchUpdate(task_ids, cleanUpdates);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
+  });
+
+  // ── Intake Tools（v3.1 收件箱）──────────────────────────────────────
+  mcp.tool('submit_intake', '提交收件箱条目（Bug报告/功能建议/一般反馈）', {
+    title: z.string().describe('标题'),
+    description: z.string().optional().describe('详细描述 (Markdown)'),
+    category: z.enum(['bug', 'feature', 'feedback']).optional().describe('类别，默认 feedback'),
+    submitter: z.string().describe('提交人名称'),
+    priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().describe('建议优先级'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const item = await IntakeService.submit({
+      title: p.title,
+      description: p.description,
+      category: p.category,
+      submitter: p.submitter,
+      priority: p.priority,
+      projectId,
+    });
+    return { content: [{ type: 'text' as const, text: `[OK] 已提交收件箱 ${item.intakeId}: ${item.title}\n${JSON.stringify(item, null, 2)}` }] };
+  });
+
+  mcp.tool('list_intake', '查看收件箱条目列表', {
+    status: z.enum(['pending', 'accepted', 'rejected', 'deferred', 'duplicate']).optional().describe('状态筛选'),
+    category: z.enum(['bug', 'feature', 'feedback']).optional().describe('类别筛选'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const items = IntakeService.list(projectId, { status: p.status, category: p.category });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(items, null, 2) }] };
+  });
+
+  mcp.tool('review_intake', '审核收件箱条目', {
+    intake_id: z.string().describe('Intake 业务 ID，如 IN-001'),
+    action: z.enum(['accept', 'reject', 'defer', 'duplicate']).describe('审核动作'),
+    review_note: z.string().optional().describe('审核备注'),
+    parent_task_id: z.string().optional().describe('接受时指定父节点 ID'),
+    owner: z.string().optional().describe('接受时指定负责人'),
+    priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().describe('接受时调整优先级'),
+    extra_labels: z.array(z.string()).optional().describe('接受时追加的额外标签'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const reviewedBy = agentId || 'mcp-user';
+    try {
+      const result = await IntakeService.review(p.intake_id, {
+        action: p.action,
+        reviewedBy,
+        reviewNote: p.review_note,
+        parentTaskId: p.parent_task_id,
+        owner: p.owner,
+        priority: p.priority,
+        extraLabels: p.extra_labels,
+        projectId,
+      });
+      return { content: [{ type: 'text' as const, text: `[OK] ${p.intake_id} 已${p.action === 'accept' ? '接受' : p.action === 'reject' ? '拒绝' : p.action === 'defer' ? '暂缓' : '标记重复'}\n${JSON.stringify(result, null, 2)}` }] };
+    } catch (e: any) {
+      return { content: [{ type: 'text' as const, text: `审核失败：${e.message}` }] };
+    }
   });
 
   return mcp;

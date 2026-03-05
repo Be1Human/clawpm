@@ -4,7 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
+import { useFilters } from '@/lib/useFilters';
 import CreateTaskModal from '@/components/CreateTaskModal';
+import FilterBar from '@/components/FilterBar';
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string }> = {
   backlog: { label: '未排期', dot: 'bg-slate-400',   text: 'text-slate-500' },
@@ -140,19 +142,15 @@ export default function Requirements() {
   const activeProject = useActiveProject();
   const [globalExpanded, setGlobalExpanded] = useState<boolean | null>(null);
   const [createModal, setCreateModal] = useState<{ parentId?: string } | null>(null);
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterMilestone, setFilterMilestone] = useState('');
-  const [filterLabel, setFilterLabel] = useState('');
-
-  const { data: milestones = [] } = useQuery({ queryKey: ['milestones', activeProject], queryFn: () => api.getMilestones() });
+  const filterHook = useFilters('requirements');
 
   const treeParams: Record<string, string> = {};
-  if (filterStatus) treeParams.status = filterStatus;
-  if (filterMilestone) treeParams.milestone = filterMilestone;
-  if (filterLabel) treeParams.label = filterLabel;
+  if (filterHook.filters.status.size === 1) treeParams.status = Array.from(filterHook.filters.status)[0];
+  if (filterHook.filters.milestone) treeParams.milestone = filterHook.filters.milestone;
+  if (filterHook.filters.label) treeParams.label = filterHook.filters.label;
 
   const { data: tree = [], isLoading } = useQuery({
-    queryKey: ['task-tree', activeProject, filterStatus, filterMilestone, filterLabel],
+    queryKey: ['task-tree', activeProject, JSON.stringify(treeParams)],
     queryFn: () => api.getTaskTree(Object.keys(treeParams).length ? treeParams : undefined),
   });
 
@@ -202,34 +200,8 @@ export default function Requirements() {
         </div>
       </div>
 
-      <div className="flex items-center flex-wrap gap-2 mb-4">
-        <select value={filterLabel} onChange={e => setFilterLabel(e.target.value)}
-          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[110px] focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <option value="">全部标签</option>
-          {['epic','feature','bug','spike','chore'].map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <option value="">全部状态</option>
-          <option value="backlog">未排期</option>
-          <option value="planned">未开始</option>
-          <option value="active">进行中</option>
-          <option value="review">验收中</option>
-          <option value="done">已完成</option>
-        </select>
-        <select value={filterMilestone} onChange={e => setFilterMilestone(e.target.value)}
-          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 min-w-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <option value="">全部里程碑</option>
-          {(milestones as any[]).map((m: any) => <option key={m.id} value={m.name}>{m.name}</option>)}
-        </select>
-        {(filterStatus || filterMilestone || filterLabel) && (
-          <button
-            onClick={() => { setFilterStatus(''); setFilterMilestone(''); setFilterLabel(''); }}
-            className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-50"
-          >
-            ✕ 清除过滤
-          </button>
-        )}
+      <div className="mb-4">
+        <FilterBar {...filterHook} dimensions={['search', 'status', 'milestone', 'label']} />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2">
@@ -250,10 +222,10 @@ export default function Requirements() {
           <div className="py-16 text-center">
             <div className="text-4xl mb-3 opacity-30">◉</div>
             <div className="text-gray-500 text-sm mb-1">
-              {filterStatus || filterMilestone || filterLabel ? '没有符合过滤条件的节点' : '还没有任何需求节点'}
+              {filterHook.hasActiveFilters ? '没有符合过滤条件的节点' : '还没有任何需求节点'}
             </div>
             <div className="text-gray-400 text-xs">
-              {filterStatus || filterMilestone || filterLabel ? '尝试清除过滤条件' : '点击「新建节点」开始构建需求树'}
+              {filterHook.hasActiveFilters ? '尝试清除过滤条件' : '点击「新建节点」开始构建需求树'}
             </div>
           </div>
         ) : (

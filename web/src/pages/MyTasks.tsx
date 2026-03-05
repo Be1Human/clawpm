@@ -795,23 +795,15 @@ function MyTasksMindMapCanvas({
     return () => clearTimeout(t);
   }, [tree, currentUser, collapsed, focusNodeId, filters, setNodes, setEdges, fitView, setCenter]);
 
-  const onNodeClick = useCallback((_: any, node: Node) => {
-    if (node.id === '__root__') return;
-    const task = (node.data as any)?.task;
-    if (task?.taskId) navigate(`/tasks/${task.taskId}`);
-  }, [navigate]);
+  const onNodeClick = useCallback((_: any, _node: Node) => {
+    // 单击只选中，不跳转
+  }, []);
 
   const onNodeDoubleClick = useCallback((_: any, node: Node) => {
     if (node.id === '__root__') return;
     const task = (node.data as any)?.task;
-    if (task?.children?.length) {
-      setCollapsed(prev => {
-        const next = new Set(prev);
-        next.has(node.id) ? next.delete(node.id) : next.add(node.id);
-        return next;
-      });
-    }
-  }, []);
+    if (task?.taskId) navigate(`/tasks/${task.taskId}`);
+  }, [navigate]);
 
   const activeFilterCount = (filters.status.size > 0 ? 1 : 0) + (filters.priority.size > 0 ? 1 : 0)
     + (filters.label ? 1 : 0) + (filters.search ? 1 : 0)

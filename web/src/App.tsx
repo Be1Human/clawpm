@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import KanbanBoard from './pages/KanbanBoard';
@@ -16,12 +16,25 @@ import CustomFields from './pages/CustomFields';
 import MyTasks from './pages/MyTasks';
 import MyDashboard from './pages/MyDashboard';
 import MyGantt from './pages/MyGantt';
+import Iterations from './pages/Iterations';
+import IterationDetail from './pages/IterationDetail';
+import Archive from './pages/Archive';
+import IntakeSubmit from './pages/IntakeSubmit';
+import IntakeList from './pages/IntakeList';
+
+function LayoutWrapper() {
+  return <Layout><Outlet /></Layout>;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
+      <Routes>
+        {/* 公开页面（无侧边栏） */}
+        <Route path="/intake/submit" element={<IntakeSubmit />} />
+
+        {/* 需要 Layout 的页面 */}
+        <Route element={<LayoutWrapper />}>
           {/* 默认入口 → 个人仪表盘 */}
           <Route path="/" element={<Navigate to="/my/dashboard" replace />} />
 
@@ -53,8 +66,12 @@ export default function App() {
           <Route path="/members" element={<Members />} />
           <Route path="/domains" element={<Domains />} />
           <Route path="/custom-fields" element={<CustomFields />} />
-        </Routes>
-      </Layout>
+          <Route path="/iterations" element={<Iterations />} />
+          <Route path="/iterations/:id" element={<IterationDetail />} />
+          <Route path="/archive" element={<Archive />} />
+          <Route path="/intake" element={<IntakeList />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }

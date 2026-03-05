@@ -240,4 +240,65 @@ function runMigrations(sqlite: Database.Database) {
   try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_project_name ON domains(project_id, name)`); } catch {}
   try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_project_prefix ON domains(project_id, task_prefix)`); } catch {}
   try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_members_project_identifier ON members(project_id, identifier)`); } catch {}
+
+  // v3.0 迁移：迭代、通知、归档
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN archived_at TEXT`); } catch {}
+
+  sqlite.exec(`
+    -- 迭代表
+    CREATE TABLE IF NOT EXISTS iterations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id  INTEGER NOT NULL REFERENCES projects(id),
+      name        TEXT NOT NULL,
+      description TEXT,
+      start_date  TEXT,
+      end_date    TEXT,
+      status      TEXT NOT NULL DEFAULT 'planned',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- 任务-迭代关联表
+    CREATE TABLE IF NOT EXISTS task_iterations (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      iteration_id  INTEGER NOT NULL REFERENCES iterations(id) ON DELETE CASCADE,
+      UNIQUE(task_id, iteration_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_iterations_task ON task_iterations(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_iterations_iteration ON task_iterations(iteration_id);
+
+    -- 通知表
+    CREATE TABLE IF NOT EXISTS notifications (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id    INTEGER NOT NULL REFERENCES projects(id),
+      recipient_id  TEXT NOT NULL,
+      type          TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      content       TEXT,
+      task_id       TEXT,
+      is_read       INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, is_read);
+
+    -- Intake 收件箱（v3.1）
+    CREATE TABLE IF NOT EXISTS intake_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      intake_id     TEXT NOT NULL UNIQUE,
+      project_id    INTEGER NOT NULL REFERENCES projects(id),
+      title         TEXT NOT NULL,
+      description   TEXT,
+      category      TEXT NOT NULL DEFAULT 'feedback',
+      submitter     TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      priority      TEXT NOT NULL DEFAULT 'P2',
+      reviewed_by   TEXT,
+      review_note   TEXT,
+      task_id       TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_intake_project_status ON intake_items(project_id, status);
+  `);
 }

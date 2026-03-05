@@ -177,4 +177,70 @@ export const api = {
     request<any>(`/tasks/${taskId}/permissions`, { method: 'POST', body: JSON.stringify({ grantee, level }) }),
   revokePermission: (taskId: string, grantee: string) =>
     request<any>(`/tasks/${taskId}/permissions/${encodeURIComponent(grantee)}`, { method: 'DELETE' }),
+
+  // Batch Operations (v3.0)
+  batchUpdateTasks: (taskIds: string[], updates: Record<string, any>) =>
+    request<any>('/tasks/batch', { method: 'PATCH', body: JSON.stringify({ task_ids: taskIds, updates }) }),
+
+  // Archive (v3.0)
+  getArchivedTasks: () => request<any[]>(withProject('/tasks/archived')),
+  archiveTask: (taskId: string) => request<any>(`/tasks/${taskId}/archive`, { method: 'POST' }),
+  unarchiveTask: (taskId: string) => request<any>(`/tasks/${taskId}/unarchive`, { method: 'POST' }),
+
+  // Iterations (v3.0)
+  getIterations: (status?: string) => {
+    const base = withProject('/iterations');
+    return request<any[]>(status ? `${base}&status=${status}` : base);
+  },
+  createIteration: (data: { name: string; description?: string; start_date?: string; end_date?: string }) =>
+    request<any>(withProject('/iterations'), { method: 'POST', body: JSON.stringify(data) }),
+  getIteration: (id: number) => request<any>(`/iterations/${id}`),
+  updateIteration: (id: number, data: any) =>
+    request<any>(`/iterations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteIteration: (id: number) => request<any>(`/iterations/${id}`, { method: 'DELETE' }),
+  addTaskToIteration: (iterationId: number, taskId: string) =>
+    request<any>(`/iterations/${iterationId}/tasks`, { method: 'POST', body: JSON.stringify({ task_id: taskId }) }),
+  removeTaskFromIteration: (iterationId: number, taskId: string) =>
+    request<any>(`/iterations/${iterationId}/tasks/${taskId}`, { method: 'DELETE' }),
+
+  // Notifications (v3.0)
+  getNotifications: () => request<any[]>(withProject('/notifications')),
+  getUnreadNotificationCount: () => request<any>(withProject('/notifications/unread-count')),
+  markNotificationRead: (id: number) =>
+    request<any>(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllNotificationsRead: () =>
+    request<any>(withProject('/notifications/read-all'), { method: 'POST' }),
+
+  // Intake 收件箱 (v3.1)
+  submitIntake: (data: { title: string; description?: string; category?: string; submitter: string; priority?: string; project?: string }) => {
+    // 提交接口不携带 Authorization Header
+    const body = { ...data, project: data.project || _activeProjectSlug };
+    return fetch(`${BASE}/intake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(res => {
+      if (!res.ok) return res.json().then(e => { throw new Error(e.error || 'Submit failed'); });
+      return res.json();
+    });
+  },
+  getIntakeList: (params?: { status?: string; category?: string }) => {
+    const qs = params ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v) as string[][]) : '';
+    return request<any[]>(withProject(`/intake${qs}`));
+  },
+  getIntakeStats: () => request<any>(withProject('/intake/stats')),
+  getIntakeDetail: (intakeId: string) => request<any>(withProject(`/intake/${intakeId}`)),
+  reviewIntake: (intakeId: string, data: {
+    action: string;
+    review_note?: string;
+    parent_task_id?: string;
+    owner?: string;
+    priority?: string;
+    extra_labels?: string[];
+  }) => request<any>(withProject(`/intake/${intakeId}/review`), {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  reopenIntake: (intakeId: string) =>
+    request<any>(withProject(`/intake/${intakeId}/reopen`), { method: 'POST' }),
 };

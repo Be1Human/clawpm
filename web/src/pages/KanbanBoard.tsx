@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
+import { useFilters, applyFilters } from '@/lib/useFilters';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { useState, useRef } from 'react';
 import CreateTaskModal from '@/components/CreateTaskModal';
+import FilterBar from '@/components/FilterBar';
 
 const COLUMNS = [
   { key: 'backlog',  label: '未排期', accent: '#94a3b8', light: '#f8fafc' },
@@ -136,7 +138,7 @@ function TaskCard({
 export default function KanbanBoard() {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
-  const [filter, setFilter] = useState('');
+  const filterHook = useFilters('kanban');
   const [showCreate, setShowCreate] = useState(false);
   const [draggingOver, setDraggingOver] = useState<string | null>(null);
   const dragTaskId = useRef<string | null>(null);
@@ -153,13 +155,7 @@ export default function KanbanBoard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
-  const filtered = filter
-    ? (tasks as any[]).filter(t =>
-        t.title.toLowerCase().includes(filter.toLowerCase()) ||
-        t.taskId.toLowerCase().includes(filter.toLowerCase()) ||
-        t.owner?.toLowerCase().includes(filter.toLowerCase())
-      )
-    : tasks as any[];
+  const filtered = applyFilters(tasks as any[], filterHook.filters);
 
   function handleDragStart(e: React.DragEvent, taskId: string) {
     dragTaskId.current = taskId;
@@ -194,12 +190,6 @@ export default function KanbanBoard() {
           <p className="text-xs text-gray-400">{(tasks as any[]).length} 个任务 · 拖拽卡片可变更状态</p>
         </div>
         <div className="flex items-center gap-3">
-          <input
-            className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm w-52 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent"
-            placeholder="搜索任务..."
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-          />
           <button
             onClick={() => setShowCreate(true)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
@@ -207,6 +197,9 @@ export default function KanbanBoard() {
             + 新建任务
           </button>
         </div>
+      </div>
+      <div className="px-6 py-2 bg-white border-b border-gray-200">
+        <FilterBar {...filterHook} dimensions={['search', 'priority', 'owner', 'label']} />
       </div>
 
       {/* Board */}
