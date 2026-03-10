@@ -53,7 +53,6 @@ interface NodeStyle {
   textColor?: string;
   borderWidth?: number;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
-  borderMode?: 'bar' | 'half' | 'full'; // v3.4: bar=左色条(默认), half=半包围, full=全包围
   emoji?: string;
 }
 
@@ -548,8 +547,7 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
   const [style, setStyle] = useState<NodeStyle>({ ...current });
 
   const hasCustom = !!(style.bgColor || style.borderColor || style.textColor || style.emoji
-    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid')
-    || (style.borderMode && style.borderMode !== 'bar'));
+    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid'));
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
@@ -561,66 +559,19 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
 
         {/* 预览 */}
         <div className="mb-5 flex justify-center">
-          {(() => {
-            const mode = style.borderMode ?? 'bar';
-            const bColor = style.borderColor || '#6366f1';
-            const bWidth = style.borderWidth || 2;
-            const bStyle = style.borderStyle || 'solid';
-
-            if (mode === 'full') {
-              return (
-                <div
-                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                  style={{
-                    backgroundColor: style.bgColor || '#fff',
-                    border: `${bWidth}px ${bStyle} ${bColor}`,
-                    color: style.textColor || '#1f2937',
-                  }}
-                >
-                  <span className="text-sm font-semibold">
-                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                    {taskTitle}
-                  </span>
-                </div>
-              );
-            }
-            if (mode === 'half') {
-              return (
-                <div
-                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                  style={{
-                    backgroundColor: style.bgColor || '#fff',
-                    borderLeft: `${bWidth + 1}px ${bStyle} ${bColor}`,
-                    borderTop: `${bWidth}px ${bStyle} ${bColor}`,
-                    borderBottom: `${bWidth}px ${bStyle} ${bColor}`,
-                    borderRight: `1px solid #e2e8f0`,
-                    color: style.textColor || '#1f2937',
-                  }}
-                >
-                  <span className="text-sm font-semibold">
-                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                    {taskTitle}
-                  </span>
-                </div>
-              );
-            }
-            // bar mode (default)
-            return (
-              <div className="relative rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                style={{
-                  backgroundColor: style.bgColor || '#fff',
-                  border: `${bWidth}px ${bStyle} ${style.borderColor || '#e2e8f0'}`,
-                  color: style.textColor || '#1f2937',
-                }}
-              >
-                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: bColor }} />
-                <span className="text-sm font-semibold">
-                  {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                  {taskTitle}
-                </span>
-              </div>
-            );
-          })()}
+          <div
+            className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
+            style={{
+              backgroundColor: style.bgColor || '#fff',
+              border: `${style.borderWidth || 2}px ${style.borderStyle || 'solid'} ${style.borderColor || '#e2e8f0'}`,
+              color: style.textColor || '#1f2937',
+            }}
+          >
+            <span className="text-sm font-semibold">
+              {style.emoji && <span className="mr-1">{style.emoji}</span>}
+              {taskTitle}
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -668,29 +619,6 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
                   title={c || '默认'}
                 >
                   {!c && <span className="text-[8px] text-gray-400 block">默认</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 包围模式 (v3.4) */}
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1.5 block">包围模式</label>
-            <div className="flex gap-2">
-              {([
-                { mode: 'bar' as const, label: '左色条', desc: '仅左侧色条' },
-                { mode: 'half' as const, label: '半包围', desc: '左+上+下三边' },
-                { mode: 'full' as const, label: '全包围', desc: '四边全色边框' },
-              ]).map(({ mode, label, desc }) => (
-                <button key={mode}
-                  onClick={() => setStyle(s => ({ ...s, borderMode: mode === 'bar' ? undefined : mode }))}
-                  className={cn('flex-1 py-2 rounded-lg border text-center transition-all',
-                    (style.borderMode ?? 'bar') === mode
-                      ? 'border-indigo-400 bg-indigo-50 text-indigo-600'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300')}
-                >
-                  <div className="text-[11px] font-medium">{label}</div>
-                  <div className="text-[9px] text-gray-400 mt-0.5">{desc}</div>
                 </button>
               ))}
             </div>
@@ -807,10 +735,7 @@ function TaskNode({ data, selected }: NodeProps) {
   }
 
   // 样式优先级：放置目标 > 用户自定义 > domain高亮 > label色系 > 默认
-  const borderMode = nodeStyle.borderMode ?? 'bar';
-  const accentColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
   const resolvedBorder = isDropTarget ? '#6366f1'
-    : borderMode === 'full' ? accentColor
     : nodeStyle.borderColor
     || (selected ? colors.border : isHighlighted ? `${hlColor}90` : '#e2e8f0');
   const resolvedBg = isDropTarget ? '#eef2ff'
@@ -819,7 +744,7 @@ function TaskNode({ data, selected }: NodeProps) {
   const resolvedTextColor = nodeStyle.textColor || '#1f2937';
   const resolvedBorderWidth = isDropTarget ? 3 : (nodeStyle.borderWidth ?? 2);
   const resolvedBorderStyle = isDropTarget ? 'dashed' as const : (nodeStyle.borderStyle ?? 'solid');
-  const barColor = accentColor;
+  const barColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
 
   const boxShadow = (() => {
     if (isDropTarget) return '0 0 0 4px rgba(99,102,241,0.2), 0 8px 24px rgba(99,102,241,0.15)';
@@ -828,46 +753,22 @@ function TaskNode({ data, selected }: NodeProps) {
     return base;
   })();
 
-  // 根据 borderMode 计算边框样式
-  const borderStyles: React.CSSProperties = (() => {
-    if (isDropTarget) {
-      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
-    }
-    if (borderMode === 'full') {
-      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}` };
-    }
-    if (borderMode === 'half') {
-      return {
-        borderLeft: `${resolvedBorderWidth + 1}px ${resolvedBorderStyle} ${accentColor}`,
-        borderTop: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
-        borderBottom: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
-        borderRight: `1px solid #e2e8f0`,
-      };
-    }
-    // bar mode
-    return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
-  })();
-  const showBar = borderMode === 'bar' && !isDropTarget;
-
   return (
     <div
       className="relative rounded-xl select-none"
       style={{
         width: NODE_W,
         minHeight: NODE_H,
-        ...borderStyles,
+        border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
         boxShadow,
         backgroundColor: resolvedBg,
         transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
-        overflow: 'visible',
       }}
       onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
       onContextMenu={handleContextMenu}
     >
-      {/* 左侧色条（仅 bar 模式显示） */}
-      {showBar && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
-      )}
+      {/* 左侧色条 */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
 
       {/* 拖拽把手 */}
       <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-30 hover:opacity-70" title="拖拽移动">
@@ -932,10 +833,10 @@ function TaskNode({ data, selected }: NodeProps) {
         <ProgressRing progress={progress} size={20} />
       </div>
 
-      {/* 右侧：有子节点时显示展开/收缩 */}
+      {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
       {hasChildren && (
         <button
-          className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
           title={isCollapsed ? '展开' : '折叠'}
@@ -949,7 +850,7 @@ function TaskNode({ data, selected }: NodeProps) {
         <>
           {/* 右侧添加子节点 */}
           <button
-            className="nopan nodrag nowheel absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+            className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
             title="添加子节点 (Tab)"
@@ -959,7 +860,7 @@ function TaskNode({ data, selected }: NodeProps) {
           {/* 下方添加同级 */}
           {!isRoot && (
             <button
-              className="nopan nodrag nowheel absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+              className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
               onMouseDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
               title="添加同级 (Enter)"
@@ -1162,16 +1063,11 @@ function MindMapCanvas() {
     onOpenDetail: (taskId: string) => setDetailTaskId(taskId),
     onStartRename: (taskId: string) => setRenamingId(taskId),
     onClearRenaming: () => setRenamingId(null),
-    onToggleCollapse: (taskId: string) => {
-      console.log('[DEBUG] onToggleCollapse called:', taskId);
-      setCollapsed(prev => {
-        const next = new Set(prev);
-        const wasCollapsed = next.has(taskId);
-        wasCollapsed ? next.delete(taskId) : next.add(taskId);
-        console.log('[DEBUG] collapsed state:', taskId, wasCollapsed ? 'expanding' : 'collapsing', 'set size:', next.size);
-        return next;
-      });
-    },
+    onToggleCollapse: (taskId: string) => setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
+    }),
     onContextMenu: (x: number, y: number, task: any) => setContextMenu({ x, y, task }),
     onDeleteLink: (linkId: number) => deleteLinkMut.mutate(linkId),
   }), []);
@@ -1888,7 +1784,7 @@ function MindMapCanvas() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDetailTaskId(null)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div
-            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[92vw] max-w-6xl max-h-[88vh] overflow-y-auto"
+            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[90vw] max-w-4xl max-h-[85vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <TaskDetail taskId={detailTaskId} onClose={() => setDetailTaskId(null)} />

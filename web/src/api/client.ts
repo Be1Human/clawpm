@@ -243,4 +243,25 @@ export const api = {
   }),
   reopenIntake: (intakeId: string) =>
     request<any>(withProject(`/intake/${intakeId}/reopen`), { method: 'POST' }),
+
+  // Image Upload (v3.4)
+  uploadImage: async (file: File): Promise<{ url: string; filename: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const currentUser = getCurrentUser();
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${TOKEN}`,
+    };
+    if (currentUser) headers['X-ClawPM-User'] = currentUser;
+    const res = await fetch(`${BASE}/upload/image`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || 'Upload failed');
+    }
+    return res.json();
+  },
 };

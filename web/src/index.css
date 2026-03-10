@@ -70,4 +70,9 @@
     @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs
            bg-slate-800 text-slate-400 border border-slate-700;
   }
+
+  /* ── ReactFlow 节点溢出修复 ────────────────────────── */
+  .react-flow__node {
+    overflow: visible !important;
+  }
 }

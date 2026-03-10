@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { config } from './config.js';
 import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
@@ -17,12 +18,26 @@ await app.register(cors, {
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
 });
 
+// ── Multipart (image upload) ──────────────────────────────────────
+await app.register(multipart, {
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+// ── Uploads static file serving ───────────────────────────────────
+const uploadsDir = path.join(path.dirname(config.dbPath), 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+await app.register(staticFiles, {
+  root: uploadsDir,
+  prefix: '/uploads/',
+  decorateReply: false, // 避免与后面 web dist 的 static 冲突
+});
+
 // ── Auth hook + User identity extraction ──────────────────────────
 app.decorateRequest('clawpmUser', null);
 
 app.addHook('onRequest', async (req, reply) => {
   // Skip auth for health check and static files
-  if (req.url === '/health' || req.url?.startsWith('/assets') || req.url === '/') return;
+  if (req.url === '/health' || req.url?.startsWith('/assets') || req.url === '/' || req.url?.startsWith('/uploads/')) return;
 
   // Support token via Authorization header OR ?token= query param (for SSE clients)
   const auth = req.headers.authorization;

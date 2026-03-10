@@ -604,6 +604,9 @@ function MmTaskNode({ data, selected }: NodeProps) {
   const progress = task.progress ?? 0;
   const isMine = (data as any).isMine;
   const isFocused = (data as any).isFocused;
+  const isCollapsed = (data as any).isCollapsed;
+  const hasChildren = (task.children ?? []).length > 0;
+  const onToggleCollapse = (data as any).onToggleCollapse;
 
   return (
     <div
@@ -623,6 +626,7 @@ function MmTaskNode({ data, selected }: NodeProps) {
             : '0 1px 4px rgba(0,0,0,0.06)',
         backgroundColor: isMine ? sc.bg : '#fafafa',
         cursor: 'pointer',
+        overflow: 'visible',
       }}
     >
       {/* 左侧色条 */}
@@ -662,13 +666,16 @@ function MmTaskNode({ data, selected }: NodeProps) {
         <MmProgressRing progress={progress} size={20} />
       </div>
 
-      {/* 折叠指示 */}
-      {(task.children?.length ?? 0) > 0 && (data as any).isCollapsed && (
-        <div
-          className="absolute -right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-400 flex items-center justify-center text-[9px] shadow-sm z-10"
+      {/* 右侧：折叠/展开按钮 */}
+      {hasChildren && (
+        <button
+          className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-300 text-gray-500 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[11px] shadow-sm z-10 transition-colors cursor-pointer"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onToggleCollapse?.(task.taskId); }}
+          title={isCollapsed ? `展开 (${task.children.length} 个子节点)` : '折叠'}
         >
-          {task.children.length}
-        </div>
+          {isCollapsed ? '▶' : '▼'}
+        </button>
       )}
 
       <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
@@ -680,7 +687,11 @@ function MmTaskNode({ data, selected }: NodeProps) {
 const MM_NODE_TYPES = { rootNode: MmRootNode, taskNode: MmTaskNode };
 const MM_EDGE_TYPES = { treeEdge: MyMindMapTreeEdge };
 
-function buildMyMindMapFlow(tree: any[], currentUser: string, collapsed: Set<string>, focusNodeId?: string | null, filters: MmFilters = EMPTY_MM_FILTERS) {
+function buildMyMindMapFlow(
+  tree: any[], currentUser: string, collapsed: Set<string>,
+  onToggleCollapse: (taskId: string) => void,
+  focusNodeId?: string | null, filters: MmFilters = EMPTY_MM_FILTERS,
+) {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const hasFilters = hasMmFilters(filters);
@@ -696,7 +707,7 @@ function buildMyMindMapFlow(tree: any[], currentUser: string, collapsed: Set<str
     type: 'rootNode',
     position: rootPos,
     data: { label: currentUser },
-    draggable: true,
+    draggable: false,
     selectable: false,
   });
 
@@ -714,8 +725,9 @@ function buildMyMindMapFlow(tree: any[], currentUser: string, collapsed: Set<str
         isMine: node.owner === currentUser,
         isCollapsed: collapsed.has(id),
         isFocused: focusNodeId === id,
+        onToggleCollapse,
       },
-      draggable: true,
+      draggable: false,
     });
 
     edges.push({
@@ -752,8 +764,17 @@ function MyTasksMindMapCanvas({
   const [filters, setFilters] = useState<MmFilters>({ ...EMPTY_MM_FILTERS, status: new Set(), priority: new Set() });
   const [showFilters, setShowFilters] = useState(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [nodes, setNodes] = useNodesState<Node>([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
+
+  // 折叠/展开回调（传给节点按钮）
+  const onToggleCollapse = useCallback((taskId: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }, []);
 
   // 从树数据中收集所有标签
   const allLabels = useMemo(() => {
@@ -774,7 +795,7 @@ function MyTasksMindMapCanvas({
       setEdges([]);
       return;
     }
-    const { nodes: ns, edges: es } = buildMyMindMapFlow(tree, currentUser, collapsed, focusNodeId, filters);
+    const { nodes: ns, edges: es } = buildMyMindMapFlow(tree, currentUser, collapsed, onToggleCollapse, focusNodeId, filters);
     setNodes(ns);
     setEdges(es);
 
@@ -793,17 +814,23 @@ function MyTasksMindMapCanvas({
       fitView({ padding: 0.25, duration: 200 });
     }, 50);
     return () => clearTimeout(t);
-  }, [tree, currentUser, collapsed, focusNodeId, filters, setNodes, setEdges, fitView, setCenter]);
+  }, [tree, currentUser, collapsed, focusNodeId, filters, onToggleCollapse, setNodes, setEdges, fitView, setCenter]);
 
-  const onNodeClick = useCallback((_: any, _node: Node) => {
-    // 单击只选中，不跳转
-  }, []);
-
-  const onNodeDoubleClick = useCallback((_: any, node: Node) => {
+  const onNodeClick = useCallback((_: any, node: Node) => {
+    // 单击：跳转到任务详情
     if (node.id === '__root__') return;
     const task = (node.data as any)?.task;
     if (task?.taskId) navigate(`/tasks/${task.taskId}`);
   }, [navigate]);
+
+  const onNodeDoubleClick = useCallback((_: any, node: Node) => {
+    // 双击：折叠/展开
+    if (node.id === '__root__') return;
+    const task = (node.data as any)?.task;
+    if (task?.taskId && (task.children ?? []).length > 0) {
+      onToggleCollapse(task.taskId);
+    }
+  }, [onToggleCollapse]);
 
   const activeFilterCount = (filters.status.size > 0 ? 1 : 0) + (filters.priority.size > 0 ? 1 : 0)
     + (filters.label ? 1 : 0) + (filters.search ? 1 : 0)
@@ -819,12 +846,10 @@ function MyTasksMindMapCanvas({
         edges={edges}
         nodeTypes={MM_NODE_TYPES}
         edgeTypes={MM_EDGE_TYPES}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         proOptions={{ hideAttribution: true }}
-        nodesDraggable={true}
+        nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
         minZoom={0.15}
@@ -987,6 +1012,7 @@ function MyTasksMindMapCanvas({
           <div className="flex items-center gap-4 bg-white/90 backdrop-blur border border-gray-200 px-4 py-2 rounded-full shadow-sm text-xs text-gray-500">
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">单击</kbd> 打开详情</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">双击</kbd> 折叠/展开</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">▶ ▼</kbd> 按钮折叠</span>
           </div>
         </Panel>
       </ReactFlow>

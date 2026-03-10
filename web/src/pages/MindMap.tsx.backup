@@ -859,7 +859,6 @@ function TaskNode({ data, selected }: NodeProps) {
         boxShadow,
         backgroundColor: resolvedBg,
         transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
-        overflow: 'visible',
       }}
       onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
       onContextMenu={handleContextMenu}
@@ -932,10 +931,10 @@ function TaskNode({ data, selected }: NodeProps) {
         <ProgressRing progress={progress} size={20} />
       </div>
 
-      {/* 右侧：有子节点时显示展开/收缩 */}
+      {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
       {hasChildren && (
         <button
-          className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
           title={isCollapsed ? '展开' : '折叠'}
@@ -949,7 +948,7 @@ function TaskNode({ data, selected }: NodeProps) {
         <>
           {/* 右侧添加子节点 */}
           <button
-            className="nopan nodrag nowheel absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+            className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
             title="添加子节点 (Tab)"
@@ -959,7 +958,7 @@ function TaskNode({ data, selected }: NodeProps) {
           {/* 下方添加同级 */}
           {!isRoot && (
             <button
-              className="nopan nodrag nowheel absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+              className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
               onMouseDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
               title="添加同级 (Enter)"
@@ -1162,16 +1161,11 @@ function MindMapCanvas() {
     onOpenDetail: (taskId: string) => setDetailTaskId(taskId),
     onStartRename: (taskId: string) => setRenamingId(taskId),
     onClearRenaming: () => setRenamingId(null),
-    onToggleCollapse: (taskId: string) => {
-      console.log('[DEBUG] onToggleCollapse called:', taskId);
-      setCollapsed(prev => {
-        const next = new Set(prev);
-        const wasCollapsed = next.has(taskId);
-        wasCollapsed ? next.delete(taskId) : next.add(taskId);
-        console.log('[DEBUG] collapsed state:', taskId, wasCollapsed ? 'expanding' : 'collapsing', 'set size:', next.size);
-        return next;
-      });
-    },
+    onToggleCollapse: (taskId: string) => setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
+    }),
     onContextMenu: (x: number, y: number, task: any) => setContextMenu({ x, y, task }),
     onDeleteLink: (linkId: number) => deleteLinkMut.mutate(linkId),
   }), []);

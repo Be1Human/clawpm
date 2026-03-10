@@ -1,0 +1,210 @@
+diff --git a/web/src/pages/MindMap.tsx b/web/src/pages/MindMap.tsx
+index 9698f86..7c6f18a 100644
+--- a/web/src/pages/MindMap.tsx
++++ b/web/src/pages/MindMap.tsx
+@@ -53,6 +53,7 @@ interface NodeStyle {
+   textColor?: string;
+   borderWidth?: number;
+   borderStyle?: 'solid' | 'dashed' | 'dotted';
++  borderMode?: 'bar' | 'half' | 'full'; // v3.4: bar=左色条(默认), half=半包围, full=全包围
+   emoji?: string;
+ }
+ 
+@@ -547,7 +548,8 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
+   const [style, setStyle] = useState<NodeStyle>({ ...current });
+ 
+   const hasCustom = !!(style.bgColor || style.borderColor || style.textColor || style.emoji
+-    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid'));
++    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid')
++    || (style.borderMode && style.borderMode !== 'bar'));
+ 
+   return (
+     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+@@ -559,19 +561,66 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
+ 
+         {/* 预览 */}
+         <div className="mb-5 flex justify-center">
+-          <div
+-            className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
+-            style={{
+-              backgroundColor: style.bgColor || '#fff',
+-              border: `${style.borderWidth || 2}px ${style.borderStyle || 'solid'} ${style.borderColor || '#e2e8f0'}`,
+-              color: style.textColor || '#1f2937',
+-            }}
+-          >
+-            <span className="text-sm font-semibold">
+-              {style.emoji && <span className="mr-1">{style.emoji}</span>}
+-              {taskTitle}
+-            </span>
+-          </div>
++          {(() => {
++            const mode = style.borderMode ?? 'bar';
++            const bColor = style.borderColor || '#6366f1';
++            const bWidth = style.borderWidth || 2;
++            const bStyle = style.borderStyle || 'solid';
++
++            if (mode === 'full') {
++              return (
++                <div
++                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
++                  style={{
++                    backgroundColor: style.bgColor || '#fff',
++                    border: `${bWidth}px ${bStyle} ${bColor}`,
++                    color: style.textColor || '#1f2937',
++                  }}
++                >
++                  <span className="text-sm font-semibold">
++                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
++                    {taskTitle}
++                  </span>
++                </div>
++              );
++            }
++            if (mode === 'half') {
++              return (
++                <div
++                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
++                  style={{
++                    backgroundColor: style.bgColor || '#fff',
++                    borderLeft: `${bWidth + 1}px ${bStyle} ${bColor}`,
++                    borderTop: `${bWidth}px ${bStyle} ${bColor}`,
++                    borderBottom: `${bWidth}px ${bStyle} ${bColor}`,
++                    borderRight: `1px solid #e2e8f0`,
++                    color: style.textColor || '#1f2937',
++                  }}
++                >
++                  <span className="text-sm font-semibold">
++                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
++                    {taskTitle}
++                  </span>
++                </div>
++              );
++            }
++            // bar mode (default)
++            return (
++              <div className="relative rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
++                style={{
++                  backgroundColor: style.bgColor || '#fff',
++                  border: `${bWidth}px ${bStyle} ${style.borderColor || '#e2e8f0'}`,
++                  color: style.textColor || '#1f2937',
++                }}
++              >
++                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: bColor }} />
++                <span className="text-sm font-semibold">
++                  {style.emoji && <span className="mr-1">{style.emoji}</span>}
++                  {taskTitle}
++                </span>
++              </div>
++            );
++          })()}
+         </div>
+ 
+         <div className="space-y-4">
+@@ -624,6 +673,29 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
+             </div>
+           </div>
+ 
++          {/* 包围模式 (v3.4) */}
++          <div>
++            <label className="text-xs font-medium text-gray-500 mb-1.5 block">包围模式</label>
++            <div className="flex gap-2">
++              {([
++                { mode: 'bar' as const, label: '左色条', desc: '仅左侧色条' },
++                { mode: 'half' as const, label: '半包围', desc: '左+上+下三边' },
++                { mode: 'full' as const, label: '全包围', desc: '四边全色边框' },
++              ]).map(({ mode, label, desc }) => (
++                <button key={mode}
++                  onClick={() => setStyle(s => ({ ...s, borderMode: mode === 'bar' ? undefined : mode }))}
++                  className={cn('flex-1 py-2 rounded-lg border text-center transition-all',
++                    (style.borderMode ?? 'bar') === mode
++                      ? 'border-indigo-400 bg-indigo-50 text-indigo-600'
++                      : 'border-gray-200 text-gray-500 hover:border-gray-300')}
++                >
++                  <div className="text-[11px] font-medium">{label}</div>
++                  <div className="text-[9px] text-gray-400 mt-0.5">{desc}</div>
++                </button>
++              ))}
++            </div>
++          </div>
++
+           {/* 文字色 */}
+           <div>
+             <label className="text-xs font-medium text-gray-500 mb-1.5 block">文字色</label>
+@@ -735,7 +807,10 @@ function TaskNode({ data, selected }: NodeProps) {
+   }
+ 
+   // 样式优先级：放置目标 > 用户自定义 > domain高亮 > label色系 > 默认
++  const borderMode = nodeStyle.borderMode ?? 'bar';
++  const accentColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
+   const resolvedBorder = isDropTarget ? '#6366f1'
++    : borderMode === 'full' ? accentColor
+     : nodeStyle.borderColor
+     || (selected ? colors.border : isHighlighted ? `${hlColor}90` : '#e2e8f0');
+   const resolvedBg = isDropTarget ? '#eef2ff'
+@@ -744,7 +819,7 @@ function TaskNode({ data, selected }: NodeProps) {
+   const resolvedTextColor = nodeStyle.textColor || '#1f2937';
+   const resolvedBorderWidth = isDropTarget ? 3 : (nodeStyle.borderWidth ?? 2);
+   const resolvedBorderStyle = isDropTarget ? 'dashed' as const : (nodeStyle.borderStyle ?? 'solid');
+-  const barColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
++  const barColor = accentColor;
+ 
+   const boxShadow = (() => {
+     if (isDropTarget) return '0 0 0 4px rgba(99,102,241,0.2), 0 8px 24px rgba(99,102,241,0.15)';
+@@ -753,13 +828,34 @@ function TaskNode({ data, selected }: NodeProps) {
+     return base;
+   })();
+ 
++  // 根据 borderMode 计算边框样式
++  const borderStyles: React.CSSProperties = (() => {
++    if (isDropTarget) {
++      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
++    }
++    if (borderMode === 'full') {
++      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}` };
++    }
++    if (borderMode === 'half') {
++      return {
++        borderLeft: `${resolvedBorderWidth + 1}px ${resolvedBorderStyle} ${accentColor}`,
++        borderTop: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
++        borderBottom: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
++        borderRight: `1px solid #e2e8f0`,
++      };
++    }
++    // bar mode
++    return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
++  })();
++  const showBar = borderMode === 'bar' && !isDropTarget;
++
+   return (
+     <div
+       className="relative rounded-xl select-none"
+       style={{
+         width: NODE_W,
+         minHeight: NODE_H,
+-        border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
++        ...borderStyles,
+         boxShadow,
+         backgroundColor: resolvedBg,
+         transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
+@@ -767,8 +863,10 @@ function TaskNode({ data, selected }: NodeProps) {
+       onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
+       onContextMenu={handleContextMenu}
+     >
+-      {/* 左侧色条 */}
+-      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
++      {/* 左侧色条（仅 bar 模式显示） */}
++      {showBar && (
++        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
++      )}
+ 
+       {/* 拖拽把手 */}
+       <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-30 hover:opacity-70" title="拖拽移动">
+@@ -1784,7 +1882,7 @@ function MindMapCanvas() {
+         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDetailTaskId(null)}>
+           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+           <div
+-            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[90vw] max-w-4xl max-h-[85vh] overflow-y-auto"
++            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[92vw] max-w-6xl max-h-[88vh] overflow-y-auto"
+             onClick={e => e.stopPropagation()}
+           >
+             <TaskDetail taskId={detailTaskId} onClose={() => setDetailTaskId(null)} />

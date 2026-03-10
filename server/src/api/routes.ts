@@ -1,4 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import fs from 'fs';
+import path from 'path';
+import { pipeline } from 'stream/promises';
 import { TaskService } from '../services/task-service.js';
 import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
@@ -9,6 +12,7 @@ import { NotificationService } from '../services/notification-service.js';
 import { AttachmentService } from '../services/attachment-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
+import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
@@ -632,6 +636,29 @@ export async function registerRoutes(app: FastifyInstance) {
     const ok = AttachmentService.reorder(taskId, ordered_ids);
     if (!ok) return reply.code(404).send({ error: 'Task not found' });
     return { ok: true };
+  });
+
+  // ── Image Upload（v3.4 图片上传）────────────────────────────────────
+  app.post('/api/v1/upload/image', async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No file provided' });
+
+    const allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    if (!allowed.includes(data.mimetype)) {
+      return reply.code(400).send({ error: `Unsupported file type: ${data.mimetype}. Allowed: ${allowed.join(', ')}` });
+    }
+
+    const ext = data.filename?.split('.').pop()?.toLowerCase() || 'png';
+    const safeExt = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) ? ext : 'png';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+
+    const uploadPath = path.join(path.dirname(config.dbPath), 'uploads');
+    if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+
+    const filePath = path.join(uploadPath, filename);
+    await pipeline(data.file, fs.createWriteStream(filePath));
+
+    return reply.code(201).send({ url: `/uploads/${filename}`, filename });
   });
 
   // ── My Overview（个人概览 v2.4）────────────────────────────────────

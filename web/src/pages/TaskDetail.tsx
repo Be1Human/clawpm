@@ -149,6 +149,60 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   const [childTitle, setChildTitle] = useState('');
   const [editingDesc, setEditingDesc] = useState(false);
   const [descVal, setDescVal] = useState('');
+  const [showDescPreview, setShowDescPreview] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const descTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+
+  // 图片上传处理
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setUploading(true);
+    try {
+      const { url } = await api.uploadImage(file);
+      const textarea = descTextareaRef.current;
+      const insertText = `![${file.name}](${url})`;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const newVal = descVal.slice(0, start) + insertText + descVal.slice(end);
+        setDescVal(newVal);
+        // 恢复光标位置
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
+          textarea.focus();
+        }, 0);
+      } else {
+        setDescVal(prev => prev + '\n' + insertText);
+      }
+    } catch (e: any) {
+      alert('图片上传失败：' + (e.message || '未知错误'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDescPaste = (e: React.ClipboardEvent) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      const imageFile = Array.from(files).find(f => f.type.startsWith('image/'));
+      if (imageFile) {
+        e.preventDefault();
+        handleImageUpload(imageFile);
+      }
+    }
+  };
+
+  const handleDescDrop = (e: React.DragEvent) => {
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      const imageFile = Array.from(files).find(f => f.type.startsWith('image/'));
+      if (imageFile) {
+        e.preventDefault();
+        handleImageUpload(imageFile);
+      }
+    }
+  };
   const [attachTab, setAttachTab] = useState<'doc' | 'link' | 'tapd'>('doc');
   const [showAddAttach, setShowAddAttach] = useState(false);
   const [attachTitle, setAttachTitle] = useState('');
@@ -243,7 +297,7 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className={cn('p-6 mx-auto transition-all', editingDesc ? 'max-w-7xl' : 'max-w-4xl')}>
       {/* 只读模式提示 */}
       {!canEdit && (
         <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
@@ -327,40 +381,104 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
         })()}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 space-y-5">
-          {/* 描述（Markdown 编辑/预览） */}
+      {/* 编辑描述时全宽展开 */}
+      {editingDesc && (
+        <div className="mb-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">描述</h3>
               <div className="flex items-center gap-2">
-                {editingDesc && (
-                  <span className="text-[10px] text-gray-400">支持 Markdown 语法</span>
-                )}
-                {!editingDesc && canEdit && (
+                <span className="text-[10px] text-gray-400">支持 Markdown 语法</span>
+                <button
+                  onClick={() => setShowDescPreview(v => !v)}
+                  className={cn('text-[10px] px-2 py-0.5 rounded border transition-colors',
+                    showDescPreview
+                      ? 'border-indigo-200 text-indigo-600 bg-indigo-50'
+                      : 'border-gray-200 text-gray-400 hover:text-gray-600')}
+                >
+                  {showDescPreview ? '收起预览' : '显示预览'}
+                </button>
+              </div>
+            </div>
+            <div className={cn('grid gap-4', showDescPreview ? 'grid-cols-2' : 'grid-cols-1')}>
+              {/* 左栏：编辑器 */}
+              <div className="min-w-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">编辑</div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      ref={imgInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleImageUpload(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      onClick={() => imgInputRef.current?.click()}
+                      disabled={uploading}
+                      className={cn('text-[10px] px-2 py-0.5 rounded border transition-colors flex items-center gap-1',
+                        uploading
+                          ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                          : 'border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200')}
+                      title="上传图片（也可粘贴截图或拖拽图片）"
+                    >
+                      🖼 {uploading ? '上传中...' : '插入图片'}
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  ref={descTextareaRef}
+                  value={descVal}
+                  onChange={e => setDescVal(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[350px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 font-mono leading-relaxed"
+                  autoFocus
+                  placeholder="添加描述（支持 Markdown、粘贴截图、拖拽图片）..."
+                  onKeyDown={e => { if (e.ctrlKey && e.key === 'Enter') { updateMut.mutate({ description: descVal }); setEditingDesc(false); } }}
+                  onPaste={handleDescPaste}
+                  onDrop={handleDescDrop}
+                  onDragOver={e => e.preventDefault()}
+                />
+              </div>
+              {/* 右栏：实时预览 */}
+              {showDescPreview && (
+                <div className="min-w-0 min-h-0">
+                  <div className="text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">预览</div>
+                  <div className="border border-gray-200 rounded-lg p-4 min-h-[350px] max-h-[550px] overflow-y-auto bg-gray-50/50">
+                    {descVal.trim() ? (
+                      <MarkdownPreview content={descVal} />
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">输入 Markdown 内容后此处显示实时预览...</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-3 justify-end">
+              <span className="text-[10px] text-gray-400 mr-auto">Ctrl+Enter 保存</span>
+              <button onClick={() => setEditingDesc(false)} className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+              <button onClick={() => { updateMut.mutate({ description: descVal }); setEditingDesc(false); }}
+                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="col-span-2 space-y-5">
+          {/* 描述（非编辑态 — Markdown 只读预览） */}
+          {!editingDesc && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">描述</h3>
+                {canEdit && (
                   <button onClick={() => { setDescVal(task.description || ''); setEditingDesc(true); }}
                     className="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">编辑</button>
                 )}
               </div>
-            </div>
-            {editingDesc ? (
-              <div>
-                <textarea
-                  value={descVal}
-                  onChange={e => setDescVal(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[150px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 font-mono"
-                  autoFocus
-                  placeholder="添加描述（支持 Markdown）..."
-                  onKeyDown={e => { if (e.ctrlKey && e.key === 'Enter') { updateMut.mutate({ description: descVal }); setEditingDesc(false); } }}
-                />
-                <div className="flex items-center gap-2 mt-2 justify-end">
-                  <span className="text-[10px] text-gray-400 mr-auto">Ctrl+Enter 保存</span>
-                  <button onClick={() => setEditingDesc(false)} className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
-                  <button onClick={() => { updateMut.mutate({ description: descVal }); setEditingDesc(false); }}
-                    className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">保存</button>
-                </div>
-              </div>
-            ) : (
               <div
                 onClick={() => { if (canEdit) { setDescVal(task.description || ''); setEditingDesc(true); } }}
                 className={canEdit ? 'cursor-text' : ''}
@@ -371,8 +489,8 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
                   <p className="text-sm text-gray-400">暂无描述，点击编辑添加</p>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 附件（v2.2） */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">

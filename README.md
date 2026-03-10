@@ -20,10 +20,20 @@ ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Mod
 
 ## Features
 
-- **MCP Server** — AI Agent 通过 MCP 协议领取任务、上报进度、创建需求
-- **Web Dashboard** — 看板、任务列表、需求池、项目仪表盘
-- **需求池管理** — 需求收集、分类、排期、生命周期流转
-- **目标管理** — OKR 式目标拆解、关联任务、进度追踪
+- **思维导图驱动** — 一切皆节点，需求管理如 XMind 般丝滑，Tab/Enter 内联创建
+- **多项目隔离** — 项目间数据完全隔离，一键切换
+- **MCP Server（54 个工具）** — AI Agent 通过 MCP 协议领取任务、上报进度、创建需求、管理迭代
+- **Web Dashboard** — 思维导图、看板、任务列表、甘特图、需求池、项目仪表盘
+- **个人工作台** — "我的需求子树"三视图（平铺/树状/思维导图），轻量身份识别
+- **Intake 收件箱** — 外部无需登录即可提交 Bug/功能建议/反馈，项目成员审核后一键转正式节点
+- **迭代管理** — 带时间盒约束的 Sprint 管理，关联任务，完成率跟踪
+- **节点附件** — Markdown 文档、外部链接、TAPD 关联，节点即信息中枢
+- **节点权限** — Owner 可授权 edit/view 权限，细粒度访问控制
+- **站内通知** — 任务指派/状态变更/新评论自动通知
+- **Cmd+K 命令面板** — 全局快捷搜索和快速操作
+- **批量操作** — 多选任务后批量修改状态/负责人/优先级
+- **归档机制** — 安全的软删除，支持恢复
+- **需求池 + 目标管理** — OKR 式目标拆解，需求收集排期
 - **风险分析** — 逾期检测、停滞预警、健康度评分
 - **轻量部署** — SQLite + Docker，单容器运行
 
@@ -93,6 +103,22 @@ ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
 >
 > 修改后**重启 CodeBuddy** 生效。
 
+**Agent 身份绑定**：可通过环境变量或命令行参数绑定 Agent 身份：
+
+```json
+{
+  "mcpServers": {
+    "clawpm": {
+      "command": "npx",
+      "args": ["tsx", "<路径>/server/src/mcp/stdio.ts", "--agent-id=cursor-agent"],
+      "transportType": "stdio"
+    }
+  }
+}
+```
+
+或使用环境变量 `CLAWPM_AGENT_ID=cursor-agent`，绑定后 `get_my_tasks` 等工具自动关联身份。
+
 ### Cursor Agent（SSE 模式）
 
 在项目的 `.cursor/mcp.json` 中添加：
@@ -116,21 +142,35 @@ SSE 端点支持两种认证方式：
 - **Header**：`Authorization: Bearer <token>`
 - **URL 参数**：`?token=<token>`
 
-## MCP 工具列表（21 个）
+## MCP 工具列表（59 个）
+
+> 所有工具均支持可选的 `project` 参数（项目 slug），不传时使用默认项目。
+
+### 项目管理
+| Tool | 描述 |
+|------|------|
+| `list_projects` | 列出所有项目 |
+| `create_project` | 创建新项目 |
+| `get_project` | 获取项目详情 |
+| `update_project` | 更新项目信息 |
+| `delete_project` | 删除项目（默认项目不可删除） |
 
 ### 任务管理
 | Tool | 描述 |
 |------|------|
 | `create_task` | 创建需求节点（只需 title，其余可选） |
 | `get_task` | 获取任务详情 |
-| `get_my_tasks` | 获取我的任务列表 |
+| `get_my_tasks` | 获取我的任务列表（owner 可选，自动关联 Agent 身份） |
+| `get_my_task_tree` | 获取我的需求子树（带祖先路径上下文） |
 | `list_tasks` | 查询节点列表（支持按状态/板块/里程碑/负责人筛选） |
 | `update_task` | 更新节点信息 |
+| `delete_task` | 删除任务及其所有子任务 |
 | `update_progress` | Agent 上报任务进度 |
 | `complete_task` | 标记任务完成 |
 | `report_blocker` | 报告任务阻塞 |
 | `add_task_note` | 给任务添加备注 |
 | `request_next_task` | 请求推荐下一个任务 |
+| `batch_update_tasks` | 批量更新任务（状态/负责人/优先级） |
 
 ### 需求池
 | Tool | 描述 |
@@ -138,6 +178,54 @@ SSE 端点支持两种认证方式：
 | `create_backlog_item` | 录入需求池 |
 | `list_backlog` | 查看需求池 |
 | `schedule_backlog_item` | 将需求排期并创建任务 |
+
+### 附件管理
+| Tool | 描述 |
+|------|------|
+| `add_task_attachment` | 为节点添加附件（文档/链接/TAPD 关联） |
+| `list_task_attachments` | 查询节点的附件列表 |
+| `update_task_attachment` | 更新附件内容 |
+| `delete_task_attachment` | 删除附件 |
+
+### 权限管理
+| Tool | 描述 |
+|------|------|
+| `grant_permission` | 为节点授予权限（仅 Owner 可操作） |
+| `revoke_permission` | 撤销节点权限 |
+| `list_permissions` | 查看节点的权限列表 |
+
+### 迭代管理
+| Tool | 描述 |
+|------|------|
+| `create_iteration` | 创建迭代（Cycle） |
+| `list_iterations` | 查询迭代列表 |
+| `get_iteration` | 获取迭代详情（含任务列表和统计） |
+| `update_iteration` | 更新迭代信息 |
+| `delete_iteration` | 删除迭代 |
+| `add_task_to_iteration` | 将任务添加到迭代 |
+| `remove_task_from_iteration` | 将任务从迭代移除 |
+
+### 归档
+| Tool | 描述 |
+|------|------|
+| `archive_task` | 归档任务 |
+| `unarchive_task` | 恢复已归档任务 |
+| `list_archived_tasks` | 查看已归档任务列表 |
+
+### 通知
+| Tool | 描述 |
+|------|------|
+| `list_notifications` | 获取通知列表 |
+| `get_unread_notification_count` | 获取未读通知数量 |
+| `mark_notification_read` | 标记通知为已读 |
+| `mark_all_notifications_read` | 标记所有通知为已读 |
+
+### Intake 收件箱
+| Tool | 描述 |
+|------|------|
+| `submit_intake` | 提交收件箱条目（Bug 报告/功能建议/一般反馈） |
+| `list_intake` | 查看收件箱条目列表（支持按状态/类别筛选） |
+| `review_intake` | 审核收件箱条目（接受/拒绝/暂缓/标记重复） |
 
 ### 项目概览
 | Tool | 描述 |
@@ -155,12 +243,110 @@ SSE 端点支持两种认证方式：
 | `list_milestones` | 列出所有里程碑 |
 | `create_goal` | 创建目标（OKR） |
 
+### 成员管理
+| Tool | 描述 |
+|------|------|
+| `list_members` | 列出项目成员（含擅长领域、任务统计 taskCount/activeCount） |
+| `get_member` | 获取单个成员详情（含擅长领域和任务负载） |
+| `create_member` | 创建项目成员（人类或 AI Agent） |
+| `update_member` | 更新成员信息（名称、描述/擅长领域、类型等） |
+| `delete_member` | 删除成员 |
+
+### 身份
+| Tool | 描述 |
+|------|------|
+| `whoami` | 查询当前 Agent 绑定的身份信息 |
+
+## Intake 收件箱使用指南
+
+Intake 收件箱是 ClawPM 的外部反馈入口，让非项目成员也能提交 Bug、功能建议或一般反馈。
+
+### 提交反馈（无需登录）
+
+**Web 方式**：访问 `/intake/submit`，填写表单即可提交。
+
+**MCP 方式**（AI Agent）：
+```
+submit_intake(
+  title: "登录页点击按钮无反应",
+  description: "## 复现步骤\n1. 打开登录页\n2. 点击登录\n3. 无反应",
+  category: "bug",
+  submitter: "张三",
+  priority: "P1"
+)
+```
+
+**REST API**（`POST /api/v1/intake`，无需 Token）：
+```json
+{
+  "title": "登录页点击按钮无反应",
+  "description": "复现步骤...",
+  "category": "bug",
+  "submitter": "张三",
+  "priority": "P1",
+  "project": "letsgo"
+}
+```
+
+提交成功后返回 Intake ID（如 `IN-042`）。
+
+### 审核管理（项目成员）
+
+**Web 方式**：侧边栏点击"收件箱"进入管理列表，展开条目后可执行审核操作。
+
+**审核动作**：
+
+| 动作 | 说明 | 后续 |
+|------|------|------|
+| 接受 | 认可提交，转为正式节点 | 自动创建 Task，可指定父节点/负责人/优先级 |
+| 拒绝 | 不予采纳 | 需填写拒绝理由 |
+| 暂缓 | 有价值但暂不处理 | 后续可重新打开 |
+| 标记重复 | 与已有节点重复 | — |
+
+**MCP 方式**：
+```
+review_intake(
+  intake_id: "IN-042",
+  action: "accept",
+  review_note: "确认是 Bug",
+  parent_task_id: "FE-1",
+  owner: "frontend-agent",
+  priority: "P1"
+)
+```
+
+### 典型场景
+
+1. **测试同学提 Bug**：打开 `/intake/submit` → 选 Bug 报告 → 填写标题和复现步骤 → 提交
+2. **用户反馈功能建议**：打开提交页 → 选功能建议 → 描述需求 → PM 审核后暂缓或接受
+3. **AI Agent 自动提交**：OpenClaw 从飞书群消息识别 Bug → 通过 MCP `submit_intake` 提交 → PM 一键审核
+
+## REST API 概览
+
+所有 API 基础路径为 `/api/v1`，需 `Authorization: Bearer <token>` 认证（Intake 提交接口除外）。
+
+| 模块 | 端点 | 说明 |
+|------|------|------|
+| **项目** | `GET/POST /projects` | 项目 CRUD |
+| **任务** | `GET/POST /tasks`, `PATCH/DELETE /tasks/:id` | 节点 CRUD + 树/筛选 |
+| **批量** | `PATCH /tasks/batch` | 批量更新状态/负责人/优先级 |
+| **归档** | `POST /tasks/:id/archive`, `GET /tasks/archived` | 任务归档与恢复 |
+| **附件** | `GET/POST /tasks/:id/attachments` | 节点附件管理 |
+| **权限** | `GET/POST/DELETE /tasks/:id/permissions` | 节点权限管理 |
+| **迭代** | `GET/POST /iterations`, `POST /iterations/:id/tasks` | 迭代 CRUD + 任务关联 |
+| **通知** | `GET /notifications`, `PATCH /notifications/:id/read` | 站内通知 |
+| **Intake** | `POST /intake`（公开）, `GET /intake`, `POST /intake/:id/review` | 收件箱提交与审核 |
+| **需求池** | `GET/POST /backlog` | 需求收集排期 |
+| **概览** | `GET /dashboard/*`, `GET /gantt` | 仪表盘与甘特图 |
+| **配置** | `GET/POST /members`, `/domains`, `/milestones`, `/goals` | 成员（含擅长领域/任务统计）/板块/里程碑/目标 |
+
 ## Tech Stack
 
 - **Backend**: Node.js + TypeScript + Fastify
 - **Database**: SQLite (Drizzle ORM)
 - **MCP**: @modelcontextprotocol/sdk（支持 stdio + SSE 双模式）
-- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
+- **Frontend**: React + Vite + Tailwind CSS + ReactFlow
+- **Charts**: Recharts
 - **Deploy**: Docker / start.bat 一键启动
 
 ## 项目结构
@@ -168,20 +354,66 @@ SSE 端点支持两种认证方式：
 ```
 clawpm/
 ├── server/src/
-│   ├── index.ts          # 服务入口（Fastify + SSE MCP）
-│   ├── config.ts         # 配置（端口/Token/数据库路径）
+│   ├── index.ts              # 服务入口（Fastify + SSE MCP）
+│   ├── config.ts             # 配置（端口/Token/数据库路径）
 │   ├── mcp/
-│   │   ├── server.ts     # MCP 工具定义（21个工具）
-│   │   └── stdio.ts      # MCP stdio 入口（CodeBuddy 用）
-│   ├── api/routes.ts     # REST API 路由
-│   ├── db/               # 数据库 schema + 连接
-│   └── services/         # 业务逻辑层
-├── web/src/              # React 前端
-├── start.bat             # Windows 一键启动
-├── docker-compose.yml    # Docker 部署
-├── .env.example          # 环境变量模板
-└── .codebuddy/mcp.json   # 项目级 MCP 配置（参考用）
+│   │   ├── server.ts         # MCP 工具定义（59 个工具）
+│   │   └── stdio.ts          # MCP stdio 入口（CodeBuddy 用）
+│   ├── api/routes.ts         # REST API 路由
+│   ├── db/
+│   │   ├── schema.ts         # Drizzle schema 定义
+│   │   └── connection.ts     # SQLite 连接 + 自动迁移
+│   └── services/
+│       ├── task-service.ts       # 节点业务逻辑
+│       ├── project-service.ts    # 项目管理
+│       ├── intake-service.ts     # Intake 收件箱
+│       ├── iteration-service.ts  # 迭代管理
+│       ├── notification-service.ts # 站内通知
+│       ├── attachment-service.ts # 附件管理
+│       ├── permission-service.ts # 权限控制（未独立文件时在 task-service 中）
+│       ├── backlog-service.ts    # 需求池
+│       ├── goal-service.ts       # 目标管理
+│       ├── risk-service.ts       # 风险分析
+│       └── id-generator.ts      # ID 生成器
+├── web/src/
+│   ├── App.tsx               # 路由配置
+│   ├── api/client.ts         # API 客户端
+│   ├── components/
+│   │   ├── Layout.tsx            # 侧边栏 + 导航
+│   │   ├── CommandPalette.tsx    # Cmd+K 命令面板
+│   │   ├── FilterBar.tsx         # 统一筛选栏
+│   │   ├── BatchActionBar.tsx    # 批量操作栏
+│   │   ├── NotificationPanel.tsx # 通知面板
+│   │   └── ...
+│   └── pages/
+│       ├── Dashboard.tsx         # 仪表盘
+│       ├── MindMap.tsx           # 思维导图（核心视图）
+│       ├── KanbanBoard.tsx       # 看板
+│       ├── TaskList.tsx          # 任务列表
+│       ├── TaskDetail.tsx        # 任务详情
+│       ├── MyTasks.tsx           # 个人工作台（三视图）
+│       ├── IntakeSubmit.tsx      # Intake 公开提交页
+│       ├── IntakeList.tsx        # Intake 管理列表
+│       ├── Iterations.tsx        # 迭代列表
+│       ├── GanttChart.tsx        # 甘特图
+│       ├── Archive.tsx           # 归档箱
+│       └── ...
+├── start.bat                 # Windows 一键启动
+├── docker-compose.yml        # Docker 部署
+└── docs/
+    ├── PRD.md                # 产品需求文档
+    └── TechDesign.md         # 技术设计文档
 ```
+
+## 环境变量
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `CLAWPM_PORT` | `3210` | 服务端口 |
+| `CLAWPM_DB_PATH` | `./data/clawpm.db` | SQLite 数据库路径 |
+| `CLAWPM_API_TOKEN` | （必填） | API 认证 Token |
+| `CLAWPM_LOG_LEVEL` | `info` | 日志级别 |
+| `CLAWPM_AGENT_ID` | — | MCP stdio 模式下的 Agent 身份标识 |
 
 ## Documentation
 

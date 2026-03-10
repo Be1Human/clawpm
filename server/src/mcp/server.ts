@@ -414,6 +414,71 @@ export function createMcpServer(options?: { agentId?: string }) {
     return { content: [{ type: 'text' as const, text: JSON.stringify(tree, null, 2) }] };
   });
 
+  // ── Member Tools（v3.2 成员管理）──────────────────────────────────
+  mcp.tool('list_members', '列出项目成员（含擅长领域、任务统计 taskCount/activeCount）', {
+    type: z.enum(['human', 'agent']).optional().describe('按类型筛选：human=人类, agent=AI Agent'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const list = MemberService.list(p.type, projectId);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }] };
+  });
+
+  mcp.tool('get_member', '获取单个成员详情（含擅长领域和任务负载）', {
+    identifier: z.string().describe('成员标识符，如 alice、frontend-agent'),
+  }, async (p) => {
+    const member = MemberService.getByIdentifier(p.identifier);
+    if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(member, null, 2) }] };
+  });
+
+  mcp.tool('create_member', '创建项目成员（人类或 AI Agent）', {
+    name: z.string().describe('显示名称'),
+    identifier: z.string().describe('唯一标识符（将作为任务 owner 字段的值）'),
+    type: z.enum(['human', 'agent']).optional().describe('成员类型，默认 human'),
+    color: z.string().optional().describe('头像颜色，不填则随机分配'),
+    description: z.string().optional().describe('擅长领域、职责范围描述'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    try {
+      const member = MemberService.create({
+        name: p.name,
+        identifier: p.identifier,
+        type: p.type,
+        color: p.color,
+        description: p.description,
+        projectId,
+      });
+      return { content: [{ type: 'text' as const, text: `[OK] 成员已创建：${member.name} (${member.identifier})\n${JSON.stringify(member, null, 2)}` }] };
+    } catch (e: any) {
+      return { content: [{ type: 'text' as const, text: `创建失败：${e.message}` }] };
+    }
+  });
+
+  mcp.tool('update_member', '更新成员信息（名称、描述/擅长领域、类型等）', {
+    identifier: z.string().describe('成员标识符'),
+    name: z.string().optional().describe('新名称'),
+    type: z.enum(['human', 'agent']).optional().describe('更新类型'),
+    color: z.string().optional().describe('更新颜色'),
+    description: z.string().optional().describe('更新擅长领域/职责描述'),
+  }, async (p) => {
+    const { identifier, ...updates } = p;
+    const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+    const member = MemberService.update(identifier, cleanUpdates);
+    if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+    return { content: [{ type: 'text' as const, text: `[OK] 成员已更新：${member.name}\n${JSON.stringify(member, null, 2)}` }] };
+  });
+
+  mcp.tool('delete_member', '删除成员（不会影响已分配的任务）', {
+    identifier: z.string().describe('成员标识符'),
+  }, async (p) => {
+    const member = MemberService.getByIdentifier(p.identifier);
+    if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+    MemberService.delete(p.identifier);
+    return { content: [{ type: 'text' as const, text: `[OK] 成员 ${p.identifier} 已删除` }] };
+  });
+
   // ── Permission Tools（v2.5 节点权限控制）──────────────────────────
   mcp.tool('grant_permission', '为节点授予权限（仅 Owner 可操作）', {
     task_id: z.string().describe('节点业务ID，如 U-001'),

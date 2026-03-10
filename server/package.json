@@ -16,6 +16,7 @@
     "fastify": "latest",
     "@fastify/cors": "latest",
     "@fastify/static": "latest",
+    "@fastify/multipart": "latest",
     "@fastify/rate-limit": "latest",
     "zod": "latest",
     "nanoid": "latest"

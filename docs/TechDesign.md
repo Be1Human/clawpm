@@ -1,8 +1,8 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v3.1  
+> **版本**: v3.2  
 > **日期**: 2026-03-05  
-> **关联 PRD**: [PRD.md](./PRD.md) v3.1  
+> **关联 PRD**: [PRD.md](./PRD.md) v3.2  
 > **状态**: 迭代中  
 > **变更记录**:  
 > - v1.1 ~ v1.4: 需求树、人员管理、甘特图、标签/关联图谱等迭代  
@@ -15,6 +15,9 @@
 > - **v2.6 (2026-03-04): 我的任务三视图** — 平铺视图（按状态分组）、树状视图（现有）、思维导图视图（ReactFlow），localStorage 视图偏好记忆
 > - **v3.0 (2026-03-05): Plane 借鉴增强** — Cmd+K 命令面板(cmdk)、统一筛选 FilterBar/useFilters、迭代管理(iterations 表)、Markdown 描述编辑器(react-markdown)、归档机制(archived_at)、批量操作(batch API)、收藏/最近访问(localStorage)、站内通知(notifications 表+轮询)
 > - **v3.1 (2026-03-05): Intake 收件箱** — 新增 intake_items 表，公开提交页面(无需认证)，审核流转(pending→accepted/rejected/deferred/duplicate)，接受后自动创建 Task 节点并打标签，MCP 工具支持
+> - **v3.2 (2026-03-05): 成员管理 MCP 工具** — 新增 list_members/get_member/create_member/update_member/delete_member 五个 MCP 工具，AI Agent 可查询成员擅长领域和任务负载
+> - **v3.3 (2026-03-05): Markdown 全能预览** — MarkdownPreview 浅色主题重构、任务描述编辑时右侧实时预览面板、悬浮窗模式自适应尺寸
+> - **v3.4 (2026-03-10): 图片上传 + 节点样式增强** — 后端图片上传 API + 静态文件服务，前端描述编辑器粘贴/拖拽图片，脑图节点半包围/全包围边框效果
 
 ---
 
@@ -2260,3 +2263,286 @@ reopenIntake(intakeId: string): Promise<IntakeItem>;                 // POST /ap
 | 认证豁免 | 仅 `POST /api/v1/intake` 豁免，其他端点不受影响 |
 | 侧边栏 | 新增导航项，不影响现有导航 |
 | 新增 MCP 工具 | 纯新增，不影响现有工具 |
+
+---
+
+## 十九、成员管理 MCP 工具技术设计 (v3.2)
+
+### 19.1 背景
+
+成员管理已有完整的 REST API（5 个端点）、服务层（MemberService CRUD + 任务统计）和前端页面，但 MCP 层缺少成员管理工具。AI Agent 无法通过 MCP 查询"当前有哪些成员"、"谁擅长前端"、"谁的负载最轻"。
+
+v3.2 补齐 MCP 成员管理工具，让 Agent 具备完整的团队感知能力。
+
+### 19.2 现有基础设施（无需变更）
+
+| 层级 | 状态 | 说明 |
+|------|------|------|
+| 数据库 `members` 表 | 已有 | name/identifier/type/color/description/projectId |
+| `MemberService` | 已有 | list/getByIdentifier/create/update/delete + _withStats |
+| REST API | 已有 | `GET/POST /members`, `GET/PATCH/DELETE /members/:identifier` |
+| 前端 Members 页面 | 已有 | 成员卡片网格 + 创建/编辑弹窗 |
+
+### 19.3 新增 MCP 工具
+
+#### 19.3.1 list_members — 列出项目成员
+
+```typescript
+mcp.tool('list_members', '列出项目成员（含擅长领域、任务统计）', {
+  type: z.enum(['human', 'agent']).optional().describe('按类型筛选：human=人类, agent=AI Agent'),
+  project: z.string().optional().describe('项目 slug'),
+}, async (p) => {
+  const projectId = resolveProject(p.project);
+  const list = MemberService.list(p.type, projectId);
+  return { content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }] };
+});
+```
+
+**返回数据示例**：
+```json
+[
+  {
+    "id": 1,
+    "name": "Alice",
+    "identifier": "alice",
+    "type": "human",
+    "color": "#6366f1",
+    "description": "前端开发，擅长 React、CSS、动画。负责用户系统和支付模块前端",
+    "taskCount": 8,
+    "activeCount": 2
+  },
+  {
+    "id": 2,
+    "name": "Frontend Agent",
+    "identifier": "frontend-agent",
+    "type": "agent",
+    "color": "#10b981",
+    "description": "前端自动化 Agent，擅长组件开发、样式修复、单元测试生成",
+    "taskCount": 15,
+    "activeCount": 1
+  }
+]
+```
+
+> **关键字段说明**：
+> - `description` — 成员的擅长领域和职责描述，AI Agent 据此判断任务分配
+> - `taskCount` — 该成员负责的总任务数（所有状态）
+> - `activeCount` — 该成员当前进行中的任务数（status=active）
+
+#### 19.3.2 get_member — 获取单个成员详情
+
+```typescript
+mcp.tool('get_member', '获取单个成员详情（含擅长领域和任务负载）', {
+  identifier: z.string().describe('成员标识符，如 alice、frontend-agent'),
+}, async (p) => {
+  const member = MemberService.getByIdentifier(p.identifier);
+  if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+  return { content: [{ type: 'text' as const, text: JSON.stringify(member, null, 2) }] };
+});
+```
+
+#### 19.3.3 create_member — 创建成员
+
+```typescript
+mcp.tool('create_member', '创建项目成员（人类或 AI Agent）', {
+  name: z.string().describe('显示名称'),
+  identifier: z.string().describe('唯一标识符（将作为任务 owner 字段的值）'),
+  type: z.enum(['human', 'agent']).optional().describe('成员类型，默认 human'),
+  color: z.string().optional().describe('头像颜色，不填则随机分配'),
+  description: z.string().optional().describe('擅长领域、职责范围描述'),
+  project: z.string().optional().describe('项目 slug'),
+}, async (p) => {
+  const projectId = resolveProject(p.project);
+  try {
+    const member = MemberService.create({
+      name: p.name,
+      identifier: p.identifier,
+      type: p.type,
+      color: p.color,
+      description: p.description,
+      projectId,
+    });
+    return { content: [{ type: 'text' as const, text: `[OK] 成员已创建：${member.name} (${member.identifier})\n${JSON.stringify(member, null, 2)}` }] };
+  } catch (e: any) {
+    return { content: [{ type: 'text' as const, text: `创建失败：${e.message}` }] };
+  }
+});
+```
+
+#### 19.3.4 update_member — 更新成员信息
+
+```typescript
+mcp.tool('update_member', '更新成员信息（名称、描述、类型等）', {
+  identifier: z.string().describe('成员标识符'),
+  name: z.string().optional().describe('新名称'),
+  type: z.enum(['human', 'agent']).optional().describe('更新类型'),
+  color: z.string().optional().describe('更新颜色'),
+  description: z.string().optional().describe('更新擅长领域/职责描述'),
+}, async (p) => {
+  const { identifier, ...updates } = p;
+  const member = MemberService.update(identifier, updates);
+  if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+  return { content: [{ type: 'text' as const, text: `[OK] 成员已更新：${member.name}\n${JSON.stringify(member, null, 2)}` }] };
+});
+```
+
+#### 19.3.5 delete_member — 删除成员
+
+```typescript
+mcp.tool('delete_member', '删除成员（不会影响已分配的任务）', {
+  identifier: z.string().describe('成员标识符'),
+}, async (p) => {
+  const member = MemberService.getByIdentifier(p.identifier);
+  if (!member) return { content: [{ type: 'text' as const, text: '成员不存在' }] };
+  MemberService.delete(p.identifier);
+  return { content: [{ type: 'text' as const, text: `[OK] 成员 ${p.identifier} 已删除` }] };
+});
+```
+
+### 19.4 实现要点
+
+| 要点 | 说明 |
+|------|------|
+| **复用 MemberService** | 5 个 MCP 工具直接调用已有的 MemberService 方法，不新增服务层代码 |
+| **_withStats 自动附加** | MemberService.list() 和 getByIdentifier() 已自动附加 taskCount/activeCount |
+| **项目隔离** | list_members 和 create_member 通过 projectId 过滤，确保项目间成员隔离 |
+| **无数据库变更** | 纯 MCP 层新增，不修改 schema 或迁移 |
+| **无前端变更** | 前端成员管理页面已完整，无需修改 |
+
+### 19.5 MCP 工具在 server.ts 中的位置
+
+新增 5 个工具应放在 `// ── Identity Tools` 区块之后、`// ── Permission Tools` 区块之前，形成独立的 `// ── Member Tools（v3.2）` 区块。
+
+### 19.6 向后兼容
+
+| 变更点 | 兼容策略 |
+|--------|----------|
+| 新增 5 个 MCP 工具 | 纯新增，不影响现有 54 个工具（总计变为 59 个） |
+| MemberService | 零修改，完全复用 |
+| REST API | 零修改，MCP 工具与 REST API 独立 |
+| 数据库 | 零修改 |
+
+---
+
+## 二十、Markdown 全能预览技术设计 (v3.3)
+
+### 20.1 背景
+
+当前任务详情的 description 字段已支持 Markdown 渲染（`MarkdownPreview` 组件 + `react-markdown` + `remark-gfm`），但存在以下问题：
+
+| 问题 | 描述 |
+|------|------|
+| 深色主题不匹配 | `prose-invert` + 深色背景样式，与白色 UI 冲突 |
+| 编辑无预览 | 编辑时只有 textarea，保存后才能看渲染效果 |
+| 无全屏预览 | 描述内容较长时没有沉浸式阅读体验 |
+| 悬浮窗未适配 | MindMap 悬浮窗中 TaskDetail 没有针对性的尺寸适配 |
+
+### 20.2 改动范围
+
+| 文件 | 改动 |
+|------|------|
+| `MarkdownPreview.tsx` | 浅色主题重构，所有自定义 components 样式适配白底 |
+| `TaskDetail.tsx` | 描述区域重构为分栏编辑+实时预览布局 |
+
+### 20.3 MarkdownPreview 浅色主题
+
+将 `prose-invert` 改为 `prose`（Tailwind Typography 默认浅色模式），自定义组件样式全部调整为浅色：
+
+- 表格边框：`border-gray-200`
+- 表头背景：`bg-gray-50`
+- 代码块背景：`bg-gray-900`（代码块保持深色以符合开发习惯）
+- 行内代码：`bg-gray-100 text-gray-800`
+- 链接色：`text-indigo-600`
+
+### 20.4 描述区分栏编辑+预览
+
+编辑态改为 grid 两栏布局：
+
+```
+左栏(50%): textarea 编辑器（mono字体，行号区域）
+右栏(50%): MarkdownPreview 实时渲染（随输入同步更新）
+```
+
+- 预览面板可通过按钮收起/展开
+- 窄屏（容器 < 640px）时退化为 Tab 切换（编辑/预览）
+- 悬浮窗模式自动检测容器宽度适配
+
+### 20.5 向后兼容
+
+| 变更点 | 兼容策略 |
+|--------|----------|
+| MarkdownPreview 样式 | 纯样式变更，API 不变 |
+| TaskDetail 描述区 | 非编辑态渲染不变，编辑态 UX 升级 |
+| 无后端变更 | 纯前端改动 |
+
+---
+
+## 二十一、图片上传 + 节点样式增强技术设计 (v3.4)
+
+### 21.1 图片上传
+
+#### 21.1.1 后端
+
+**新增 API**：`POST /api/v1/upload/image`
+- 接收 multipart/form-data，字段名 `file`
+- 存储到 `data/uploads/` 目录，文件名使用 `{timestamp}-{random}.{ext}`
+- 返回 `{ url: "/uploads/{filename}" }`
+- 需要注册 `@fastify/multipart` 插件
+- 需要注册静态文件服务 `@fastify/static` 指向 `data/uploads/`
+
+**文件限制**：
+- 最大 10MB
+- 仅允许 image/png, image/jpeg, image/gif, image/webp
+
+#### 21.1.2 前端
+
+**描述编辑器增强**：
+- textarea 上方工具栏新增"插入图片"按钮
+- 支持粘贴截图（监听 paste 事件，检测 clipboardData.files）
+- 支持拖拽图片文件到编辑区
+- 上传后在光标位置插入 `![image](url)` 语法
+- 上传中显示 `![uploading...]()`
+
+#### 21.1.3 改动范围
+
+| 文件 | 改动 |
+|------|------|
+| `server/package.json` | 新增 `@fastify/multipart`、`@fastify/static` 依赖 |
+| `server/src/api/routes.ts` | 新增 `POST /api/v1/upload/image` 路由 + 静态文件服务注册 |
+| `web/src/api/client.ts` | 新增 `uploadImage(file: File)` API 方法 |
+| `web/src/pages/TaskDetail.tsx` | textarea 增加粘贴/拖拽图片处理 + 图片上传工具栏 |
+
+### 21.2 节点样式增强：包围模式
+
+#### 21.2.1 数据模型
+
+在现有 `NodeStyle` 接口中新增 `borderMode` 字段：
+
+```typescript
+type BorderMode = 'bar' | 'half' | 'full';
+// bar = 默认左色条（现有行为）
+// half = 半包围（左+上+下三边，右侧开放）
+// full = 全包围（四边都有颜色边框）
+```
+
+#### 21.2.2 渲染逻辑
+
+- `bar`（默认）：保持现有 1px 左色条 + 灰色细边框
+- `half`：去除左色条，改为 `borderLeft` + `borderTop` + `borderBottom` 使用强调色，`borderRight` 保持浅灰
+- `full`：去除左色条，四边都使用强调色
+
+#### 21.2.3 改动范围
+
+| 文件 | 改动 |
+|------|------|
+| `web/src/pages/MindMap.tsx` — `NodeStyle` | 新增 `borderMode` 字段 |
+| `web/src/pages/MindMap.tsx` — `NodeStyleModal` | 新增"包围模式"选择器 |
+| `web/src/pages/MindMap.tsx` — `TaskNode` | 根据 `borderMode` 调整边框渲染 |
+
+### 21.3 向后兼容
+
+| 变更点 | 兼容策略 |
+|--------|----------|
+| 图片上传 API | 新增 API，不影响现有接口 |
+| `NodeStyle.borderMode` | 默认值为 `'bar'`，与旧数据完全兼容 |
+| localStorage nodeStyles | 旧数据无 `borderMode` 字段，会被视为 `'bar'` |
