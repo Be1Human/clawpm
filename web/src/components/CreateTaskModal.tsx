@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,14 @@ interface Props {
 export default function CreateTaskModal({ onClose, defaultParentId, defaultDomain }: Props) {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const [showMore, setShowMore] = useState(false);
   const [form, setForm] = useState({

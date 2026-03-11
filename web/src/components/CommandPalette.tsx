@@ -31,6 +31,16 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     if (!open) setSearch('');
   }, [open]);
 
+  // Escape 关闭面板
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   const runAction = useCallback((action: () => void) => {
     action();
     onClose();
