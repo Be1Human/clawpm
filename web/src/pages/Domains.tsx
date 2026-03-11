@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 const PRESET_COLORS = [
   '#6366f1', '#3b82f6', '#06b6d4', '#10b981',
@@ -10,7 +11,7 @@ const PRESET_COLORS = [
   '#ec4899', '#14b8a6', '#84cc16', '#64748b',
 ];
 
-function DomainModal({ domain, onClose }: { domain?: any; onClose: () => void }) {
+function DomainModal({ domain, onClose, t }: { domain?: any; onClose: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const qc = useQueryClient();
   const isEdit = !!domain;
 
@@ -54,7 +55,7 @@ function DomainModal({ domain, onClose }: { domain?: any; onClose: () => void })
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">{isEdit ? '编辑业务板块' : '新建业务板块'}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{isEdit ? t('domains.editDomain') : t('domains.createDomain')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
@@ -80,45 +81,45 @@ function DomainModal({ domain, onClose }: { domain?: any; onClose: () => void })
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">板块名称 *</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('domains.nameLabel')}</label>
               <input
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="如：frontend"
+                placeholder={t('domains.namePlaceholder')}
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">任务前缀 *</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('domains.prefixLabel')}</label>
               <input
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
                 value={form.task_prefix}
                 onChange={e => setForm(f => ({ ...f, task_prefix: e.target.value }))}
-                placeholder="如：FE、前端、Auth"
+                placeholder={t('domains.prefixPlaceholder')}
                 required
               />
-              <p className="text-[11px] text-gray-400 mt-1">{isEdit ? '修改后已有任务编号会同步更新' : '中英文均可，用于任务编号如 前端-001'}</p>
+              <p className="text-[11px] text-gray-400 mt-1">{isEdit ? t('domains.prefixEditHint') : t('domains.prefixCreateHint')}</p>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">关键词（逗号分隔）</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('domains.keywordsLabel')}</label>
             <input
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
               value={form.keywords}
               onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))}
               placeholder="ui, page, component"
             />
-            <p className="text-[11px] text-gray-400 mt-1">用于自动归类任务到该板块</p>
+            <p className="text-[11px] text-gray-400 mt-1">{t('domains.keywordsHint')}</p>
           </div>
 
           {error && <p className="text-sm text-red-500">{(error as Error).message}</p>}
 
           <div className="flex gap-3 justify-end pt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
             <button type="submit" disabled={pending} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-              {pending ? '保存中...' : isEdit ? '保存更改' : '创建板块'}
+              {pending ? t('common.saving') : isEdit ? t('domains.saveChanges') : t('domains.createDomain')}
             </button>
           </div>
         </form>
@@ -127,7 +128,7 @@ function DomainModal({ domain, onClose }: { domain?: any; onClose: () => void })
   );
 }
 
-function DomainCard({ domain, taskCount, onEdit, onDelete }: { domain: any; taskCount: number; onEdit: () => void; onDelete: () => void }) {
+function DomainCard({ domain, taskCount, onEdit, onDelete, t }: { domain: any; taskCount: number; onEdit: () => void; onDelete: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const keywords: string[] = typeof domain.keywords === 'string' ? JSON.parse(domain.keywords || '[]') : (domain.keywords || []);
 
   return (
@@ -146,8 +147,8 @@ function DomainCard({ domain, taskCount, onEdit, onDelete }: { domain: any; task
           </div>
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 text-xs transition-colors" title="编辑">✎</button>
-          <button onClick={onDelete} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors" title="删除">✕</button>
+          <button onClick={onEdit} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 text-xs transition-colors" title={t('common.edit')}>✎</button>
+          <button onClick={onDelete} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors" title={t('common.delete')}>✕</button>
         </div>
       </div>
 
@@ -156,16 +157,17 @@ function DomainCard({ domain, taskCount, onEdit, onDelete }: { domain: any; task
           {keywords.length > 0 ? keywords.map(k => (
             <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{k}</span>
           )) : (
-            <span className="text-[11px] text-gray-400">未设关键词</span>
+            <span className="text-[11px] text-gray-400">{t('domains.noKeywords')}</span>
           )}
         </div>
-        <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{taskCount} 个任务</span>
+        <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{t('domains.taskCount', { count: taskCount })}</span>
       </div>
     </div>
   );
 }
 
 export default function Domains() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
@@ -196,26 +198,26 @@ export default function Domains() {
 
   return (
     <div className="px-6 py-6 max-w-5xl mx-auto">
-      {/* 头部 */}
+      {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">业务板块</h1>
-          <p className="text-sm text-gray-500 mt-0.5">管理项目的业务域，每个板块拥有独立的任务编号前缀</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('domains.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t('domains.subtitle')}</p>
         </div>
         <button
           onClick={() => { setEditDomain(null); setShowModal(true); }}
           className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
         >
-          + 新建板块
+          {t('domains.addDomain')}
         </button>
       </div>
 
-      {/* 统计 */}
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: '板块数量', value: (domains as any[]).length },
-          { label: '总任务数', value: totalTasks },
-          { label: '未分配板块', value: totalTasks - assignedTasks },
+          { label: t('domains.domainCount'), value: (domains as any[]).length },
+          { label: t('domains.totalTasks'), value: totalTasks },
+          { label: t('domains.unassigned'), value: totalTasks - assignedTasks },
         ].map(stat => (
           <div key={stat.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
             <p className="text-xs text-gray-500">{stat.label}</p>
@@ -224,13 +226,13 @@ export default function Domains() {
         ))}
       </div>
 
-      {/* 板块列表 */}
+      {/* Domain list */}
       {isLoading ? (
-        <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
+        <div className="text-gray-400 text-sm py-8 text-center">{t('common.loading')}</div>
       ) : (domains as any[]).length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📦</p>
-          <p className="text-sm">暂无业务板块，点击右上角"新建板块"</p>
+          <p className="text-sm">{t('domains.noDomains')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -239,6 +241,7 @@ export default function Domains() {
               key={d.id}
               domain={d}
               taskCount={taskCountForDomain(d.id)}
+              t={t}
               onEdit={() => { setEditDomain(d); setShowModal(true); }}
               onDelete={() => setDeleteConfirm(d)}
             />
@@ -246,28 +249,27 @@ export default function Domains() {
         </div>
       )}
 
-      {/* 弹窗 */}
+      {/* Modal */}
       {showModal && (
-        <DomainModal domain={editDomain} onClose={() => { setShowModal(false); setEditDomain(null); }} />
+        <DomainModal domain={editDomain} t={t} onClose={() => { setShowModal(false); setEditDomain(null); }} />
       )}
 
-      {/* 删除确认 */}
+      {/* Delete confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-2">{t('common.confirmDelete')}</h3>
             <p className="text-sm text-gray-500 mb-4">
-              删除板块 <span className="text-gray-800 font-medium">{deleteConfirm.name}</span>？
-              该板块下的任务不会被删除，但会取消板块归属。
+              {t('domains.deleteConfirmBody', { name: deleteConfirm.name })}
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.id)}
                 className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
-                {deleteMut.isPending ? '删除中...' : '确认删除'}
+                {deleteMut.isPending ? t('common.deleting') : t('common.confirmDelete')}
               </button>
             </div>
           </div>

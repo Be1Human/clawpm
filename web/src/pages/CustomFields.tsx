@@ -3,13 +3,14 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
-const FIELD_TYPES = [
-  { value: 'text', label: '文本' },
-  { value: 'number', label: '数字' },
-  { value: 'date', label: '日期' },
-  { value: 'select', label: '单选' },
-  { value: 'multi_select', label: '多选' },
+const FIELD_TYPE_KEYS = [
+  { value: 'text', labelKey: 'customFields.typeText' },
+  { value: 'number', labelKey: 'customFields.typeNumber' },
+  { value: 'date', labelKey: 'customFields.typeDate' },
+  { value: 'select', labelKey: 'customFields.typeSelect' },
+  { value: 'multi_select', labelKey: 'customFields.typeMultiSelect' },
 ];
 
 const PRESET_COLORS = [
@@ -18,7 +19,7 @@ const PRESET_COLORS = [
   '#ec4899', '#14b8a6', '#84cc16', '#64748b',
 ];
 
-function FieldModal({ field, onClose }: { field?: any; onClose: () => void }) {
+function FieldModal({ field, onClose, t }: { field?: any; onClose: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const qc = useQueryClient();
   const isEdit = !!field;
 
@@ -70,34 +71,34 @@ function FieldModal({ field, onClose }: { field?: any; onClose: () => void }) {
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">{isEdit ? '编辑字段' : '新建字段'}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{isEdit ? t('customFields.editField') : t('customFields.createField')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">字段名称 *</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('customFields.nameLabel')}</label>
             <input
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="如：迭代、评审人、复杂度"
+              placeholder={t('customFields.namePlaceholder')}
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">字段类型 *</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('customFields.typeLabel')}</label>
               <select
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
                 value={form.field_type}
                 onChange={e => setForm(f => ({ ...f, field_type: e.target.value }))}
               >
-                {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {FIELD_TYPE_KEYS.map(ft => <option key={ft.value} value={ft.value}>{t(ft.labelKey)}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">排序</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('customFields.sortOrder')}</label>
               <input
                 type="number"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
@@ -109,18 +110,18 @@ function FieldModal({ field, onClose }: { field?: any; onClose: () => void }) {
 
           {showOptions && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">选项（逗号分隔）*</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('customFields.optionsLabel')}</label>
               <input
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
                 value={form.options}
                 onChange={e => setForm(f => ({ ...f, options: e.target.value }))}
-                placeholder="选项1, 选项2, 选项3"
+                placeholder={t('customFields.optionsPlaceholder')}
               />
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">标识颜色（可选）</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('customFields.colorLabel')}</label>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -145,9 +146,9 @@ function FieldModal({ field, onClose }: { field?: any; onClose: () => void }) {
           {error && <p className="text-sm text-red-500">{(error as Error).message}</p>}
 
           <div className="flex gap-3 justify-end pt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
             <button type="submit" disabled={pending} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-              {pending ? '保存中...' : isEdit ? '保存更改' : '创建字段'}
+              {pending ? t('common.saving') : isEdit ? t('customFields.saveChanges') : t('customFields.createField')}
             </button>
           </div>
         </form>
@@ -156,8 +157,8 @@ function FieldModal({ field, onClose }: { field?: any; onClose: () => void }) {
   );
 }
 
-function FieldCard({ field, onEdit, onDelete }: { field: any; onEdit: () => void; onDelete: () => void }) {
-  const typeMeta = FIELD_TYPES.find(t => t.value === (field.fieldType || field.field_type)) || FIELD_TYPES[0];
+function FieldCard({ field, onEdit, onDelete, t }: { field: any; onEdit: () => void; onDelete: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
+  const typeMeta = FIELD_TYPE_KEYS.find(ft => ft.value === (field.fieldType || field.field_type)) || FIELD_TYPE_KEYS[0];
   const options: string[] = typeof field.options === 'string' ? JSON.parse(field.options || '[]') : (field.options || []);
 
   return (
@@ -178,12 +179,12 @@ function FieldCard({ field, onEdit, onDelete }: { field: any; onEdit: () => void
           </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-900">{field.name}</h3>
-            <p className="text-xs text-gray-400">{typeMeta.label}</p>
+            <p className="text-xs text-gray-400">{t(typeMeta.labelKey)}</p>
           </div>
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 text-xs transition-colors" title="编辑">✎</button>
-          <button onClick={onDelete} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors" title="删除">✕</button>
+          <button onClick={onEdit} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 text-xs transition-colors" title={t('common.edit')}>✎</button>
+          <button onClick={onDelete} className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors" title={t('common.delete')}>✕</button>
         </div>
       </div>
 
@@ -199,6 +200,7 @@ function FieldCard({ field, onEdit, onDelete }: { field: any; onEdit: () => void
 }
 
 export default function CustomFields() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
@@ -219,22 +221,22 @@ export default function CustomFields() {
     <div className="px-6 py-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">自定义字段</h1>
-          <p className="text-sm text-gray-500 mt-0.5">管理任务节点的扩展字段，可在思维导图上进行筛选</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('customFields.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t('customFields.subtitle')}</p>
         </div>
         <button
           onClick={() => { setEditField(null); setShowModal(true); }}
           className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
         >
-          + 新建字段
+          {t('customFields.addField')}
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: '字段数量', value: (fields as any[]).length },
-          { label: '选择类', value: (fields as any[]).filter((f: any) => (f.fieldType || f.field_type) === 'select' || (f.fieldType || f.field_type) === 'multi_select').length },
-          { label: '数值/日期', value: (fields as any[]).filter((f: any) => (f.fieldType || f.field_type) === 'number' || (f.fieldType || f.field_type) === 'date').length },
+          { label: t('customFields.fieldCount'), value: (fields as any[]).length },
+          { label: t('customFields.selectType'), value: (fields as any[]).filter((f: any) => (f.fieldType || f.field_type) === 'select' || (f.fieldType || f.field_type) === 'multi_select').length },
+          { label: t('customFields.numDateType'), value: (fields as any[]).filter((f: any) => (f.fieldType || f.field_type) === 'number' || (f.fieldType || f.field_type) === 'date').length },
         ].map(stat => (
           <div key={stat.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
             <p className="text-xs text-gray-500">{stat.label}</p>
@@ -244,12 +246,12 @@ export default function CustomFields() {
       </div>
 
       {isLoading ? (
-        <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
+        <div className="text-gray-400 text-sm py-8 text-center">{t('common.loading')}</div>
       ) : (fields as any[]).length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📋</p>
-          <p className="text-sm">暂无自定义字段，点击右上角"新建字段"</p>
-          <p className="text-xs mt-1 text-gray-300">创建后可在任务详情中编辑字段值，并在思维导图上筛选</p>
+          <p className="text-sm">{t('customFields.noFields')}</p>
+          <p className="text-xs mt-1 text-gray-300">{t('customFields.noFieldsHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -257,6 +259,7 @@ export default function CustomFields() {
             <FieldCard
               key={f.id}
               field={f}
+              t={t}
               onEdit={() => { setEditField(f); setShowModal(true); }}
               onDelete={() => setDeleteConfirm(f)}
             />
@@ -265,25 +268,24 @@ export default function CustomFields() {
       )}
 
       {showModal && (
-        <FieldModal field={editField} onClose={() => { setShowModal(false); setEditField(null); }} />
+        <FieldModal field={editField} t={t} onClose={() => { setShowModal(false); setEditField(null); }} />
       )}
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-2">{t('common.confirmDelete')}</h3>
             <p className="text-sm text-gray-500 mb-4">
-              删除字段 <span className="text-gray-800 font-medium">{deleteConfirm.name}</span>？
-              所有任务上该字段的数据将被清除。
+              {t('customFields.deleteConfirmBody', { name: deleteConfirm.name })}
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.id)}
                 className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
-                {deleteMut.isPending ? '删除中...' : '确认删除'}
+                {deleteMut.isPending ? t('common.deleting') : t('common.confirmDelete')}
               </button>
             </div>
           </div>

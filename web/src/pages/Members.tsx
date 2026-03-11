@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
-// ── 工具函数 ──────────────────────────────────────────────────────
+// ── Utility ──────────────────────────────────────────────────────
 function initials(name: string) {
   return name.trim().slice(0, 2).toUpperCase();
 }
@@ -20,10 +21,10 @@ function Avatar({ member }: { member: any }) {
   );
 }
 
-// ── 创建/编辑弹窗 ─────────────────────────────────────────────────
+// ── Create/Edit modal ─────────────────────────────────────────────
 const PRESET_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4'];
 
-function MemberModal({ member, onClose }: { member?: any; onClose: () => void }) {
+function MemberModal({ member, onClose, t }: { member?: any; onClose: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const qc = useQueryClient();
   const isEdit = !!member;
 
@@ -57,11 +58,11 @@ function MemberModal({ member, onClose }: { member?: any; onClose: () => void })
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="card w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">{isEdit ? '编辑成员' : '添加成员'}</h2>
+          <h2 className="text-base font-semibold text-slate-100">{isEdit ? t('members.editMember') : t('members.createMember')}</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* 头像预览 */}
+          {/* Avatar preview */}
           <div className="flex items-center gap-4">
             <div
               className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white"
@@ -84,11 +85,11 @@ function MemberModal({ member, onClose }: { member?: any; onClose: () => void })
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="label">显示名称 *</label>
-              <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="张三 / cursor-agent-01" required />
+              <label className="label">{t('members.displayName')}</label>
+              <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="zhang-san / cursor-agent-01" required />
             </div>
             <div className="col-span-2">
-              <label className="label">唯一标识（Identifier） *</label>
+              <label className="label">{t('members.identifierLabel')}</label>
               <input
                 className="input"
                 value={form.identifier}
@@ -97,26 +98,26 @@ function MemberModal({ member, onClose }: { member?: any; onClose: () => void })
                 disabled={isEdit}
                 required
               />
-              <p className="text-xs text-slate-600 mt-1">任务的"负责人"字段将使用此标识</p>
+              <p className="text-xs text-slate-600 mt-1">{t('members.identifierHint')}</p>
             </div>
             <div>
-              <label className="label">类型 *</label>
+              <label className="label">{t('members.typeLabel')}</label>
               <select className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-                <option value="human">👤 人类</option>
-                <option value="agent">🤖 AI Agent</option>
+                <option value="human">{t('members.humanOption')}</option>
+                <option value="agent">{t('members.agentOption')}</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="label">描述 / 职责</label>
-            <textarea className="input min-h-[60px]" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="负责前端开发 / 自动执行代码审查" />
+            <label className="label">{t('members.descriptionLabel')}</label>
+            <textarea className="input min-h-[60px]" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder={t('members.descPlaceholder')} />
           </div>
 
           <div className="flex gap-3 justify-end pt-1">
-            <button type="button" onClick={onClose} className="btn-ghost">取消</button>
+            <button type="button" onClick={onClose} className="btn-ghost">{t('common.cancel')}</button>
             <button type="submit" disabled={pending} className="btn-primary">
-              {pending ? '保存中...' : isEdit ? '保存更改' : '添加成员'}
+              {pending ? t('common.saving') : isEdit ? t('members.saveChanges') : t('members.createMember')}
             </button>
           </div>
         </form>
@@ -125,8 +126,8 @@ function MemberModal({ member, onClose }: { member?: any; onClose: () => void })
   );
 }
 
-// ── 成员卡片 ──────────────────────────────────────────────────────
-function MemberCard({ member, onEdit, onDelete }: { member: any; onEdit: () => void; onDelete: () => void }) {
+// ── Member card ──────────────────────────────────────────────────
+function MemberCard({ member, onEdit, onDelete, t }: { member: any; onEdit: () => void; onDelete: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   return (
     <div className="card p-4 group hover:border-slate-700 transition-colors">
       <div className="flex items-start gap-3">
@@ -143,22 +144,23 @@ function MemberCard({ member, onEdit, onDelete }: { member: any; onEdit: () => v
             <p className="text-xs text-slate-500 line-clamp-2">{member.description}</p>
           )}
           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
-            <span>任务 {member.taskCount || 0}</span>
-            <span>活跃 {member.activeCount || 0}</span>
+            <span>{t('members.taskCountLabel', { count: member.taskCount || 0 })}</span>
+            <span>{t('members.activeCountLabel', { count: member.activeCount || 0 })}</span>
           </div>
         </div>
-        {/* 操作按钮（hover 显示） */}
+        {/* Action buttons (show on hover) */}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-800 text-xs transition-colors" title="编辑">✎</button>
-          <button onClick={onDelete} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-900/20 text-xs transition-colors" title="删除">✕</button>
+          <button onClick={onEdit} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-800 text-xs transition-colors" title={t('common.edit')}>✎</button>
+          <button onClick={onDelete} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-900/20 text-xs transition-colors" title={t('common.delete')}>✕</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── 主页面 ────────────────────────────────────────────────────────
+// ── Main page ────────────────────────────────────────────────────
 export default function Members() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const [typeFilter, setTypeFilter] = useState('');
@@ -181,23 +183,23 @@ export default function Members() {
 
   return (
     <div className="px-6 py-6 max-w-5xl mx-auto">
-      {/* 头部 */}
+      {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">团队成员</h1>
-          <p className="text-sm text-slate-500 mt-0.5">管理人类成员和 AI Agent，统一关联任务负责人</p>
+          <h1 className="text-xl font-bold text-slate-100">{t('members.title')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{t('members.subtitle')}</p>
         </div>
         <button onClick={() => { setEditMember(null); setShowModal(true); }} className="btn-primary">
-          + 添加成员
+          {t('members.addMember')}
         </button>
       </div>
 
-      {/* 统计 */}
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: '全部成员', value: (members as any[]).length },
-          { label: '👤 人类', value: humanCount },
-          { label: '🤖 AI Agent', value: agentCount },
+          { label: t('members.allMembers'), value: (members as any[]).length },
+          { label: t('members.humanLabel'), value: humanCount },
+          { label: t('members.agentLabel'), value: agentCount },
         ].map(stat => (
           <div key={stat.label} className="card px-4 py-3">
             <p className="text-xs text-slate-500">{stat.label}</p>
@@ -206,9 +208,9 @@ export default function Members() {
         ))}
       </div>
 
-      {/* 过滤器 */}
+      {/* Filters */}
       <div className="flex gap-2 mb-4">
-        {[['', '全部'], ['human', '👤 人类'], ['agent', '🤖 Agent']].map(([val, label]) => (
+        {[['', t('common.all')], ['human', t('members.humanLabel')], ['agent', '🤖 Agent']].map(([val, label]) => (
           <button
             key={val}
             onClick={() => setTypeFilter(val)}
@@ -220,13 +222,13 @@ export default function Members() {
         ))}
       </div>
 
-      {/* 成员列表 */}
+      {/* Member list */}
       {isLoading ? (
-        <div className="text-slate-500 text-sm py-8 text-center">加载中...</div>
+        <div className="text-slate-500 text-sm py-8 text-center">{t('common.loading')}</div>
       ) : (members as any[]).length === 0 ? (
         <div className="text-center py-16 text-slate-600">
           <p className="text-4xl mb-3">👥</p>
-          <p className="text-sm">暂无成员，点击右上角"添加成员"</p>
+          <p className="text-sm">{t('members.noMembers')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -234,6 +236,7 @@ export default function Members() {
             <MemberCard
               key={m.id}
               member={m}
+              t={t}
               onEdit={() => { setEditMember(m); setShowModal(true); }}
               onDelete={() => setDeleteConfirm(m)}
             />
@@ -241,28 +244,27 @@ export default function Members() {
         </div>
       )}
 
-      {/* 弹窗 */}
+      {/* Modal */}
       {showModal && (
-        <MemberModal member={editMember} onClose={() => { setShowModal(false); setEditMember(null); }} />
+        <MemberModal member={editMember} t={t} onClose={() => { setShowModal(false); setEditMember(null); }} />
       )}
 
-      {/* 删除确认 */}
+      {/* Delete confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-2">{t('common.confirmDelete')}</h3>
             <p className="text-sm text-gray-500 mb-4">
-              删除成员 <span className="text-gray-800 font-medium">{deleteConfirm.name}</span>？
-              该成员负责的任务不会受影响，但 owner 字段将保留原值。
+              {t('members.deleteConfirmBody', { name: deleteConfirm.name })}
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.identifier)}
                 className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
-                {deleteMut.isPending ? '删除中...' : '确认删除'}
+                {deleteMut.isPending ? t('common.deleting') : t('common.confirmDelete')}
               </button>
             </div>
           </div>

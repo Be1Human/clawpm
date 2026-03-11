@@ -8,30 +8,32 @@ import { useCurrentUser, clearCurrentUser } from '@/lib/useCurrentUser';
 import { useRecentTasks } from '@/lib/useRecentTasks';
 import { useFavorites } from '@/lib/useFavorites';
 import { api, setActiveProject } from '@/api/client';
+import { useI18n } from '@/lib/i18n';
 import IdentityPicker from './IdentityPicker';
+import logoImg from '@/assets/logo.png';
 import CommandPalette from './CommandPalette';
 import NotificationBell from './NotificationPanel';
 
 // ── 导航结构（个人空间） ─────────────────────────────────────────
 const PERSONAL_NAV_GROUPS = [
   {
-    label: '我的工作台',
+    labelKey: 'nav.myWorkbench',
     items: [
-      { to: '/my/dashboard', label: '我的仪表盘', icon: OverviewIcon, exact: true },
+      { to: '/my/dashboard', labelKey: 'nav.myDashboard', icon: OverviewIcon, exact: true },
     ],
   },
   {
-    label: '我的任务',
+    labelKey: 'nav.myTasks',
     items: [
-      { to: '/my/tasks/list',    label: '需求列表',   icon: ListIcon },
-      { to: '/my/tasks/tree',    label: '需求树',     icon: TreeIcon },
-      { to: '/my/tasks/mindmap', label: '需求思维导图', icon: MapIcon },
+      { to: '/my/tasks/list',    labelKey: 'nav.taskList',    icon: ListIcon },
+      { to: '/my/tasks/tree',    labelKey: 'nav.taskTree',    icon: TreeIcon },
+      { to: '/my/tasks/mindmap', labelKey: 'nav.taskMindMap', icon: MapIcon },
     ],
   },
   {
-    label: '我的规划',
+    labelKey: 'nav.myPlanning',
     items: [
-      { to: '/my/gantt', label: '我的甘特图', icon: GanttIcon },
+      { to: '/my/gantt', labelKey: 'nav.myGantt', icon: GanttIcon },
     ],
   },
 ];
@@ -39,43 +41,43 @@ const PERSONAL_NAV_GROUPS = [
 // ── 导航结构（项目空间） ─────────────────────────────────────────
 const PROJECT_NAV_GROUPS = [
   {
-    label: '项目总览',
+    labelKey: 'nav.projectOverview',
     items: [
-      { to: '/dashboard', label: '项目仪表盘', icon: OverviewIcon, exact: true },
+      { to: '/dashboard', labelKey: 'nav.projectDashboard', icon: OverviewIcon, exact: true },
     ],
   },
   {
-    label: '产品规划',
+    labelKey: 'nav.productPlanning',
     items: [
-      { to: '/requirements', label: '需求树',   icon: TreeIcon },
-      { to: '/mindmap',      label: '思维导图', icon: MapIcon },
-      { to: '/gantt',        label: '甘特图',   icon: GanttIcon },
+      { to: '/requirements', labelKey: 'nav.requirementTree', icon: TreeIcon },
+      { to: '/mindmap',      labelKey: 'nav.mindMap',         icon: MapIcon },
+      { to: '/gantt',        labelKey: 'nav.ganttChart',      icon: GanttIcon },
     ],
   },
   {
-    label: '执行跟踪',
+    labelKey: 'nav.executionTracking',
     items: [
-      { to: '/board',       label: '看板',     icon: BoardIcon },
-      { to: '/tasks',       label: '任务列表', icon: ListIcon },
-      { to: '/backlog',     label: '需求池',   icon: PoolIcon },
-      { to: '/iterations',  label: '迭代',     icon: IterationIcon },
-      { to: '/intake',      label: '收件箱',   icon: InboxIcon },
+      { to: '/board',       labelKey: 'nav.kanban',      icon: BoardIcon },
+      { to: '/tasks',       labelKey: 'nav.taskListNav', icon: ListIcon },
+      { to: '/backlog',     labelKey: 'nav.backlog',     icon: PoolIcon },
+      { to: '/iterations',  labelKey: 'nav.iterations',  icon: IterationIcon },
+      { to: '/intake',      labelKey: 'nav.inbox',       icon: InboxIcon },
     ],
   },
   {
-    label: '目标管理',
+    labelKey: 'nav.goalManagement',
     items: [
-      { to: '/milestones', label: '里程碑', icon: MilestoneIcon },
-      { to: '/goals',      label: '目标',   icon: GoalIcon },
+      { to: '/milestones', labelKey: 'nav.milestones', icon: MilestoneIcon },
+      { to: '/goals',      labelKey: 'nav.goals',      icon: GoalIcon },
     ],
   },
   {
-    label: '设置',
+    labelKey: 'nav.settings',
     items: [
-      { to: '/domains',       label: '业务板块',   icon: DomainIcon },
-      { to: '/custom-fields', label: '自定义字段', icon: FieldsIcon },
-      { to: '/members',       label: '成员',       icon: MembersIcon },
-      { to: '/archive',       label: '归档箱',     icon: ArchiveIcon },
+      { to: '/domains',       labelKey: 'nav.domains',      icon: DomainIcon },
+      { to: '/custom-fields', labelKey: 'nav.customFields', icon: FieldsIcon },
+      { to: '/members',       labelKey: 'nav.members',      icon: MembersIcon },
+      { to: '/archive',       labelKey: 'nav.archive',      icon: ArchiveIcon },
     ],
   },
 ];
@@ -255,6 +257,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  const { t, locale, setLocale } = useI18n();
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showIdentityPicker, setShowIdentityPicker] = useState(false);
@@ -346,22 +349,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Logo / workspace */}
         <div className="h-[52px] flex items-center px-4 border-b" style={{ borderColor: '#e8eaed' }}>
           <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' }}
-            >
-              C
-            </div>
+            <img
+              src={logoImg}
+              alt="ClawPM"
+              className="w-8 h-8 flex-shrink-0 object-contain"
+            />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 leading-none truncate">ClawPM</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">项目管理</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{t('nav.projectManagement')}</p>
             </div>
           </div>
         </div>
 
         {/* 项目切换器 */}
         <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">项目</label>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">{t('nav.project')}</label>
           <div className="relative">
             <select
               value={activeSlug}
@@ -385,17 +387,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 value={newProjectName}
                 onChange={e => setNewProjectName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); if (e.key === 'Escape') setShowCreateProject(false); }}
-                placeholder="项目名称..."
+                placeholder={t('nav.projectNamePlaceholder')}
                 className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               />
-              <button onClick={handleCreateProject} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">确定</button>
+              <button onClick={handleCreateProject} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">{t('nav.confirm')}</button>
             </div>
           ) : (
             <button
               onClick={() => setShowCreateProject(true)}
               className="mt-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors"
             >
-              + 新建项目
+              {t('nav.newProject')}
             </button>
           )}
         </div>
@@ -403,7 +405,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* 空间切换 Tab */}
         <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
           <div className="flex rounded-lg bg-gray-100 p-0.5">
-            {([['personal', '个人空间'], ['project', '项目空间']] as const).map(([key, label]) => (
+            {([['personal', t('nav.personalSpace')], ['project', t('nav.projectSpace')]] as [Space, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => handleSwitchSpace(key)}
@@ -426,7 +428,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {favorites.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
-                收藏
+                {t('nav.favorites')}
               </p>
               <div className="space-y-0.5">
                 {favorites.slice(0, 5).map(f => (
@@ -447,7 +449,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {recentTasks.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
-                最近访问
+                {t('nav.recentlyViewed')}
               </p>
               <div className="space-y-0.5">
                 {recentTasks.slice(0, 5).map(t => (
@@ -465,9 +467,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
 
           {navGroups.map((group) => (
-            <div key={group.label}>
+            <div key={group.labelKey}>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
-                {group.label}
+                {t(group.labelKey)}
               </p>
               <div className="space-y-0.5">
                 {group.items.map((item) => (
@@ -487,7 +489,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     {({ isActive }) => (
                       <>
                         <item.icon className={cn('w-4 h-4 flex-shrink-0', isActive ? 'text-indigo-600' : 'text-gray-400')} />
-                        {item.label}
+                        {t(item.labelKey)}
                       </>
                     )}
                   </NavLink>
@@ -514,7 +516,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => setShowIdentityPicker(true)}
                 className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                title="切换身份"
+                title={t('nav.switchIdentity')}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M11.5 6A4.5 4.5 0 0 0 3 4.5M2.5 8A4.5 4.5 0 0 0 11 9.5" strokeLinecap="round" />
@@ -527,7 +529,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={() => setShowIdentityPicker(true)}
               className="w-full text-xs text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 py-2 rounded-lg transition-colors cursor-pointer"
             >
-              请选择身份...
+              {t('nav.selectIdentity')}
             </button>
           )}
         </div>
@@ -545,10 +547,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.35-4.35" strokeLinecap="round" />
             </svg>
-            <span>搜索任务...</span>
+            <span>{t('nav.searchTasks')}</span>
             <kbd className="ml-auto text-[10px] text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Ctrl+K</kbd>
           </button>
           <div className="flex items-center gap-2">
+            {/* Language Switcher */}
+            <button
+              onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              title={t('lang.switchTo')}
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="8" cy="8" r="6.5" />
+                <path d="M1.5 8h13M8 1.5c-2 2-2.5 4-2.5 6.5s.5 4.5 2.5 6.5M8 1.5c2 2 2.5 4 2.5 6.5s-.5 4.5-2.5 6.5" />
+              </svg>
+              <span>{locale === 'en' ? 'EN' : '中'}</span>
+            </button>
             <NotificationBell />
           </div>
         </div>

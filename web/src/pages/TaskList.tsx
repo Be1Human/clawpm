@@ -6,6 +6,7 @@ import { useActiveProject } from '@/lib/useActiveProject';
 import { useFilters, applyFilters } from '@/lib/useFilters';
 import { PriorityBadge, StatusBadge } from '@/components/ui/Badge';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import FilterBar from '@/components/FilterBar';
 import BatchActionBar from '@/components/BatchActionBar';
@@ -23,6 +24,7 @@ function getLabels(task: any): string[] {
 }
 
 export default function TaskList() {
+  const { t } = useI18n();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const activeProject = useActiveProject();
@@ -81,15 +83,15 @@ export default function TaskList() {
                   className="rounded border-gray-500"
                 />
               </th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">ID</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">标题</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-20">标签</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">状态</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">优先级</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">板块</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">负责人</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-28">进度</th>
-              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">截止</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thId')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">{t('taskList.thTitle')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-20">{t('taskList.thLabel')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thOwner')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-28">{t('taskList.thProgress')}</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDueDate')}</th>
             </tr>
           </thead>
           <tbody>

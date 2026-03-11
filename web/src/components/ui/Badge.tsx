@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
   P0: { label: 'P0', className: 'bg-red-500/20 text-red-400 border border-red-500/30' },
@@ -7,14 +8,14 @@ const priorityConfig: Record<string, { label: string; className: string }> = {
   P3: { label: 'P3', className: 'bg-slate-500/20 text-slate-400 border border-slate-500/30' },
 };
 
-const statusConfig: Record<string, { label: string; className: string; dot: string }> = {
-  backlog: { label: '未排期', className: 'bg-slate-500/20 text-slate-400', dot: 'bg-slate-400' },
-  planned: { label: '未开始', className: 'bg-blue-500/20 text-blue-400', dot: 'bg-blue-400' },
-  active:  { label: '进行中', className: 'bg-indigo-500/20 text-indigo-400', dot: 'bg-indigo-400' },
-  review:  { label: '验收中', className: 'bg-amber-500/20 text-amber-400', dot: 'bg-amber-400' },
-  done:    { label: '已完成', className: 'bg-green-500/20 text-green-400', dot: 'bg-green-400' },
-  pool:    { label: '需求池', className: 'bg-indigo-500/20 text-indigo-400', dot: 'bg-indigo-400' },
-  scheduled: { label: '已排期', className: 'bg-teal-500/20 text-teal-400', dot: 'bg-teal-400' },
+const statusStyles: Record<string, { key: string; className: string; dot: string }> = {
+  backlog:   { key: 'status.backlog',   className: 'bg-slate-500/20 text-slate-400',  dot: 'bg-slate-400' },
+  planned:   { key: 'status.planned',   className: 'bg-blue-500/20 text-blue-400',    dot: 'bg-blue-400' },
+  active:    { key: 'status.active',    className: 'bg-indigo-500/20 text-indigo-400', dot: 'bg-indigo-400' },
+  review:    { key: 'status.review',    className: 'bg-amber-500/20 text-amber-400',  dot: 'bg-amber-400' },
+  done:      { key: 'status.done',      className: 'bg-green-500/20 text-green-400',  dot: 'bg-green-400' },
+  pool:      { key: 'status.pool',      className: 'bg-indigo-500/20 text-indigo-400', dot: 'bg-indigo-400' },
+  scheduled: { key: 'status.scheduled', className: 'bg-teal-500/20 text-teal-400',    dot: 'bg-teal-400' },
 };
 
 export function PriorityBadge({ priority }: { priority: string }) {
@@ -23,11 +24,12 @@ export function PriorityBadge({ priority }: { priority: string }) {
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const cfg = statusConfig[status] || statusConfig.backlog;
+  const { t } = useI18n();
+  const cfg = statusStyles[status] || statusStyles.backlog;
   return (
     <span className={cn('badge gap-1.5', cfg.className)}>
       <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
-      {cfg.label}
+      {t(cfg.key)}
     </span>
   );
 }

@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useI18n } from '@/lib/i18n';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  planned: { bg: 'bg-gray-100', text: 'text-gray-600', label: '未开始' },
-  active: { bg: 'bg-blue-100', text: 'text-blue-700', label: '进行中' },
-  completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
+const STATUS_COLORS: Record<string, { bg: string; text: string; labelKey: string }> = {
+  planned: { bg: 'bg-gray-100', text: 'text-gray-600', labelKey: 'status.planned' },
+  active: { bg: 'bg-blue-100', text: 'text-blue-700', labelKey: 'status.active' },
+  completed: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'status.completed' },
 };
 
 export default function Iterations() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
@@ -34,8 +36,8 @@ export default function Iterations() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">迭代管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理开发迭代周期</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('iterations.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('iterations.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -43,16 +45,16 @@ export default function Iterations() {
             onChange={e => setFilterStatus(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600"
           >
-            <option value="">全部状态</option>
-            <option value="planned">未开始</option>
-            <option value="active">进行中</option>
-            <option value="completed">已完成</option>
+            <option value="">{t('iterations.allStatuses')}</option>
+            <option value="planned">{t('status.planned')}</option>
+            <option value="active">{t('status.active')}</option>
+            <option value="completed">{t('status.completed')}</option>
           </select>
           <button
             onClick={() => setShowCreate(true)}
             className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700"
           >
-            + 新建迭代
+            {t('iterations.newIteration')}
           </button>
         </div>
       </div>
@@ -60,11 +62,11 @@ export default function Iterations() {
       {/* Create form */}
       {showCreate && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">新建迭代</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('iterations.createIteration')}</h3>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <input
-                placeholder="迭代名称 *"
+                placeholder={t('iterations.namePlaceholder')}
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-300 outline-none"
@@ -73,14 +75,14 @@ export default function Iterations() {
             </div>
             <div className="col-span-2">
               <textarea
-                placeholder="描述（可选）"
+                placeholder={t('iterations.descPlaceholder')}
                 value={form.description}
                 onChange={e => setForm({ ...form, description: e.target.value })}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-300 outline-none h-16 resize-none"
               />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400 block mb-1">开始日期</label>
+              <label className="text-[10px] text-gray-400 block mb-1">{t('iterations.startDate')}</label>
               <input
                 type="date"
                 value={form.start_date}
@@ -89,7 +91,7 @@ export default function Iterations() {
               />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400 block mb-1">结束日期</label>
+              <label className="text-[10px] text-gray-400 block mb-1">{t('iterations.endDate')}</label>
               <input
                 type="date"
                 value={form.end_date}
@@ -104,25 +106,25 @@ export default function Iterations() {
               disabled={!form.name.trim() || createMut.isPending}
               className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
-              创建
+              {t('common.create')}
             </button>
             <button onClick={() => setShowCreate(false)} className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5">
-              取消
+              {t('common.cancel')}
             </button>
           </div>
         </div>
       )}
 
       {isLoading ? (
-        <div className="text-center py-12 text-gray-500">加载中...</div>
+        <div className="text-center py-12 text-gray-500">{t('common.loading')}</div>
       ) : (iterations as any[]).length === 0 ? (
         <div className="text-center py-16">
-          <p className="text-gray-500">暂无迭代</p>
+          <p className="text-gray-500">{t('iterations.noIterations')}</p>
           <button
             onClick={() => setShowCreate(true)}
             className="mt-2 text-sm text-indigo-500 hover:text-indigo-700"
           >
-            创建第一个迭代
+            {t('iterations.createFirst')}
           </button>
         </div>
       ) : (
@@ -141,7 +143,7 @@ export default function Iterations() {
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold text-gray-900">{iter.name}</h3>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${status.bg} ${status.text}`}>
-                        {status.label}
+                        {t(status.labelKey)}
                       </span>
                     </div>
                     {iter.description && (
@@ -149,8 +151,8 @@ export default function Iterations() {
                     )}
                     <div className="flex items-center gap-4 mt-2 text-[11px] text-gray-400">
                       {iter.startDate && <span>{iter.startDate} ~ {iter.endDate || '?'}</span>}
-                      <span>{iter.taskCount ?? 0} 个任务</span>
-                      <span>{iter.completedCount ?? 0} 已完成</span>
+                      <span>{t('iterations.taskCount', { count: iter.taskCount ?? 0 })}</span>
+                      <span>{t('iterations.completedCount', { count: iter.completedCount ?? 0 })}</span>
                     </div>
                   </div>
                   {/* Completion ring */}

@@ -1,6 +1,16 @@
-# ClawPM
+<div align="center">
+  <img src="./web/src/assets/logo.png" alt="ClawPM Logo" width="100" />
+  <h1>ClawPM</h1>
+  <p><strong>Self-hosted project management hub with MCP integration for AI agents.</strong></p>
 
-**Self-hosted project management hub with MCP integration for AI agents.**
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+  [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-brightgreen)](https://nodejs.org/)
+  [![pnpm](https://img.shields.io/badge/pnpm-monorepo-orange)](https://pnpm.io/)
+  [![MCP](https://img.shields.io/badge/MCP-59%20tools-purple)](https://modelcontextprotocol.io/)
+  [![CI](https://github.com/your-org/clawpm/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/clawpm/actions/workflows/ci.yml)
+</div>
+
+---
 
 ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 与 AI Agent 双向通信——Agent 从中领取任务、上报进度；决策者通过 AI 助手或 Web 界面管理需求和目标。
 
@@ -420,6 +430,19 @@ clawpm/
 - [产品需求文档 (PRD)](./docs/PRD.md)
 - [技术设计文档](./docs/TechDesign.md)
 
+## Contributing
+
+欢迎贡献！请先阅读以下内容：
+
+1. **Fork** 本仓库，基于 `main` 分支新建功能分支
+2. 遵循现有代码风格（TypeScript + ESLint）
+3. 提交 PR 时请填写 PR 模板
+4. 提交 Bug 或功能建议请使用 [Issue 模板](https://github.com/your-org/clawpm/issues/new/choose)
+
+## Changelog
+
+查看 [Releases](https://github.com/your-org/clawpm/releases) 了解版本历史。
+
 ## License
 
-MIT
+[MIT](./LICENSE) © 2026 ClawPM Contributors

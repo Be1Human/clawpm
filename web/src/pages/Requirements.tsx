@@ -3,17 +3,18 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useFilters } from '@/lib/useFilters';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import FilterBar from '@/components/FilterBar';
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string }> = {
-  backlog: { label: '未排期', dot: 'bg-slate-400',   text: 'text-slate-500' },
-  planned: { label: '未开始', dot: 'bg-blue-400',    text: 'text-blue-500' },
-  active:  { label: '进行中', dot: 'bg-indigo-500',  text: 'text-indigo-500' },
-  review:  { label: '验收中', dot: 'bg-amber-500',   text: 'text-amber-500' },
-  done:    { label: '已完成', dot: 'bg-emerald-500', text: 'text-emerald-500' },
+const STATUS_CONFIG: Record<string, { labelKey: string; dot: string; text: string }> = {
+  backlog: { labelKey: 'status.backlog', dot: 'bg-slate-400',   text: 'text-slate-500' },
+  planned: { labelKey: 'status.planned', dot: 'bg-blue-400',    text: 'text-blue-500' },
+  active:  { labelKey: 'status.active', dot: 'bg-indigo-500',  text: 'text-indigo-500' },
+  review:  { labelKey: 'status.review', dot: 'bg-amber-500',   text: 'text-amber-500' },
+  done:    { labelKey: 'status.done', dot: 'bg-emerald-500', text: 'text-emerald-500' },
 };
 
 const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
@@ -33,10 +34,10 @@ function getLabels(node: any): string[] {
 }
 
 function TreeNodeRow({
-  node, depth, expanded, hasChildren, onToggle, onCreateChild,
+  node, depth, expanded, hasChildren, onToggle, onCreateChild, t,
 }: {
   node: any; depth: number; expanded: boolean; hasChildren: boolean;
-  onToggle: () => void; onCreateChild: () => void;
+  onToggle: () => void; onCreateChild: () => void; t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const labels = getLabels(node);
   const sc = STATUS_CONFIG[node.status] || STATUS_CONFIG.backlog;
@@ -80,7 +81,7 @@ function TreeNodeRow({
       </span>
 
       <span className={cn('text-xs flex-shrink-0 w-14 text-right', sc.text)}>
-        {sc.label}
+        {t(sc.labelKey)}
       </span>
 
       <div className="flex items-center gap-1.5 flex-shrink-0 w-20">
@@ -97,7 +98,7 @@ function TreeNodeRow({
         <button
           onClick={e => { e.stopPropagation(); onCreateChild(); }}
           className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all text-sm border border-transparent hover:border-indigo-200"
-          title="添加子节点"
+          title={t('requirements.addChild')}
         >
           +
         </button>
@@ -107,10 +108,11 @@ function TreeNodeRow({
 }
 
 function TreeNode({
-  node, depth = 0, globalExpanded, onCreateChild,
+  node, depth = 0, globalExpanded, onCreateChild, t,
 }: {
   node: any; depth?: number; globalExpanded: boolean | null;
   onCreateChild: (parentTaskId: string) => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const [localExpanded, setLocalExpanded] = useState(depth < 2);
   const children: any[] = node.children || [];
@@ -123,12 +125,13 @@ function TreeNode({
         node={node} depth={depth} expanded={expanded} hasChildren={hasChildren}
         onToggle={() => setLocalExpanded(v => !v)}
         onCreateChild={() => onCreateChild(node.taskId)}
+        t={t}
       />
       {expanded && hasChildren && (
         <div>
           {children.map((child: any) => (
             <TreeNode key={child.id} node={child} depth={depth + 1}
-              globalExpanded={globalExpanded} onCreateChild={onCreateChild} />
+              globalExpanded={globalExpanded} onCreateChild={onCreateChild} t={t} />
           ))}
         </div>
       )}
@@ -137,6 +140,7 @@ function TreeNode({
 }
 
 export default function Requirements() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
@@ -160,19 +164,19 @@ export default function Requirements() {
     <div className="p-6 animate-fade-in">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">需求树</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{totalNodes} 个节点</p>
+          <h1 className="text-xl font-semibold text-gray-900">{t('requirements.title')}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{t('requirements.nodeCount', { count: totalNodes })}</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex bg-gray-100 rounded-lg p-1 gap-0.5">
             <button className="px-3 py-1.5 text-xs rounded-md bg-indigo-600 text-white font-medium">
-              ☰ 列表
+              {t('requirements.listView')}
             </button>
             <button
               onClick={() => navigate('/mindmap')}
               className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:text-gray-700 transition-colors"
             >
-              ◉ 思维导图
+              {t('requirements.mindMapView')}
             </button>
           </div>
           <div className="flex bg-gray-100 rounded-lg p-1 gap-0.5">
@@ -181,21 +185,21 @@ export default function Requirements() {
               className={cn('px-3 py-1.5 text-xs rounded-md transition-all',
                 globalExpanded === true ? 'bg-indigo-600 text-white font-medium' : 'text-gray-500 hover:text-gray-700')}
             >
-              展开
+              {t('requirements.expand')}
             </button>
             <button
               onClick={() => setGlobalExpanded(false)}
               className={cn('px-3 py-1.5 text-xs rounded-md transition-all',
                 globalExpanded === false ? 'bg-indigo-600 text-white font-medium' : 'text-gray-500 hover:text-gray-700')}
             >
-              收起
+              {t('requirements.collapse')}
             </button>
           </div>
           <button
             onClick={() => setCreateModal({})}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
           >
-            + 新建节点
+            {t('requirements.newNode')}
           </button>
         </div>
       </div>
@@ -208,31 +212,32 @@ export default function Requirements() {
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 mb-1">
           <div className="w-4 flex-shrink-0" />
           <div className="w-2 flex-shrink-0" />
-          <div className="flex-1 text-xs text-gray-400">标题</div>
-          <div className="w-12 text-xs text-gray-400 text-right">ID</div>
-          <div className="w-6 text-xs text-gray-400 text-center">优先</div>
-          <div className="w-14 text-xs text-gray-400 text-right">状态</div>
-          <div className="w-20 text-xs text-gray-400 text-center">进度</div>
+          <div className="flex-1 text-xs text-gray-400">{t('requirements.thTitle')}</div>
+          <div className="w-12 text-xs text-gray-400 text-right">{t('requirements.thId')}</div>
+          <div className="w-6 text-xs text-gray-400 text-center">{t('requirements.thPriority')}</div>
+          <div className="w-14 text-xs text-gray-400 text-right">{t('requirements.thStatus')}</div>
+          <div className="w-20 text-xs text-gray-400 text-center">{t('requirements.thProgress')}</div>
           <div className="w-6 text-xs text-gray-400 text-center">+</div>
         </div>
 
         {isLoading ? (
-          <div className="py-12 text-center text-gray-400 text-sm">加载中...</div>
+          <div className="py-12 text-center text-gray-400 text-sm">{t('common.loading')}</div>
         ) : (tree as any[]).length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-4xl mb-3 opacity-30">◉</div>
             <div className="text-gray-500 text-sm mb-1">
-              {filterHook.hasActiveFilters ? '没有符合过滤条件的节点' : '还没有任何需求节点'}
+              {filterHook.hasActiveFilters ? t('requirements.noNodesFilter') : t('requirements.noNodes')}
             </div>
             <div className="text-gray-400 text-xs">
-              {filterHook.hasActiveFilters ? '尝试清除过滤条件' : '点击「新建节点」开始构建需求树'}
+              {filterHook.hasActiveFilters ? t('requirements.clearFilter') : t('requirements.startBuilding')}
             </div>
           </div>
         ) : (
           (tree as any[]).map((node: any) => (
             <TreeNode key={node.id} node={node} depth={0}
               globalExpanded={globalExpanded}
-              onCreateChild={(parentTaskId) => setCreateModal({ parentId: parentTaskId })} />
+              onCreateChild={(parentTaskId) => setCreateModal({ parentId: parentTaskId })}
+              t={t} />
           ))
         )}
       </div>

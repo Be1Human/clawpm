@@ -3,14 +3,15 @@ import { api } from '@/api/client';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useI18n, getDateLocale } from '@/lib/i18n';
 import { Link } from 'react-router-dom';
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; accent: string }> = {
-  backlog: { label: '未排期', dot: 'bg-slate-400', accent: '#94a3b8' },
-  planned: { label: '未开始', dot: 'bg-blue-400', accent: '#3b82f6' },
-  active:  { label: '进行中', dot: 'bg-indigo-500', accent: '#6366f1' },
-  review:  { label: '验收中', dot: 'bg-amber-500', accent: '#d97706' },
-  done:    { label: '已完成', dot: 'bg-emerald-500', accent: '#10b981' },
+const STATUS_CONFIG: Record<string, { labelKey: string; dot: string; accent: string }> = {
+  backlog: { labelKey: 'status.backlog', dot: 'bg-slate-400', accent: '#94a3b8' },
+  planned: { labelKey: 'status.planned', dot: 'bg-blue-400', accent: '#3b82f6' },
+  active:  { labelKey: 'status.active', dot: 'bg-indigo-500', accent: '#6366f1' },
+  review:  { labelKey: 'status.review', dot: 'bg-amber-500', accent: '#d97706' },
+  done:    { labelKey: 'status.done', dot: 'bg-emerald-500', accent: '#10b981' },
 };
 
 function QuickLink({ to, label, desc, icon }: { to: string; label: string; desc: string; icon: string }) {
@@ -49,7 +50,7 @@ export default function MyDashboard() {
     ? (members as any[]).find((m: any) => m.identifier === currentUser)
     : null;
 
-  const today = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const today = new Date().toLocaleDateString(getDateLocale(locale), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   if (!currentUser) {
     return (
@@ -95,69 +96,69 @@ export default function MyDashboard() {
         )}
         <div>
           <h1 className="text-xl font-bold text-gray-900">
-            {currentMember?.name || currentUser} 的工作台
+            {t('myDashboard.workbench', { name: currentMember?.name || currentUser })}
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">{today}</p>
         </div>
       </div>
 
-      {/* 统计卡片 */}
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">我的任务</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('myDashboard.myTasks')}</p>
           <p className="text-3xl font-bold mt-1.5 text-gray-900">{total}</p>
-          <p className="text-xs text-gray-400 mt-1">{done} 已完成</p>
+          <p className="text-xs text-gray-400 mt-1">{t('myDashboard.doneCount', { count: done })}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">进行中</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('myDashboard.inProgress')}</p>
           <p className="text-3xl font-bold mt-1.5 text-indigo-600">{myOverview?.active ?? activeTasks.length}</p>
-          <p className="text-xs text-gray-400 mt-1">需要推进</p>
+          <p className="text-xs text-gray-400 mt-1">{t('myDashboard.needsAction')}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">待验收</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('myDashboard.pendingReview')}</p>
           <p className="text-3xl font-bold mt-1.5 text-amber-600">{myOverview?.review ?? reviewTasks.length}</p>
-          <p className="text-xs text-gray-400 mt-1">等待确认</p>
+          <p className="text-xs text-gray-400 mt-1">{t('myDashboard.awaitingConfirmation')}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">完成率</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('myDashboard.completionRate')}</p>
           <p className="text-3xl font-bold mt-1.5 text-emerald-600">{completionRate}%</p>
           <p className="text-xs text-gray-400 mt-1">{done}/{total}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-5">
-        {/* 近期活跃任务 */}
+        {/* Recent tasks */}
         <div className="col-span-2 bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-800">近期任务</h2>
-            <Link to="/my/tasks/list" className="text-xs text-indigo-500 hover:text-indigo-700">查看全部 →</Link>
+            <h2 className="text-sm font-semibold text-gray-800">{t('myDashboard.recentTasks')}</h2>
+            <Link to="/my/tasks/list" className="text-xs text-indigo-500 hover:text-indigo-700">{t('common.viewAll')}</Link>
           </div>
           {recentTasks.length === 0 ? (
             <div className="text-center py-8 text-gray-300">
               <div className="text-2xl mb-1">📋</div>
-              <p className="text-xs">暂无进行中的任务</p>
+              <p className="text-xs">{t('myDashboard.noActiveTasks')}</p>
             </div>
           ) : (
             <div className="space-y-1">
-              {recentTasks.map((t: any) => {
-                const sc = STATUS_CONFIG[t.status] || STATUS_CONFIG.backlog;
-                const days = getDaysUntil(t.dueDate);
+              {recentTasks.map((task: any) => {
+                const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.backlog;
+                const days = getDaysUntil(task.dueDate);
                 const isOverdue = days !== null && days < 0;
                 return (
-                  <Link key={t.id} to={`/tasks/${t.taskId}`}
+                  <Link key={task.id} to={`/tasks/${task.taskId}`}
                     className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors group">
                     <div className={cn('w-2 h-2 rounded-full flex-shrink-0', sc.dot)} />
-                    <span className="flex-1 text-sm text-gray-700 group-hover:text-indigo-700 truncate">{t.title}</span>
+                    <span className="flex-1 text-sm text-gray-700 group-hover:text-indigo-700 truncate">{task.title}</span>
                     <span className={cn('text-[10px] flex-shrink-0', sc.accent === '#d97706' ? 'text-amber-500' : 'text-gray-400')}>
-                      {sc.label}
+                      {t(sc.labelKey)}
                     </span>
-                    {t.dueDate && (
+                    {task.dueDate && (
                       <span className={cn('text-[10px] flex-shrink-0',
                         isOverdue ? 'text-red-500 font-medium' : 'text-gray-400')}>
-                        {isOverdue ? `逾期${Math.abs(days!)}天` : formatDate(t.dueDate)}
+                        {isOverdue ? t('myDashboard.overdueDays', { days: Math.abs(days!) }) : formatDate(task.dueDate)}
                       </span>
                     )}
-                    <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">{t.taskId}</span>
+                    <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">{task.taskId}</span>
                   </Link>
                 );
               })}
@@ -165,41 +166,41 @@ export default function MyDashboard() {
           )}
         </div>
 
-        {/* 右侧：逾期预警 + 快捷入口 */}
+        {/* Overdue + Quick links */}
         <div className="space-y-5">
-          {/* 逾期预警 */}
+          {/* Overdue warning */}
           <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-800 mb-3">逾期预警</h2>
+            <h2 className="text-sm font-semibold text-gray-800 mb-3">{t('myDashboard.overdueWarning')}</h2>
             {overdueTasks.length === 0 ? (
               <div className="text-center py-4 text-gray-300">
                 <div className="text-lg mb-1">✅</div>
-                <p className="text-xs">无逾期任务</p>
+                <p className="text-xs">{t('myDashboard.noOverdueTasks')}</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {overdueTasks.slice(0, 4).map((t: any) => {
-                  const days = getDaysUntil(t.dueDate);
+                {overdueTasks.slice(0, 4).map((task: any) => {
+                  const days = getDaysUntil(task.dueDate);
                   return (
-                    <Link key={t.id} to={`/tasks/${t.taskId}`}
+                    <Link key={task.id} to={`/tasks/${task.taskId}`}
                       className="block px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-                      <p className="text-xs text-gray-700 truncate">{t.title}</p>
-                      <p className="text-[10px] text-red-500 font-medium">逾期 {Math.abs(days!)} 天</p>
+                      <p className="text-xs text-gray-700 truncate">{task.title}</p>
+                      <p className="text-[10px] text-red-500 font-medium">{t('myDashboard.overdueDays', { days: Math.abs(days!) })}</p>
                     </Link>
                   );
                 })}
                 {overdueTasks.length > 4 && (
-                  <p className="text-[10px] text-gray-400 px-2">还有 {overdueTasks.length - 4} 项...</p>
+                  <p className="text-[10px] text-gray-400 px-2">{t('myDashboard.moreItems', { count: overdueTasks.length - 4 })}</p>
                 )}
               </div>
             )}
           </div>
 
-          {/* 快捷入口 */}
+          {/* Quick links */}
           <div className="grid grid-cols-2 gap-2">
-            <QuickLink to="/my/tasks/list" label="需求列表" desc="平铺浏览" icon="📋" />
-            <QuickLink to="/my/tasks/tree" label="需求树" desc="层级结构" icon="🌳" />
-            <QuickLink to="/my/tasks/mindmap" label="需求脑图" desc="全局视野" icon="🧠" />
-            <QuickLink to="/my/gantt" label="我的甘特" desc="时间线" icon="📅" />
+            <QuickLink to="/my/tasks/list" label={t('myDashboard.taskListLabel')} desc={t('myDashboard.flatView')} icon="📋" />
+            <QuickLink to="/my/tasks/tree" label={t('myDashboard.taskTreeLabel')} desc={t('myDashboard.hierarchyView')} icon="🌳" />
+            <QuickLink to="/my/tasks/mindmap" label={t('myDashboard.mindMapLabel')} desc={t('myDashboard.globalView')} icon="🧠" />
+            <QuickLink to="/my/gantt" label={t('myDashboard.myGanttLabel')} desc={t('myDashboard.timeline')} icon="📅" />
           </div>
         </div>
       </div>

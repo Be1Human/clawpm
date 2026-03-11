@@ -3,17 +3,18 @@ import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useFilters, applyFilters } from '@/lib/useFilters';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 import { Link } from 'react-router-dom';
 import { useState, useRef } from 'react';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import FilterBar from '@/components/FilterBar';
 
 const COLUMNS = [
-  { key: 'backlog',  label: '未排期', accent: '#94a3b8', light: '#f8fafc' },
-  { key: 'planned',  label: '未开始', accent: '#3b82f6', light: '#eff6ff' },
-  { key: 'active',   label: '进行中', accent: '#6366f1', light: '#eef2ff' },
-  { key: 'review',   label: '验收中', accent: '#d97706', light: '#fffbeb' },
-  { key: 'done',     label: '已完成', accent: '#10b981', light: '#f0fdf4' },
+  { key: 'backlog',  labelKey: 'status.backlog',  accent: '#94a3b8', light: '#f8fafc' },
+  { key: 'planned',  labelKey: 'status.planned',  accent: '#3b82f6', light: '#eff6ff' },
+  { key: 'active',   labelKey: 'status.active',   accent: '#6366f1', light: '#eef2ff' },
+  { key: 'review',   labelKey: 'status.review',   accent: '#d97706', light: '#fffbeb' },
+  { key: 'done',     labelKey: 'status.done',     accent: '#10b981', light: '#f0fdf4' },
 ];
 
 const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
@@ -42,6 +43,7 @@ function TaskCard({
   task: any;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
 }) {
+  const { t } = useI18n();
   const days = getDaysUntil(task.dueDate);
   const isOverdue = days !== null && days < 0;
   const isUrgent = days !== null && days >= 0 && days <= 3;
@@ -119,7 +121,7 @@ function TaskCard({
           )}
           {task.dueDate && (
             <span className={cn('text-[10px]', isOverdue ? 'text-red-500 font-medium' : isUrgent ? 'text-amber-500' : 'text-gray-400')}>
-              {isOverdue ? `逾期${Math.abs(days!)}天` : formatDate(task.dueDate)}
+              {isOverdue ? t('date.overdueDays', { days: Math.abs(days!) }) : formatDate(task.dueDate)}
             </span>
           )}
         </div>
@@ -138,6 +140,7 @@ function TaskCard({
 export default function KanbanBoard() {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
+  const { t } = useI18n();
   const filterHook = useFilters('kanban');
   const [showCreate, setShowCreate] = useState(false);
   const [draggingOver, setDraggingOver] = useState<string | null>(null);
@@ -186,15 +189,15 @@ export default function KanbanBoard() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">看板</h1>
-          <p className="text-xs text-gray-400">{(tasks as any[]).length} 个任务 · 拖拽卡片可变更状态</p>
+          <h1 className="text-lg font-semibold text-gray-900">{t('kanban.title')}</h1>
+          <p className="text-xs text-gray-400">{t('kanban.taskCount', { count: (tasks as any[]).length })}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowCreate(true)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
           >
-            + 新建任务
+            {t('kanban.newTask')}
           </button>
         </div>
       </div>
@@ -227,7 +230,7 @@ export default function KanbanBoard() {
                 >
                   <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.accent }} />
-                    <span className="text-sm font-semibold text-gray-700">{col.label}</span>
+                    <span className="text-sm font-semibold text-gray-700">{t(col.labelKey)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span
@@ -245,7 +248,7 @@ export default function KanbanBoard() {
                     className="border-2 border-dashed rounded-xl mb-3 h-16 flex items-center justify-center text-sm font-medium"
                     style={{ borderColor: col.accent, color: col.accent, backgroundColor: col.light }}
                   >
-                    放置到「{col.label}」
+                    {t('kanban.dropHere', { col: t(col.labelKey) })}
                   </div>
                 )}
 
@@ -256,7 +259,7 @@ export default function KanbanBoard() {
                       <div key={i} className="bg-white border border-gray-100 rounded-xl h-24 animate-pulse" />
                     ))
                   ) : colTasks.length === 0 && !isDragOver ? (
-                    <div className="text-center py-10 text-gray-300 text-sm select-none">暂无任务</div>
+                    <div className="text-center py-10 text-gray-300 text-sm select-none">{t('kanban.noTasks')}</div>
                   ) : (
                     colTasks.map((task: any) => (
                       <TaskCard key={task.id} task={task} onDragStart={handleDragStart} />

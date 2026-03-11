@@ -1057,7 +1057,7 @@ function MindMapCanvas() {
   const [selectedId, setSelectedId] = useState<string | null>(() => loadState('selectedId', null));
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadState<string[]>('collapsed', [])));
   const [createModal, setCreateModal] = useState<{ parentId?: string; domain?: string } | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string; error?: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: any } | null>(null);
   const [addLinkModal, setAddLinkModal] = useState<{ sourceId: string } | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -1184,6 +1184,13 @@ function MindMapCanvas() {
   const deleteMut = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(taskId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-tree'] }); setDeleteConfirm(null); },
+    onError: (e: any) => {
+      const msg = e.message || '删除失败';
+      const reason = msg.includes('Owner') || msg.includes('权限')
+        ? '你不是该节点的 Owner，仅 Owner 可删除节点。如需删除，请联系节点 Owner 操作。'
+        : msg;
+      setDeleteConfirm(prev => prev ? { ...prev, error: reason } : null);
+    },
   });
 
   const addLinkMut = useMutation({
@@ -1930,20 +1937,43 @@ function MindMapCanvas() {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
-              <button
-                onClick={() => deleteMut.mutate(deleteConfirm.taskId)}
-                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                disabled={deleteMut.isPending}
-              >
-                {deleteMut.isPending ? '处理中...' : '确认删除'}
-              </button>
-            </div>
+            {deleteConfirm.error ? (
+              <>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728" />
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-semibold text-gray-900">删除失败</h3>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-red-700">{deleteConfirm.error}</p>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg">
+                    知道了
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                  <button
+                    onClick={() => deleteMut.mutate(deleteConfirm.taskId)}
+                    className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg"
+                    disabled={deleteMut.isPending}
+                  >
+                    {deleteMut.isPending ? '处理中...' : '确认删除'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

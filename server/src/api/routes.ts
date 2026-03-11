@@ -95,6 +95,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (body.parent_task_id) {
       await requireEditPermission(req, body.parent_task_id);
     }
+    // 未指定 owner 时，自动设为当前登录用户
+    const user = req.clawpmUser as string | null;
+    if (!body.owner && user) {
+      body.owner = user;
+    }
     const task = await TaskService.create({ ...body, projectId });
     return reply.code(201).send(task);
   });

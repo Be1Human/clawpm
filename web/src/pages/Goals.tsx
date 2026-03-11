@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { formatDate, cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 export default function Goals() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const { data: goals = [] } = useQuery({ queryKey: ['goals', activeProject], queryFn: api.getGoals });
@@ -20,26 +22,26 @@ export default function Goals() {
     <div className="p-6 animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">目标管理</h1>
-          <p className="text-sm text-slate-500 mt-0.5">OKR 式目标跟踪</p>
+          <h1 className="text-xl font-semibold text-slate-100">{t('goals.title')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{t('goals.subtitle')}</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary">+ 设定目标</button>
+        <button onClick={() => setShowCreate(true)} className="btn-primary">{t('goals.newGoal')}</button>
       </div>
 
       {showCreate && (
         <div className="card p-5 mb-5 animate-slide-up">
-          <h3 className="text-sm font-semibold text-slate-200 mb-4">设定新目标</h3>
+          <h3 className="text-sm font-semibold text-slate-200 mb-4">{t('goals.createTitle')}</h3>
           <div className="space-y-3 mb-3">
-            <input className="input w-full" placeholder="目标标题，如 v1.0 MVP 上线" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-            <textarea className="input w-full resize-none" rows={2} placeholder="目标描述" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            <input className="input w-full" placeholder={t('goals.titlePlaceholder')} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            <textarea className="input w-full resize-none" rows={2} placeholder={t('goals.descPlaceholder')} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
             <div className="grid grid-cols-2 gap-3">
-              <input type="date" className="input" placeholder="目标日期" value={form.target_date} onChange={e => setForm(f => ({ ...f, target_date: e.target.value }))} />
-              <input className="input" placeholder="设定人" value={form.set_by} onChange={e => setForm(f => ({ ...f, set_by: e.target.value }))} />
+              <input type="date" className="input" placeholder={t('goals.targetDate')} value={form.target_date} onChange={e => setForm(f => ({ ...f, target_date: e.target.value }))} />
+              <input className="input" placeholder={t('goals.setBy')} value={form.set_by} onChange={e => setForm(f => ({ ...f, set_by: e.target.value }))} />
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => createMut.mutate(form)} disabled={!form.title} className="btn-primary">创建</button>
-            <button onClick={() => setShowCreate(false)} className="btn-ghost">取消</button>
+            <button onClick={() => createMut.mutate(form)} disabled={!form.title} className="btn-primary">{t('common.create')}</button>
+            <button onClick={() => setShowCreate(false)} className="btn-ghost">{t('common.cancel')}</button>
           </div>
         </div>
       )}
@@ -57,11 +59,11 @@ export default function Goals() {
                   <h3 className="font-semibold text-slate-100 text-lg">{goal.title}</h3>
                   {goal.description && <p className="text-sm text-slate-500 mt-1">{goal.description}</p>}
                   <div className="flex items-center gap-3 mt-2 text-xs text-slate-600">
-                    {goal.setBy && <span>设定人: {goal.setBy}</span>}
-                    {goal.targetDate && <span>目标日期: {formatDate(goal.targetDate)}</span>}
+                    {goal.setBy && <span>{t('goals.setByLabel', { name: goal.setBy })}</span>}
+                    {goal.targetDate && <span>{t('goals.targetDateLabel', { date: formatDate(goal.targetDate) })}</span>}
                     {daysLeft !== null && (
                       <span className={daysLeft < 0 ? 'text-red-400' : daysLeft <= 14 ? 'text-yellow-400' : ''}>
-                        {daysLeft < 0 ? `逾期 ${Math.abs(daysLeft)} 天` : `剩余 ${daysLeft} 天`}
+                        {daysLeft < 0 ? t('goals.overdueDays', { days: Math.abs(daysLeft) }) : t('goals.daysRemaining', { days: daysLeft })}
                       </span>
                     )}
                   </div>
@@ -74,7 +76,7 @@ export default function Goals() {
                   )}>
                     {goal.overallProgress}%
                   </div>
-                  <div className="text-xs text-slate-600">整体进度</div>
+                  <div className="text-xs text-slate-600">{t('goals.overallProgress')}</div>
                 </div>
               </div>
 
@@ -94,7 +96,7 @@ export default function Goals() {
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-sm text-slate-300">{obj.title}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600">权重 {(obj.weight * 100).toFixed(0)}%</span>
+                          <span className="text-xs text-slate-600">{t('goals.weight', { pct: (obj.weight * 100).toFixed(0) })}</span>
                           <span className="text-sm font-medium text-slate-400">{obj.progress}%</span>
                         </div>
                       </div>
@@ -110,7 +112,7 @@ export default function Goals() {
         })}
 
         {(goals as any[]).length === 0 && (
-          <div className="card p-12 text-center text-slate-600">还没有设定目标</div>
+          <div className="card p-12 text-center text-slate-600">{t('goals.noGoals')}</div>
         )}
       </div>
     </div>

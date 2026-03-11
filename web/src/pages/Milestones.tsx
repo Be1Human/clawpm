@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
+import { useI18n, getDateLocale } from '@/lib/i18n';
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   active:    { label: '进行中', dot: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700' },
@@ -11,6 +12,7 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; te
 };
 
 function MilestoneModal({ milestone, onClose }: { milestone?: any; onClose: () => void }) {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const isEdit = !!milestone;
 
@@ -49,17 +51,17 @@ function MilestoneModal({ milestone, onClose }: { milestone?: any; onClose: () =
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">{isEdit ? '编辑里程碑' : '新建里程碑'}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{isEdit ? t('milestones.editMilestone') : t('milestones.createMilestone')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">名称 *</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('milestones.name')}</label>
             <input
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="如：v1.0-MVP"
+              placeholder={t('milestones.namePlaceholder')}
               required
               autoFocus
             />
@@ -67,7 +69,7 @@ function MilestoneModal({ milestone, onClose }: { milestone?: any; onClose: () =
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">目标日期</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t('milestones.targetDate')}</label>
               <input
                 type="date"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
@@ -77,36 +79,36 @@ function MilestoneModal({ milestone, onClose }: { milestone?: any; onClose: () =
             </div>
             {isEdit && (
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">状态</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t('milestones.status')}</label>
                 <select
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors"
                   value={form.status}
                   onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 >
-                  <option value="active">进行中</option>
-                  <option value="completed">已完成</option>
-                  <option value="archived">已归档</option>
+                  <option value="active">{t('status.active')}</option>
+                  <option value="completed">{t('status.completed')}</option>
+                  <option value="archived">{t('status.archived')}</option>
                 </select>
               </div>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">描述</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('milestones.description')}</label>
             <textarea
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-colors min-h-[60px] resize-none"
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="里程碑的目标和范围..."
+              placeholder={t('milestones.descPlaceholder')}
             />
           </div>
 
           {error && <p className="text-sm text-red-500">{(error as Error).message}</p>}
 
           <div className="flex gap-3 justify-end pt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
             <button type="submit" disabled={pending} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-              {pending ? '保存中...' : isEdit ? '保存更改' : '创建'}
+              {pending ? t('common.saving') : isEdit ? t('milestones.saveChanges') : t('common.create')}
             </button>
           </div>
         </form>
@@ -192,6 +194,7 @@ function MilestoneCard({ m, onEdit, onDelete }: { m: any; onEdit: () => void; on
 }
 
 export default function Milestones() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const [showModal, setShowModal] = useState(false);
@@ -220,45 +223,46 @@ export default function Milestones() {
     return new Date(m.targetDate).getTime() < Date.now();
   }).length;
 
+  const statCards = [
+    { labelKey: 'milestones.total', value: (milestones as any[]).length, color: 'text-gray-900' },
+    { labelKey: 'milestones.inProgress', value: activeCount, color: 'text-blue-600' },
+    { labelKey: 'milestones.completed', value: completedCount, color: 'text-green-600' },
+    { labelKey: 'milestones.overdue', value: overdueCount, color: 'text-red-500' },
+  ];
+
+  const filterTabs: [string, string][] = [
+    ['', t('common.all')],
+    ['active', t('status.active')],
+    ['completed', t('status.completed')],
+    ['archived', t('status.archived')],
+  ];
+
   return (
     <div className="px-6 py-6 max-w-5xl mx-auto">
-      {/* 头部 */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">里程碑</h1>
-          <p className="text-sm text-gray-500 mt-0.5">管理项目的关键节点和交付目标</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('milestones.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t('milestones.subtitle')}</p>
         </div>
         <button
           onClick={() => { setEditMs(null); setShowModal(true); }}
           className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
         >
-          + 新建里程碑
+          {t('milestones.newMilestone')}
         </button>
       </div>
 
-      {/* 统计 */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        {[
-          { label: '全部', value: (milestones as any[]).length, color: 'text-gray-900' },
-          { label: '进行中', value: activeCount, color: 'text-blue-600' },
-          { label: '已完成', value: completedCount, color: 'text-green-600' },
-          { label: '已逾期', value: overdueCount, color: 'text-red-500' },
-        ].map(stat => (
-          <div key={stat.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
-            <p className="text-xs text-gray-500">{stat.label}</p>
+        {statCards.map(stat => (
+          <div key={stat.labelKey} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p className="text-xs text-gray-500">{t(stat.labelKey)}</p>
             <p className={cn('text-2xl font-bold mt-0.5', stat.color)}>{stat.value}</p>
           </div>
         ))}
       </div>
 
-      {/* 筛选 */}
       <div className="flex gap-2 mb-4">
-        {[
-          ['', '全部'],
-          ['active', '进行中'],
-          ['completed', '已完成'],
-          ['archived', '已归档'],
-        ].map(([val, label]) => (
+        {filterTabs.map(([val, label]) => (
           <button
             key={val}
             onClick={() => setStatusFilter(val)}
@@ -272,13 +276,12 @@ export default function Milestones() {
         ))}
       </div>
 
-      {/* 列表 */}
       {isLoading ? (
-        <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
+        <div className="text-gray-400 text-sm py-8 text-center">{t('common.loading')}</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">🎯</p>
-          <p className="text-sm">{statusFilter ? '该状态下暂无里程碑' : '暂无里程碑，点击右上角创建'}</p>
+          <p className="text-sm">{statusFilter ? t('milestones.noMilestonesFilter') : t('milestones.noMilestones')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -293,28 +296,25 @@ export default function Milestones() {
         </div>
       )}
 
-      {/* 弹窗 */}
       {showModal && (
         <MilestoneModal milestone={editMs} onClose={() => { setShowModal(false); setEditMs(null); }} />
       )}
 
-      {/* 删除确认 */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-2">{t('milestones.deleteConfirmTitle')}</h3>
             <p className="text-sm text-gray-500 mb-4">
-              删除里程碑 <span className="text-gray-800 font-medium">{deleteConfirm.name}</span>？
-              关联的任务不会被删除，但会取消里程碑归属。
+              {t('milestones.deleteConfirmBody', { name: deleteConfirm.name })}
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('common.cancel')}</button>
               <button
                 onClick={() => deleteMut.mutate(deleteConfirm.id)}
                 className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm transition-colors"
                 disabled={deleteMut.isPending}
               >
-                {deleteMut.isPending ? '删除中...' : '确认删除'}
+                {deleteMut.isPending ? t('common.deleting') : t('common.confirmDelete')}
               </button>
             </div>
           </div>

@@ -1,11 +1,43 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
 dist/
+build/
+
+# Database
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
 data/
+
+# Environment
 .env
 .env.local
-.DS_Store
+.env.*.local
+
+# Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Temp
+tmp_*.txt
+*.backup
+
