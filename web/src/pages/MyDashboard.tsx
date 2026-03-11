@@ -27,6 +27,7 @@ function QuickLink({ to, label, desc, icon }: { to: string; label: string; desc:
 export default function MyDashboard() {
   const activeProject = useActiveProject();
   const currentUser = useCurrentUser();
+  const { t, locale } = useI18n();
 
   const { data: myOverview } = useQuery({
     queryKey: ['my-overview', activeProject, currentUser],
