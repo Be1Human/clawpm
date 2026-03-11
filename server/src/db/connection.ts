@@ -301,4 +301,8 @@ function runMigrations(sqlite: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_intake_project_status ON intake_items(project_id, status);
   `);
+
+  // v4.0 迁移：members 新增 role / onboarded_at 字段
+  try { sqlite.exec(`ALTER TABLE members ADD COLUMN role TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE members ADD COLUMN onboarded_at TEXT`); } catch {}
 }

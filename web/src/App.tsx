@@ -21,20 +21,32 @@ import IterationDetail from './pages/IterationDetail';
 import Archive from './pages/Archive';
 import IntakeSubmit from './pages/IntakeSubmit';
 import IntakeList from './pages/IntakeList';
+import Onboarding from './pages/Onboarding';
+import { isOnboarded, getCurrentUser } from './lib/useCurrentUser';
 
 function LayoutWrapper() {
   return <Layout><Outlet /></Layout>;
+}
+
+function OnboardingGuard() {
+  const onboarded = isOnboarded();
+  const currentUser = getCurrentUser();
+  if (!onboarded || !currentUser) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <LayoutWrapper />;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 公开页面（无侧边栏） */}
+        {/* 公开页面（无侧边栏、无需引导） */}
         <Route path="/intake/submit" element={<IntakeSubmit />} />
+        <Route path="/onboarding" element={<Onboarding />} />
 
-        {/* 需要 Layout 的页面 */}
-        <Route element={<LayoutWrapper />}>
+        {/* 需要完成 Onboarding 才能访问的页面 */}
+        <Route element={<OnboardingGuard />}>
           {/* 默认入口 → 个人仪表盘 */}
           <Route path="/" element={<Navigate to="/my/dashboard" replace />} />
 

@@ -460,6 +460,14 @@ export async function registerRoutes(app: FastifyInstance) {
     return MemberService.list(q.type, projectId);
   });
 
+  app.get('/api/v1/members/check-identifier', async (req) => {
+    const q = req.query as any;
+    const identifier = q.identifier as string;
+    if (!identifier) return { available: false, reason: 'empty' };
+    const existing = MemberService.getByIdentifier(identifier);
+    return existing ? { available: false, reason: 'already_taken' } : { available: true };
+  });
+
   app.post('/api/v1/members', async (req, reply) => {
     const projectId = getProjectId(req);
     const m = MemberService.create({ ...(req.body as any), projectId });

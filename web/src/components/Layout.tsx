@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useActiveSpace, type Space } from '@/lib/useActiveSpace';
-import { useCurrentUser, clearCurrentUser } from '@/lib/useCurrentUser';
+import { useCurrentUser, clearCurrentUser, isOnboarded, clearOnboarded } from '@/lib/useCurrentUser';
 import { useRecentTasks } from '@/lib/useRecentTasks';
 import { useFavorites } from '@/lib/useFavorites';
 import { api, setActiveProject } from '@/api/client';
@@ -310,16 +310,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
   const currentMember = (members as any[]).find((m: any) => m.identifier === currentUser);
 
-  // Auto-show identity picker on first visit if no identity set,
-  // or if current user identifier no longer exists in members list
+  // Auto-show identity picker only for users who completed onboarding but want to switch identity.
+  // First-time setup is now handled by the /onboarding page.
+  // Only show if identifier becomes stale (member deleted from project).
   useEffect(() => {
-    if ((members as any[]).length > 0) {
-      if (!currentUser) {
-        setShowIdentityPicker(true);
-      } else if (!(members as any[]).find((m: any) => m.identifier === currentUser)) {
-        // stored identifier not found in current project members — clear stale value
+    if ((members as any[]).length > 0 && currentUser && isOnboarded()) {
+      if (!(members as any[]).find((m: any) => m.identifier === currentUser)) {
+        // stored identifier not found in current project members — reset and re-onboard
         clearCurrentUser();
-        setShowIdentityPicker(true);
+        clearOnboarded();
       }
     }
   }, [currentUser, members]);
@@ -388,9 +387,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 onChange={e => setNewProjectName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); if (e.key === 'Escape') setShowCreateProject(false); }}
                 placeholder={t('nav.projectNamePlaceholder')}
-                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               />
-              <button onClick={handleCreateProject} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">{t('nav.confirm')}</button>
+              <button onClick={handleCreateProject} className="flex-shrink-0 text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">{t('nav.confirm')}</button>
             </div>
           ) : (
             <button

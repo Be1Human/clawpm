@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'clawpm-user';
+const ONBOARDED_KEY = 'clawpm-onboarded';
 const _listeners = new Set<() => void>();
 
 export function getCurrentUser(): string | null {
@@ -25,4 +26,16 @@ export function subscribeCurrentUser(listener: () => void): () => void {
 /** 响应式地读取当前用户 identifier，切换时自动重渲染 */
 export function useCurrentUser(): string | null {
   return useSyncExternalStore(subscribeCurrentUser, getCurrentUser);
+}
+
+export function isOnboarded(): boolean {
+  return localStorage.getItem(ONBOARDED_KEY) === 'true';
+}
+
+export function setOnboarded(): void {
+  localStorage.setItem(ONBOARDED_KEY, 'true');
+}
+
+export function clearOnboarded(): void {
+  localStorage.removeItem(ONBOARDED_KEY);
 }

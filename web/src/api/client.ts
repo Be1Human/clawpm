@@ -124,6 +124,8 @@ export const api = {
   createMember: (data: any) => request<any>(withProject('/members'), { method: 'POST', body: JSON.stringify(data) }),
   updateMember: (identifier: string, data: any) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
+  checkIdentifierAvailable: (identifier: string) =>
+    request<{ available: boolean; reason?: string }>(`/members/check-identifier?identifier=${encodeURIComponent(identifier)}`),
 
   // Gantt
   getGanttData: (params?: Record<string, string>) => {

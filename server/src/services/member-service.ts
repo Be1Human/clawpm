@@ -23,7 +23,7 @@ export const MemberService = {
     return this._withStats(m);
   },
 
-  create(params: { name: string; identifier: string; type?: string; color?: string; description?: string; projectId?: number }) {
+  create(params: { name: string; identifier: string; type?: string; color?: string; description?: string; role?: string; projectId?: number }) {
     const db = getDb();
     db.insert(members).values({
       name: params.name,
@@ -31,12 +31,13 @@ export const MemberService = {
       type: params.type || 'human',
       color: params.color || this._randomColor(),
       description: params.description,
+      role: params.role || null,
       projectId: params.projectId || 1,
     } as any).run();
     return this.getByIdentifier(params.identifier)!;
   },
 
-  update(identifier: string, params: Partial<{ name: string; type: string; color: string; description: string }>) {
+  update(identifier: string, params: Partial<{ name: string; type: string; color: string; description: string; role: string; onboardedAt: string }>) {
     const db = getDb();
     const m = db.select().from(members).where(eq(members.identifier, identifier)).get();
     if (!m) return null;
@@ -45,6 +46,8 @@ export const MemberService = {
     if (params.type !== undefined) updates.type = params.type;
     if (params.color !== undefined) updates.color = params.color;
     if (params.description !== undefined) updates.description = params.description;
+    if (params.role !== undefined) updates.role = params.role;
+    if (params.onboardedAt !== undefined) updates.onboarded_at = params.onboardedAt;
     db.update(members).set(updates as any).where(eq(members.identifier, identifier)).run();
     return this.getByIdentifier(identifier)!;
   },

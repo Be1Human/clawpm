@@ -180,6 +180,8 @@ export const members = sqliteTable('members', {
   type: text('type').notNull().default('human'),      // 'human' | 'agent'
   color: text('color').notNull().default('#6366f1'),
   description: text('description'),
+  role: text('role'),            // 'dev' | 'pm' | 'design' | 'mgr' | 'other'
+  onboardedAt: text('onboarded_at'), // ISO 8601 timestamp，完成 onboarding 的时间
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
 
