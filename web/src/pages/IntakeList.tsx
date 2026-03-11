@@ -1,28 +1,30 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { useI18n } from '@/lib/i18n';
 
-const CATEGORY_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: string }> = {
-  bug:      { label: 'Bug 报告',  color: '#dc2626', bgColor: '#fef2f2', icon: '🐛' },
-  feature:  { label: '功能建议', color: '#2563eb', bgColor: '#eff6ff', icon: '✨' },
-  feedback: { label: '一般反馈', color: '#6366f1', bgColor: '#eef2ff', icon: '💬' },
+const CATEGORY_CONFIG: Record<string, { labelKey: string; color: string; bgColor: string; icon: string }> = {
+  bug:      { labelKey: 'intake.catBug',      color: '#dc2626', bgColor: '#fef2f2', icon: '🐛' },
+  feature:  { labelKey: 'intake.catFeature',  color: '#2563eb', bgColor: '#eff6ff', icon: '✨' },
+  feedback: { labelKey: 'intake.catFeedback', color: '#6366f1', bgColor: '#eef2ff', icon: '💬' },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
-  pending:   { label: '待审核', color: '#f59e0b', bgColor: '#fffbeb' },
-  accepted:  { label: '已接受', color: '#16a34a', bgColor: '#f0fdf4' },
-  rejected:  { label: '已拒绝', color: '#dc2626', bgColor: '#fef2f2' },
-  deferred:  { label: '已暂缓', color: '#6366f1', bgColor: '#eef2ff' },
-  duplicate: { label: '重复',   color: '#64748b', bgColor: '#f1f5f9' },
+const STATUS_CONFIG: Record<string, { labelKey: string; color: string; bgColor: string }> = {
+  pending:   { labelKey: 'intake.statusPending',   color: '#f59e0b', bgColor: '#fffbeb' },
+  accepted:  { labelKey: 'intake.statusAccepted',  color: '#16a34a', bgColor: '#f0fdf4' },
+  rejected:  { labelKey: 'intake.statusRejected',  color: '#dc2626', bgColor: '#fef2f2' },
+  deferred:  { labelKey: 'intake.statusDeferred',  color: '#6366f1', bgColor: '#eef2ff' },
+  duplicate: { labelKey: 'intake.statusDuplicate', color: '#64748b', bgColor: '#f1f5f9' },
 };
 
 export default function IntakeList() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
-  // 审核面板状态
+  // Review panel state
   const [reviewAction, setReviewAction] = useState<string>('');
   const [reviewNote, setReviewNote] = useState('');
   const [parentTaskId, setParentTaskId] = useState('');
@@ -88,11 +90,11 @@ export default function IntakeList() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-5xl mx-auto">
-        {/* 页头 */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">收件箱</h1>
-            <p className="text-sm text-gray-500 mt-0.5">查看和审核外部提交的反馈</p>
+            <h1 className="text-xl font-bold text-gray-900">{t('intake.title')}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">{t('intake.subtitle')}</p>
           </div>
           <button
             onClick={() => {
@@ -101,11 +103,11 @@ export default function IntakeList() {
             }}
             className="px-3 py-1.5 text-xs bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors font-medium"
           >
-            复制提交链接
+            {t('intake.copyLink')}
           </button>
         </div>
 
-        {/* 统计卡片 */}
+        {/* Stats cards */}
         {stats && (
           <div className="grid grid-cols-5 gap-3 mb-6">
             {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
@@ -121,22 +123,22 @@ export default function IntakeList() {
                 <div className="text-2xl font-bold" style={{ color: cfg.color }}>
                   {(stats as any)[key] || 0}
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">{cfg.label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{t(cfg.labelKey)}</div>
               </button>
             ))}
           </div>
         )}
 
-        {/* 筛选栏 */}
+        {/* Filter bar */}
         <div className="flex gap-2 mb-4">
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
           >
-            <option value="">全部状态</option>
+            <option value="">{t('intake.allStatuses')}</option>
             {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
+              <option key={key} value={key}>{t(cfg.labelKey)}</option>
             ))}
           </select>
           <select
@@ -144,21 +146,21 @@ export default function IntakeList() {
             onChange={e => setCategoryFilter(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
           >
-            <option value="">全部类别</option>
+            <option value="">{t('intake.allCategories')}</option>
             {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+              <option key={key} value={key}>{cfg.icon} {t(cfg.labelKey)}</option>
             ))}
           </select>
         </div>
 
-        {/* 列表 */}
+        {/* List */}
         <div className="space-y-2">
           {isLoading ? (
-            <div className="text-center text-gray-400 py-12">加载中...</div>
+            <div className="text-center text-gray-400 py-12">{t('common.loading')}</div>
           ) : items.length === 0 ? (
             <div className="text-center text-gray-400 py-12">
               <div className="text-4xl mb-2">📮</div>
-              <p>暂无收件箱条目</p>
+              <p>{t('intake.noItems')}</p>
             </div>
           ) : (
             items.map((item: any) => {
@@ -181,13 +183,13 @@ export default function IntakeList() {
                             className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                             style={{ color: cat.color, backgroundColor: cat.bgColor }}
                           >
-                            {cat.icon} {cat.label}
+                            {cat.icon} {t(cat.labelKey)}
                           </span>
                           <span
                             className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                             style={{ color: st.color, backgroundColor: st.bgColor }}
                           >
-                            {st.label}
+                            {t(st.labelKey)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
                             {item.priority}
@@ -195,9 +197,9 @@ export default function IntakeList() {
                         </div>
                         <h3 className="text-sm font-medium text-gray-900 truncate">{item.title}</h3>
                         <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-                          <span>提交人: {item.submitter}</span>
-                          <span>{new Date(item.createdAt).toLocaleString('zh-CN')}</span>
-                          {item.reviewedBy && <span>审核人: {item.reviewedBy}</span>}
+                          <span>{t('intake.submitter')}: {item.submitter}</span>
+                          <span>{new Date(item.createdAt).toLocaleString()}</span>
+                          {item.reviewedBy && <span>{t('intake.reviewer')}: {item.reviewedBy}</span>}
                           {item.taskId && (
                             <span className="text-indigo-500 font-medium">→ {item.taskId}</span>
                           )}
@@ -212,32 +214,32 @@ export default function IntakeList() {
                     </div>
                   </button>
 
-                  {/* 展开详情 + 审核面板 */}
+                  {/* Detail + Review panel */}
                   {isSelected && (
                     <div className="bg-white border border-t-0 rounded-b-xl p-4 -mt-1" style={{ borderColor: '#6366f1' }}>
-                      {/* 描述 */}
+                      {/* Description */}
                       {item.description && (
                         <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap">
                           {item.description}
                         </div>
                       )}
 
-                      {/* 审核备注 */}
+                      {/* Review note */}
                       {item.reviewNote && (
                         <div className="mb-4 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
-                          <span className="font-medium">审核备注：</span>{item.reviewNote}
+                          <span className="font-medium">{t('intake.reviewNote')}:</span> {item.reviewNote}
                         </div>
                       )}
 
-                      {/* 操作按钮（仅 pending 和 deferred） */}
+                      {/* Actions (pending only) */}
                       {item.status === 'pending' && (
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             {[
-                              { action: 'accept', label: '接受', color: '#16a34a', bg: '#f0fdf4' },
-                              { action: 'reject', label: '拒绝', color: '#dc2626', bg: '#fef2f2' },
-                              { action: 'defer',  label: '暂缓', color: '#6366f1', bg: '#eef2ff' },
-                              { action: 'duplicate', label: '重复', color: '#64748b', bg: '#f1f5f9' },
+                              { action: 'accept', labelKey: 'intake.accept', color: '#16a34a', bg: '#f0fdf4' },
+                              { action: 'reject', labelKey: 'intake.reject', color: '#dc2626', bg: '#fef2f2' },
+                              { action: 'defer',  labelKey: 'intake.defer',  color: '#6366f1', bg: '#eef2ff' },
+                              { action: 'duplicate', labelKey: 'intake.duplicate', color: '#64748b', bg: '#f1f5f9' },
                             ].map(btn => (
                               <button
                                 key={btn.action}
@@ -249,46 +251,46 @@ export default function IntakeList() {
                                   color: reviewAction === btn.action ? btn.color : '#6b7280',
                                 }}
                               >
-                                {btn.label}
+                                {t(btn.labelKey)}
                               </button>
                             ))}
                           </div>
 
                           {reviewAction && (
                             <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
-                              {/* 接受时的额外配置 */}
+                              {/* Accept extra config */}
                               {reviewAction === 'accept' && (
                                 <div className="grid grid-cols-3 gap-3">
                                   <div>
-                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">父节点</label>
+                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">{t('intake.parentNode')}</label>
                                     <input
                                       value={parentTaskId}
                                       onChange={e => setParentTaskId(e.target.value)}
-                                      placeholder="如 FE-1"
+                                      placeholder={t('intake.parentPlaceholder')}
                                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                                     />
                                   </div>
                                   <div>
-                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">负责人</label>
+                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">{t('intake.owner')}</label>
                                     <select
                                       value={owner}
                                       onChange={e => setOwner(e.target.value)}
                                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
                                     >
-                                      <option value="">不指定</option>
+                                      <option value="">{t('intake.unspecified')}</option>
                                       {(members as any[]).map((m: any) => (
                                         <option key={m.identifier} value={m.identifier}>{m.name}</option>
                                       ))}
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">优先级</label>
+                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">{t('intake.priority')}</label>
                                     <select
                                       value={reviewPriority}
                                       onChange={e => setReviewPriority(e.target.value)}
                                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
                                     >
-                                      <option value="">保持原值</option>
+                                      <option value="">{t('intake.keepOriginal')}</option>
                                       {['P0', 'P1', 'P2', 'P3'].map(p => (
                                         <option key={p} value={p}>{p}</option>
                                       ))}
@@ -297,15 +299,15 @@ export default function IntakeList() {
                                 </div>
                               )}
 
-                              {/* 审核备注 */}
+                              {/* Review note */}
                               <div>
                                 <label className="block text-[11px] font-medium text-gray-500 mb-1">
-                                  审核备注 {reviewAction === 'reject' && <span className="text-red-500">*</span>}
+                                  {t('intake.reviewNote')} {reviewAction === 'reject' && <span className="text-red-500">*</span>}
                                 </label>
                                 <textarea
                                   value={reviewNote}
                                   onChange={e => setReviewNote(e.target.value)}
-                                  placeholder={reviewAction === 'reject' ? '请填写拒绝理由' : '可选备注'}
+                                  placeholder={reviewAction === 'reject' ? t('intake.rejectReasonPlaceholder') : t('intake.optionalNote')}
                                   rows={2}
                                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-none"
                                 />
@@ -317,7 +319,7 @@ export default function IntakeList() {
                                   disabled={reviewMutation.isPending || (reviewAction === 'reject' && !reviewNote.trim())}
                                   className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
-                                  {reviewMutation.isPending ? '处理中...' : '确认'}
+                                  {reviewMutation.isPending ? t('intake.processing') : t('common.confirm')}
                                 </button>
                               </div>
                             </div>
@@ -325,14 +327,14 @@ export default function IntakeList() {
                         </div>
                       )}
 
-                      {/* deferred 状态可恢复 */}
+                      {/* Deferred can be reopened */}
                       {item.status === 'deferred' && (
                         <button
                           onClick={() => reopenMutation.mutate(item.intakeId)}
                           disabled={reopenMutation.isPending}
                           className="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
                         >
-                          {reopenMutation.isPending ? '处理中...' : '重新打开审核'}
+                          {reopenMutation.isPending ? t('intake.processing') : t('intake.reopen')}
                         </button>
                       )}
                     </div>

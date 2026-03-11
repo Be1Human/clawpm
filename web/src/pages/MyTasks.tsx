@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { cn } from '../lib/utils';
 import { useActiveProject } from '../lib/useActiveProject';
 import { useCurrentUser } from '../lib/useCurrentUser';
+import { useI18n } from '@/lib/i18n';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -28,12 +29,12 @@ import '@xyflow/react/dist/style.css';
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string; pill: string; bg: string; border: string }> = {
-  backlog: { label: '未排期', dot: 'bg-slate-400',   text: 'text-slate-500',  pill: 'bg-slate-100 text-slate-600', bg: '#f1f5f9', border: '#94a3b8' },
-  planned: { label: '未开始', dot: 'bg-blue-400',    text: 'text-blue-500',   pill: 'bg-blue-50 text-blue-600', bg: '#dbeafe', border: '#60a5fa' },
-  active:  { label: '进行中', dot: 'bg-indigo-500',  text: 'text-indigo-500', pill: 'bg-indigo-50 text-indigo-600', bg: '#e0e7ff', border: '#6366f1' },
-  review:  { label: '验收中', dot: 'bg-amber-500',   text: 'text-amber-500',  pill: 'bg-amber-50 text-amber-600', bg: '#fef3c7', border: '#f59e0b' },
-  done:    { label: '已完成', dot: 'bg-emerald-500', text: 'text-emerald-500', pill: 'bg-emerald-50 text-emerald-600', bg: '#d1fae5', border: '#10b981' },
+const STATUS_CONFIG: Record<string, { labelKey: string; dot: string; text: string; pill: string; bg: string; border: string }> = {
+  backlog: { labelKey: 'status.backlog', dot: 'bg-slate-400',   text: 'text-slate-500',  pill: 'bg-slate-100 text-slate-600', bg: '#f1f5f9', border: '#94a3b8' },
+  planned: { labelKey: 'status.planned', dot: 'bg-blue-400',    text: 'text-blue-500',   pill: 'bg-blue-50 text-blue-600', bg: '#dbeafe', border: '#60a5fa' },
+  active:  { labelKey: 'status.active',  dot: 'bg-indigo-500',  text: 'text-indigo-500', pill: 'bg-indigo-50 text-indigo-600', bg: '#e0e7ff', border: '#6366f1' },
+  review:  { labelKey: 'status.review',  dot: 'bg-amber-500',   text: 'text-amber-500',  pill: 'bg-amber-50 text-amber-600', bg: '#fef3c7', border: '#f59e0b' },
+  done:    { labelKey: 'status.done',    dot: 'bg-emerald-500', text: 'text-emerald-500', pill: 'bg-emerald-50 text-emerald-600', bg: '#d1fae5', border: '#10b981' },
 };
 
 const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
@@ -111,10 +112,11 @@ function flattenMyNodes(nodes: any[], owner: string): any[] {
 // ═══════════════════════════════════════════════════════════════════
 
 function MyTreeNodeRow({
-  node, depth, expanded, hasChildren, onToggle, isMine, breadcrumb, onAdvanceStatus,
+  node, depth, expanded, hasChildren, onToggle, isMine, breadcrumb, onAdvanceStatus, t,
 }: {
   node: any; depth: number; expanded: boolean; hasChildren: boolean;
   onToggle: () => void; isMine: boolean; breadcrumb: string[]; onAdvanceStatus: () => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const labels = getLabels(node);
   const sc = STATUS_CONFIG[node.status] || STATUS_CONFIG.backlog;
@@ -184,7 +186,7 @@ function MyTreeNodeRow({
         )}
 
         <span className={cn('text-xs flex-shrink-0 w-14 text-right', sc.text)}>
-          {sc.label}
+          {t(sc.labelKey)}
         </span>
 
         {isMine && (
@@ -203,7 +205,7 @@ function MyTreeNodeRow({
           <button
             onClick={e => { e.stopPropagation(); onAdvanceStatus(); }}
             className="flex-shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-md text-indigo-500 hover:bg-indigo-100 transition-all cursor-pointer"
-            title={`推进到 ${STATUS_CONFIG[NEXT_STATUS[node.status]]?.label}`}
+            title={t('myTasks.advanceTo', { status: t(STATUS_CONFIG[NEXT_STATUS[node.status]]?.labelKey) })}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 7h8M8 4l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
@@ -216,10 +218,11 @@ function MyTreeNodeRow({
 }
 
 function MyTreeNode({
-  node, depth = 0, currentUser, allNodesMap, onAdvanceStatus,
+  node, depth = 0, currentUser, allNodesMap, onAdvanceStatus, t,
 }: {
   node: any; depth?: number; currentUser: string; allNodesMap: Map<number, any>;
   onAdvanceStatus: (taskId: string, nextStatus: string) => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const [expanded, setExpanded] = useState(true);
   const children: any[] = node.children || [];
@@ -238,13 +241,14 @@ function MyTreeNode({
           const next = NEXT_STATUS[node.status];
           if (next) onAdvanceStatus(node.taskId, next);
         }}
+        t={t}
       />
       {expanded && hasChildren && (
         <div>
           {children.map((child: any) => (
             <MyTreeNode key={child.id} node={child} depth={depth + 1}
               currentUser={currentUser} allNodesMap={allNodesMap}
-              onAdvanceStatus={onAdvanceStatus} />
+              onAdvanceStatus={onAdvanceStatus} t={t} />
           ))}
         </div>
       )}
@@ -253,27 +257,29 @@ function MyTreeNode({
 }
 
 function MyTasksTreeView({
-  tree, currentUser, allNodesMap, onAdvanceStatus, isLoading,
+  tree, currentUser, allNodesMap, onAdvanceStatus, isLoading, t,
 }: {
   tree: any[]; currentUser: string; allNodesMap: Map<number, any>;
   onAdvanceStatus: (taskId: string, nextStatus: string) => void; isLoading: boolean;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2">
       {isLoading ? (
-        <div className="py-12 text-center text-gray-400 text-sm">加载中...</div>
+        <div className="py-12 text-center text-gray-400 text-sm">{t('common.loading')}</div>
       ) : tree.length === 0 ? (
-        <EmptyState currentUser={currentUser} />
+        <EmptyState currentUser={currentUser} t={t} />
       ) : (
         tree.map((node: any) => (
-          <MyTreeNode
-            key={node.id}
-            node={node}
-            depth={0}
-            currentUser={currentUser}
-            allNodesMap={allNodesMap}
-            onAdvanceStatus={onAdvanceStatus}
-          />
+            <MyTreeNode
+              key={node.id}
+              node={node}
+              depth={0}
+              currentUser={currentUser}
+              allNodesMap={allNodesMap}
+              onAdvanceStatus={onAdvanceStatus}
+              t={t}
+            />
         ))
       )}
     </div>
@@ -281,14 +287,15 @@ function MyTasksTreeView({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Flat View (NEW - 按状态分组平铺)
+// Flat View (NEW - grouped by status)
 // ═══════════════════════════════════════════════════════════════════
 
 function MyTasksFlatView({
-  tree, currentUser, onAdvanceStatus, isLoading,
+  tree, currentUser, onAdvanceStatus, isLoading, t,
 }: {
   tree: any[]; currentUser: string;
   onAdvanceStatus: (taskId: string, nextStatus: string) => void; isLoading: boolean;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const myNodes = useMemo(() => flattenMyNodes(tree, currentUser), [tree, currentUser]);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['done']));
@@ -312,8 +319,8 @@ function MyTasksFlatView({
     });
   };
 
-  if (isLoading) return <div className="py-12 text-center text-gray-400 text-sm">加载中...</div>;
-  if (myNodes.length === 0) return <EmptyState currentUser={currentUser} />;
+  if (isLoading) return <div className="py-12 text-center text-gray-400 text-sm">{t('common.loading')}</div>;
+  if (myNodes.length === 0) return <EmptyState currentUser={currentUser} t={t} />;
 
   return (
     <div className="space-y-4">
@@ -330,14 +337,14 @@ function MyTasksFlatView({
             >
               <span className={cn('text-xs transition-transform', collapsed ? '' : 'rotate-90')}>▶</span>
               <div className={cn('w-2.5 h-2.5 rounded-full', sc.dot)} />
-              <span className="text-sm font-semibold text-gray-800">{sc.label}</span>
+              <span className="text-sm font-semibold text-gray-800">{t(sc.labelKey)}</span>
               <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', sc.pill)}>{items.length}</span>
             </button>
 
             {!collapsed && items.length > 0 && (
               <div className={cn('border-t border-gray-100', status === 'done' && 'opacity-60')}>
                 {items.map(node => (
-                  <FlatTaskCard key={node.id} node={node} onAdvanceStatus={onAdvanceStatus} />
+                  <FlatTaskCard key={node.id} node={node} onAdvanceStatus={onAdvanceStatus} t={t} />
                 ))}
               </div>
             )}
@@ -348,7 +355,7 @@ function MyTasksFlatView({
   );
 }
 
-function FlatTaskCard({ node, onAdvanceStatus }: { node: any; onAdvanceStatus: (taskId: string, nextStatus: string) => void }) {
+function FlatTaskCard({ node, onAdvanceStatus, t }: { node: any; onAdvanceStatus: (taskId: string, nextStatus: string) => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const labels = getLabels(node);
   const canAdvance = NEXT_STATUS[node.status];
   const now = new Date().toISOString().slice(0, 10);
@@ -395,7 +402,7 @@ function FlatTaskCard({ node, onAdvanceStatus }: { node: any; onAdvanceStatus: (
         <button
           onClick={e => { e.preventDefault(); e.stopPropagation(); onAdvanceStatus(node.taskId, NEXT_STATUS[node.status]); }}
           className="flex-shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-md text-indigo-500 hover:bg-indigo-100 transition-all cursor-pointer"
-          title={`推进到 ${STATUS_CONFIG[NEXT_STATUS[node.status]]?.label}`}
+          title={t('myTasks.advanceTo', { status: t(STATUS_CONFIG[NEXT_STATUS[node.status]]?.labelKey) })}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 7h8M8 4l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
@@ -407,7 +414,7 @@ function FlatTaskCard({ node, onAdvanceStatus }: { node: any; onAdvanceStatus: (
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MindMap View (ReactFlow 思维导图 — 专业树形布局)
+// MindMap View (ReactFlow mind map — tree layout)
 // ═══════════════════════════════════════════════════════════════════
 
 const MM_NODE_W = 200;
@@ -416,7 +423,7 @@ const MM_H_GAP = 72;
 const MM_V_GAP = 16;
 const MM_ROOT_GAP = 40;
 
-// ── 布局算法（支持折叠）────────────────────────────────────────────
+// ── Layout algorithm (supports collapse) ────────────────────────────
 
 type MmFilterFn = (node: any) => boolean;
 const MM_ALWAYS_VISIBLE: MmFilterFn = () => true;
@@ -483,7 +490,7 @@ function mmComputeLayout(roots: any[], collapsed: Set<string>, isVisible: MmFilt
     topY += mmSubtreeH(root, collapsed, isVisible) + MM_ROOT_GAP;
   }
 
-  // 虚拟根节点居中
+  // Center virtual root node
   if (visibleRoots.length > 0) {
     const positions = [...pos.values()];
     const minY = Math.min(...positions.map(p => p.y));
@@ -496,7 +503,7 @@ function mmComputeLayout(roots: any[], collapsed: Set<string>, isVisible: MmFilt
   return pos;
 }
 
-// ── 个人思维导图筛选 ────────────────────────────────────────────
+// ── Personal mind map filters ────────────────────────────────────
 interface MmFilters {
   status: Set<string>;
   priority: Set<string>;
@@ -540,7 +547,7 @@ function mmHasVisibleDescendant(node: any, f: MmFilters): boolean {
   return false;
 }
 
-// ── 贝塞尔曲线树形边 ─────────────────────────────────────────────
+// ── Bezier tree edge ─────────────────────────────────────────────
 
 function MyMindMapTreeEdge({ sourceX, sourceY, targetX, targetY }: EdgeProps) {
   const dx = (targetX - sourceX) * 0.5;
@@ -548,7 +555,7 @@ function MyMindMapTreeEdge({ sourceX, sourceY, targetX, targetY }: EdgeProps) {
   return <path d={d} fill="none" stroke="#c7d2fe" strokeWidth={2} />;
 }
 
-// ── 进度圆环 ────────────────────────────────────────────────────
+// ── Progress ring ────────────────────────────────────────────────
 
 function MmProgressRing({ progress, size = 20 }: { progress: number; size?: number }) {
   const r = (size - 3) / 2;
@@ -575,7 +582,7 @@ function MmProgressRing({ progress, size = 20 }: { progress: number; size?: numb
   );
 }
 
-// ── 虚拟根节点 ────────────────────────────────────────────────────
+// ── Virtual root node ────────────────────────────────────────────
 
 function MmRootNode({ data }: NodeProps) {
   return (
@@ -595,7 +602,7 @@ function MmRootNode({ data }: NodeProps) {
   );
 }
 
-// ── 任务节点 ────────────────────────────────────────────────────
+// ── Task node ────────────────────────────────────────────────────
 
 function MmTaskNode({ data, selected }: NodeProps) {
   const task = (data as any).task;
@@ -629,11 +636,11 @@ function MmTaskNode({ data, selected }: NodeProps) {
         overflow: 'visible',
       }}
     >
-      {/* 左侧色条 */}
+      {/* Left color bar */}
       <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: sc.border }} />
 
       <div className="pl-4 pr-8 py-2">
-        {/* 标签 */}
+        {/* Labels */}
         {labels.length > 0 && (
           <div className="flex items-center gap-1 mb-1">
             {labels.slice(0, 2).map((l: string) => {
@@ -648,10 +655,10 @@ function MmTaskNode({ data, selected }: NodeProps) {
           </div>
         )}
 
-        {/* 标题 */}
+        {/* Title */}
         <p className="text-[12px] font-semibold text-gray-800 leading-snug line-clamp-2">{task.title}</p>
 
-        {/* 底部 meta */}
+        {/* Bottom meta */}
         <div className="flex items-center justify-between mt-1">
           <span className="text-[10px] font-mono text-indigo-400">{task.taskId}</span>
           <div className="flex items-center gap-1.5">
@@ -661,18 +668,18 @@ function MmTaskNode({ data, selected }: NodeProps) {
         </div>
       </div>
 
-      {/* 进度圆环 */}
+      {/* Progress ring */}
       <div className="absolute right-1.5 bottom-1.5">
         <MmProgressRing progress={progress} size={20} />
       </div>
 
-      {/* 右侧：折叠/展开按钮 */}
+      {/* Right: collapse/expand button */}
       {hasChildren && (
         <button
           className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-300 text-gray-500 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[11px] shadow-sm z-10 transition-colors cursor-pointer"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onToggleCollapse?.(task.taskId); }}
-          title={isCollapsed ? `展开 (${task.children.length} 个子节点)` : '折叠'}
+          title={isCollapsed ? `${(data as any).expandLabel} (${task.children.length})` : (data as any).collapseLabel}
         >
           {isCollapsed ? '▶' : '▼'}
         </button>
@@ -691,6 +698,7 @@ function buildMyMindMapFlow(
   tree: any[], currentUser: string, collapsed: Set<string>,
   onToggleCollapse: (taskId: string) => void,
   focusNodeId?: string | null, filters: MmFilters = EMPTY_MM_FILTERS,
+  t?: (key: string, vars?: Record<string, string | number>) => string,
 ) {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -700,7 +708,7 @@ function buildMyMindMapFlow(
     : MM_ALWAYS_VISIBLE;
   const positions = mmComputeLayout(tree, collapsed, isVisible);
 
-  // 虚拟根节点
+  // Virtual root node
   const rootPos = positions.get('__root__') || { x: 0, y: 0 };
   nodes.push({
     id: '__root__',
@@ -726,6 +734,8 @@ function buildMyMindMapFlow(
         isCollapsed: collapsed.has(id),
         isFocused: focusNodeId === id,
         onToggleCollapse,
+        expandLabel: t ? t('myTasks.expand', { count: (node.children ?? []).length }) : 'Expand',
+        collapseLabel: t ? t('myTasks.collapse') : 'Collapse',
       },
       draggable: false,
     });
@@ -754,9 +764,10 @@ function buildMyMindMapFlow(
 }
 
 function MyTasksMindMapCanvas({
-  tree, currentUser, isLoading, focusNodeId,
+  tree, currentUser, isLoading, focusNodeId, t,
 }: {
   tree: any[]; currentUser: string; isLoading: boolean; focusNodeId?: string | null;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const navigate = useNavigate();
   const { fitView, setCenter } = useReactFlow();
@@ -767,7 +778,7 @@ function MyTasksMindMapCanvas({
   const [nodes, setNodes] = useNodesState<Node>([]);
   const [edges, setEdges] = useEdgesState<Edge>([]);
 
-  // 折叠/展开回调（传给节点按钮）
+  // Collapse/expand callback (passed to node buttons)
   const onToggleCollapse = useCallback((taskId: string) => {
     setCollapsed(prev => {
       const next = new Set(prev);
@@ -776,7 +787,7 @@ function MyTasksMindMapCanvas({
     });
   }, []);
 
-  // 从树数据中收集所有标签
+  // Collect all labels from tree data
   const allLabels = useMemo(() => {
     const set = new Set<string>();
     function collect(node: any) {
@@ -788,18 +799,18 @@ function MyTasksMindMapCanvas({
     return [...set].sort();
   }, [tree]);
 
-  // 当 tree / collapsed / filters / focusNodeId 变化时重建图并定位
+  // Rebuild flow and position when tree / collapsed / filters / focusNodeId change
   useEffect(() => {
     if (!tree.length) {
       setNodes([]);
       setEdges([]);
       return;
     }
-    const { nodes: ns, edges: es } = buildMyMindMapFlow(tree, currentUser, collapsed, onToggleCollapse, focusNodeId, filters);
+    const { nodes: ns, edges: es } = buildMyMindMapFlow(tree, currentUser, collapsed, onToggleCollapse, focusNodeId, filters, t);
     setNodes(ns);
     setEdges(es);
 
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if (focusNodeId) {
         const focusNode = ns.find(n => n.id === focusNodeId);
         if (focusNode) {
@@ -813,18 +824,18 @@ function MyTasksMindMapCanvas({
       }
       fitView({ padding: 0.25, duration: 200 });
     }, 50);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [tree, currentUser, collapsed, focusNodeId, filters, onToggleCollapse, setNodes, setEdges, fitView, setCenter]);
 
   const onNodeClick = useCallback((_: any, node: Node) => {
-    // 单击：跳转到任务详情
+    // Click: navigate to task detail
     if (node.id === '__root__') return;
     const task = (node.data as any)?.task;
     if (task?.taskId) navigate(`/tasks/${task.taskId}`);
   }, [navigate]);
 
   const onNodeDoubleClick = useCallback((_: any, node: Node) => {
-    // 双击：折叠/展开
+    // Double-click: collapse/expand
     if (node.id === '__root__') return;
     const task = (node.data as any)?.task;
     if (task?.taskId && (task.children ?? []).length > 0) {
@@ -836,8 +847,8 @@ function MyTasksMindMapCanvas({
     + (filters.label ? 1 : 0) + (filters.search ? 1 : 0)
     + (filters.dueDateFrom ? 1 : 0) + (filters.dueDateTo ? 1 : 0);
 
-  if (isLoading) return <div className="py-12 text-center text-gray-400 text-sm">加载中...</div>;
-  if (!tree.length) return <EmptyState currentUser={currentUser} />;
+  if (isLoading) return <div className="py-12 text-center text-gray-400 text-sm">{t('common.loading')}</div>;
+  if (!tree.length) return <EmptyState currentUser={currentUser} t={t} />;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
@@ -871,7 +882,7 @@ function MyTasksMindMapCanvas({
           zoomable
         />
 
-        {/* 筛选切换按钮 */}
+        {/* Filter toggle button */}
         <Panel position="top-right">
           <div className="flex flex-col gap-2 items-end">
             <button
@@ -886,42 +897,42 @@ function MyTasksMindMapCanvas({
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M1.5 3h11M3.5 7h7M5.5 11h3" strokeLinecap="round" />
               </svg>
-              筛选
+              {t('myTasks.filterLabel')}
               {activeFilterCount > 0 && (
                 <span className="bg-white/20 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{activeFilterCount}</span>
               )}
             </button>
 
-            {/* 筛选面板 */}
+            {/* Filter panel */}
             {showFilters && (
               <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-lg px-4 py-3 w-64">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-gray-700">筛选条件</p>
+                  <p className="text-xs font-semibold text-gray-700">{t('myTasks.filterConditions')}</p>
                   {activeFilterCount > 0 && (
                     <button
                       onClick={() => setFilters({ ...EMPTY_MM_FILTERS, status: new Set(), priority: new Set() })}
                       className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
                     >
-                      清除全部
+                      {t('myTasks.clearAll')}
                     </button>
                   )}
                 </div>
                 <div className="space-y-3 max-h-[420px] overflow-y-auto">
-                  {/* 搜索 */}
+                  {/* Search */}
                   <div>
-                    <label className="text-[11px] text-gray-500 mb-1 block">搜索</label>
+                    <label className="text-[11px] text-gray-500 mb-1 block">{t('myTasks.searchLabel')}</label>
                     <input
                       type="text"
                       value={filters.search}
                       onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                      placeholder="标题或 ID..."
+                      placeholder={t('myTasks.searchPlaceholder')}
                       className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
                     />
                   </div>
 
-                  {/* 状态 */}
+                  {/* Status */}
                   <div>
-                    <label className="text-[11px] text-gray-500 mb-1.5 block">状态</label>
+                    <label className="text-[11px] text-gray-500 mb-1.5 block">{t('myTasks.statusLabel')}</label>
                     <div className="flex flex-wrap gap-1">
                       {Object.entries(STATUS_CONFIG).map(([s, cfg]) => {
                         const on = filters.status.has(s);
@@ -935,16 +946,16 @@ function MyTasksMindMapCanvas({
                               on ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-gray-50 text-gray-500 border-gray-100 hover:text-gray-700')}
                           >
                             <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
-                            {cfg.label}
+                            {t(cfg.labelKey)}
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* 优先级 */}
+                  {/* Priority */}
                   <div>
-                    <label className="text-[11px] text-gray-500 mb-1.5 block">优先级</label>
+                    <label className="text-[11px] text-gray-500 mb-1.5 block">{t('myTasks.priorityLabel')}</label>
                     <div className="flex flex-wrap gap-1">
                       {['P0', 'P1', 'P2', 'P3'].map(p => {
                         const on = filters.priority.has(p);
@@ -966,10 +977,10 @@ function MyTasksMindMapCanvas({
                     </div>
                   </div>
 
-                  {/* 标签 */}
+                  {/* Labels */}
                   {allLabels.length > 0 && (
                     <div>
-                      <label className="text-[11px] text-gray-500 mb-1.5 block">标签</label>
+                      <label className="text-[11px] text-gray-500 mb-1.5 block">{t('myTasks.labelsLabel')}</label>
                       <div className="flex flex-wrap gap-1">
                         {allLabels.map(l => {
                           const on = filters.label === l;
@@ -988,9 +999,9 @@ function MyTasksMindMapCanvas({
                     </div>
                   )}
 
-                  {/* 截止日期 */}
+                  {/* Due Date */}
                   <div>
-                    <label className="text-[11px] text-gray-500 mb-1.5 block">截止日期</label>
+                    <label className="text-[11px] text-gray-500 mb-1.5 block">{t('myTasks.dueDateLabel')}</label>
                     <div className="flex items-center gap-1">
                       <input type="date" value={filters.dueDateFrom}
                         onChange={e => setFilters(prev => ({ ...prev, dueDateFrom: e.target.value }))}
@@ -1007,12 +1018,12 @@ function MyTasksMindMapCanvas({
           </div>
         </Panel>
 
-        {/* 快捷键提示 */}
+        {/* Shortcut hints */}
         <Panel position="bottom-center">
           <div className="flex items-center gap-4 bg-white/90 backdrop-blur border border-gray-200 px-4 py-2 rounded-full shadow-sm text-xs text-gray-500">
-            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">单击</kbd> 打开详情</span>
-            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">双击</kbd> 折叠/展开</span>
-            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">▶ ▼</kbd> 按钮折叠</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Click</kbd> {t('myTasks.clickDetail')}</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Dbl</kbd> {t('myTasks.dblClickCollapse')}</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">▶ ▼</kbd> {t('myTasks.btnCollapse')}</span>
           </div>
         </Panel>
       </ReactFlow>
@@ -1021,13 +1032,14 @@ function MyTasksMindMapCanvas({
 }
 
 function MyTasksMindMapView({
-  tree, currentUser, isLoading, focusNodeId,
+  tree, currentUser, isLoading, focusNodeId, t,
 }: {
   tree: any[]; currentUser: string; isLoading: boolean; focusNodeId?: string | null;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
     <ReactFlowProvider>
-      <MyTasksMindMapCanvas tree={tree} currentUser={currentUser} isLoading={isLoading} focusNodeId={focusNodeId} />
+      <MyTasksMindMapCanvas tree={tree} currentUser={currentUser} isLoading={isLoading} focusNodeId={focusNodeId} t={t} />
     </ReactFlowProvider>
   );
 }
@@ -1036,7 +1048,7 @@ function MyTasksMindMapView({
 // Shared Components
 // ═══════════════════════════════════════════════════════════════════
 
-function EmptyState({ currentUser }: { currentUser: string }) {
+function EmptyState({ currentUser, t }: { currentUser: string; t: (key: string, vars?: Record<string, string | number>) => string }) {
   return (
     <div className="py-16 text-center">
       <div className="mb-4 opacity-20">
@@ -1047,8 +1059,8 @@ function EmptyState({ currentUser }: { currentUser: string }) {
           <path d="M24 15v6M24 21l-12 8M24 21l12 8" strokeLinecap="round" />
         </svg>
       </div>
-      <p className="text-gray-500 text-sm">暂无分配给你的任务</p>
-      <p className="text-gray-400 text-xs mt-1">当有任务分配给 {currentUser} 时，你的需求子树将在这里展示</p>
+      <p className="text-gray-500 text-sm">{t('myTasks.noTasks')}</p>
+      <p className="text-gray-400 text-xs mt-1">{t('myTasks.noTasksHint', { user: currentUser })}</p>
     </div>
   );
 }
@@ -1099,10 +1111,10 @@ function MindMapIcon({ className }: { className?: string }) {
   );
 }
 
-const VIEW_OPTIONS: { mode: ViewMode; label: string; Icon: typeof FlatIcon }[] = [
-  { mode: 'flat', label: '平铺', Icon: FlatIcon },
-  { mode: 'tree', label: '树状', Icon: TreeIcon },
-  { mode: 'mindmap', label: '脑图', Icon: MindMapIcon },
+const VIEW_OPTIONS: { mode: ViewMode; labelKey: string; Icon: typeof FlatIcon }[] = [
+  { mode: 'flat', labelKey: 'myTasks.viewFlat', Icon: FlatIcon },
+  { mode: 'tree', labelKey: 'myTasks.viewTree', Icon: TreeIcon },
+  { mode: 'mindmap', labelKey: 'myTasks.viewMindmap', Icon: MindMapIcon },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1110,6 +1122,7 @@ const VIEW_OPTIONS: { mode: ViewMode; label: string; Icon: typeof FlatIcon }[] =
 // ═══════════════════════════════════════════════════════════════════
 
 export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMode }) {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const activeProject = useActiveProject();
   const currentUser = useCurrentUser();
@@ -1118,16 +1131,16 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
   const focusNodeId = searchParams.get('focus');
   const viewMode = defaultView;
 
-  // 清除 focus 参数的 animate-pulse（3秒后停止高亮动画）
+  // Clear focus param animate-pulse (stop highlight animation after 3s)
   useEffect(() => {
     if (!focusNodeId) return;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const next = new URLSearchParams(searchParams);
       next.delete('focus');
       next.delete('view');
       setSearchParams(next, { replace: true });
     }, 4000);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [focusNodeId]);
 
   const { data: tree = [], isLoading } = useQuery({
@@ -1161,15 +1174,15 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
               <path d="M10 56c0-12.15 9.85-22 22-22s22 9.85 22 22" strokeLinecap="round" />
             </svg>
           </div>
-          <p className="text-gray-500 text-sm">请先在侧边栏底部选择你的身份</p>
-          <p className="text-gray-400 text-xs mt-1">选择身份后即可查看你的需求子树</p>
+          <p className="text-gray-500 text-sm">{t('myTasks.selectIdentity')}</p>
+          <p className="text-gray-400 text-xs mt-1">{t('myTasks.selectIdentityHint')}</p>
         </div>
       </div>
     );
   }
 
-  const VIEW_TITLES: Record<ViewMode, string> = {
-    flat: '需求列表', tree: '需求树', mindmap: '需求思维导图',
+  const VIEW_TITLE_KEYS: Record<ViewMode, string> = {
+    flat: 'myTasks.viewTitleFlat', tree: 'myTasks.viewTitleTree', mindmap: 'myTasks.viewTitleMindmap',
   };
 
   return (
@@ -1177,19 +1190,19 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">{VIEW_TITLES[viewMode]}</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t(VIEW_TITLE_KEYS[viewMode])}</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {currentUser} 的需求子树 — 共 {counts.total} 个任务
+            {t('myTasks.subtreeInfo', { user: currentUser, count: counts.total })}
           </p>
         </div>
       </div>
 
       {/* Stats pills */}
       <div className="flex items-center gap-2.5 mb-5">
-        <StatPill label="进行中" count={counts.active} color="bg-indigo-50 text-indigo-700 border-indigo-200" dotColor="bg-indigo-500" />
-        <StatPill label="待验收" count={counts.review} color="bg-amber-50 text-amber-700 border-amber-200" dotColor="bg-amber-500" />
-        <StatPill label="未开始" count={counts.planned} color="bg-blue-50 text-blue-700 border-blue-200" dotColor="bg-blue-400" />
-        <StatPill label="已逾期" count={counts.overdue} color="bg-red-50 text-red-700 border-red-200" dotColor="bg-red-500" />
+        <StatPill label={t('myTasks.statInProgress')} count={counts.active} color="bg-indigo-50 text-indigo-700 border-indigo-200" dotColor="bg-indigo-500" />
+        <StatPill label={t('myTasks.statReview')} count={counts.review} color="bg-amber-50 text-amber-700 border-amber-200" dotColor="bg-amber-500" />
+        <StatPill label={t('myTasks.statPlanned')} count={counts.planned} color="bg-blue-50 text-blue-700 border-blue-200" dotColor="bg-blue-400" />
+        <StatPill label={t('myTasks.statOverdue')} count={counts.overdue} color="bg-red-50 text-red-700 border-red-200" dotColor="bg-red-500" />
       </div>
 
       {/* View Content */}
@@ -1200,6 +1213,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
           allNodesMap={allNodesMap}
           onAdvanceStatus={handleAdvance}
           isLoading={isLoading}
+          t={t}
         />
       )}
 
@@ -1209,6 +1223,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
           currentUser={currentUser}
           onAdvanceStatus={handleAdvance}
           isLoading={isLoading}
+          t={t}
         />
       )}
 
@@ -1218,6 +1233,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
           currentUser={currentUser}
           isLoading={isLoading}
           focusNodeId={focusNodeId}
+          t={t}
         />
       )}
     </div>

@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/api/client';
+import { useI18n } from '@/lib/i18n';
 
 const CATEGORY_OPTIONS = [
-  { value: 'bug', label: 'Bug 报告', icon: '🐛', color: '#dc2626', bgColor: '#fef2f2' },
-  { value: 'feature', label: '功能建议', icon: '✨', color: '#2563eb', bgColor: '#eff6ff' },
-  { value: 'feedback', label: '一般反馈', icon: '💬', color: '#6366f1', bgColor: '#eef2ff' },
+  { value: 'bug', labelKey: 'intake.catBug', icon: '🐛', color: '#dc2626', bgColor: '#fef2f2' },
+  { value: 'feature', labelKey: 'intake.catFeature', icon: '✨', color: '#2563eb', bgColor: '#eff6ff' },
+  { value: 'feedback', labelKey: 'intake.catFeedback', icon: '💬', color: '#6366f1', bgColor: '#eef2ff' },
 ];
 
 const PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 
 export default function IntakeSubmit() {
+  const { t } = useI18n();
   const [searchParams] = useSearchParams();
   const projectSlug = searchParams.get('project') || undefined;
 
@@ -41,7 +43,7 @@ export default function IntakeSubmit() {
       setIntakeId(result.intakeId);
       setSubmitted(true);
     } catch (err: any) {
-      setError(err.message || '提交失败');
+      setError(err.message || t('intakeSubmit.submitFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -56,11 +58,11 @@ export default function IntakeSubmit() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">提交成功！</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{t('intakeSubmit.successTitle')}</h2>
           <p className="text-gray-500 mb-4">
-            你的反馈已提交，编号为 <span className="font-mono font-bold text-indigo-600">{intakeId}</span>
+            {t('intakeSubmit.successMsg')}<span className="font-mono font-bold text-indigo-600">{intakeId}</span>
           </p>
-          <p className="text-sm text-gray-400 mb-6">项目成员会尽快审核你的反馈</p>
+          <p className="text-sm text-gray-400 mb-6">{t('intakeSubmit.successHint')}</p>
           <button
             onClick={() => {
               setSubmitted(false);
@@ -72,7 +74,7 @@ export default function IntakeSubmit() {
             }}
             className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
           >
-            继续提交
+            {t('intakeSubmit.continueSubmit')}
           </button>
         </div>
       </div>
@@ -93,30 +95,30 @@ export default function IntakeSubmit() {
             </div>
             <span className="text-lg font-bold text-gray-900">ClawPM</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">提交反馈</h1>
-          <p className="text-gray-500 text-sm">提交 Bug 报告、功能建议或一般反馈</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">{t('intakeSubmit.pageTitle')}</h1>
+          <p className="text-gray-500 text-sm">{t('intakeSubmit.pageSubtitle')}</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
-          {/* 标题 */}
+          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              标题 <span className="text-red-500">*</span>
+              {t('intakeSubmit.titleLabel')} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="简要描述你的问题或建议"
+              placeholder={t('intakeSubmit.titlePlaceholder')}
               required
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-all"
             />
           </div>
 
-          {/* 类别 */}
+          {/* Category */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">类别</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('intakeSubmit.categoryLabel')}</label>
             <div className="flex gap-2">
               {CATEGORY_OPTIONS.map(opt => (
                 <button
@@ -131,41 +133,41 @@ export default function IntakeSubmit() {
                   }}
                 >
                   <span>{opt.icon}</span>
-                  <span>{opt.label}</span>
+                  <span>{t(opt.labelKey)}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 详细描述 */}
+          {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">详细描述</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('intakeSubmit.descriptionLabel')}</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="详细描述问题或建议，支持 Markdown 格式"
+              placeholder={t('intakeSubmit.descPlaceholder')}
               rows={5}
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-all resize-y"
             />
           </div>
 
-          {/* 提交人 + 优先级 */}
+          {/* Submitter + Priority */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                你的名字 <span className="text-red-500">*</span>
+                {t('intakeSubmit.nameLabel')} <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={submitter}
                 onChange={e => setSubmitter(e.target.value)}
-                placeholder="你的名字"
+                placeholder={t('intakeSubmit.namePlaceholder')}
                 required
                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">建议优先级</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('intakeSubmit.priorityLabel')}</label>
               <select
                 value={priority}
                 onChange={e => setPriority(e.target.value)}
@@ -189,7 +191,7 @@ export default function IntakeSubmit() {
             disabled={submitting || !title.trim() || !submitter.trim()}
             className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {submitting ? '提交中...' : '提交反馈'}
+            {submitting ? t('intakeSubmit.submitting') : t('intakeSubmit.submit')}
           </button>
         </form>
       </div>

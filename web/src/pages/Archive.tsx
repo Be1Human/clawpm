@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '@/lib/i18n';
 
 export default function Archive() {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const navigate = useNavigate();
 
@@ -31,20 +33,20 @@ export default function Archive() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">归档箱</h1>
-          <p className="text-sm text-gray-500 mt-1">查看和恢复已归档的任务</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('archive.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('archive.subtitle')}</p>
         </div>
-        <span className="text-sm text-gray-400">{(tasks as any[]).length} 个已归档</span>
+        <span className="text-sm text-gray-400">{t('archive.archivedCount', { count: (tasks as any[]).length })}</span>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-gray-500">加载中...</div>
+        <div className="text-center py-12 text-gray-500">{t('common.loading')}</div>
       ) : (tasks as any[]).length === 0 ? (
         <div className="text-center py-16">
           <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <p className="text-gray-500">暂无归档任务</p>
+          <p className="text-gray-500">{t('archive.empty')}</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
@@ -68,7 +70,7 @@ export default function Archive() {
                 disabled={unarchive.isPending}
                 className="text-xs text-indigo-500 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                恢复
+                {t('archive.restore')}
               </button>
             </div>
           ))}
