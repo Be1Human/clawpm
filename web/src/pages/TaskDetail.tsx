@@ -297,8 +297,11 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   }
 
   return (
-    <div className={cn('p-6 mx-auto transition-all', editingDesc ? 'max-w-7xl' : 'max-w-4xl')}>
-      {/* 只读模式提示 */}
+    <div className="flex w-full h-full min-h-0 bg-white relative">
+      {/* 主要内容区（可滚动） */}
+      <div className="flex-1 min-w-0 overflow-y-auto relative custom-scrollbar">
+        <div className={cn('p-6 mx-auto transition-all', editingDesc ? 'max-w-7xl' : 'max-w-4xl')}>
+          {/* 只读模式提示 */}
       {!canEdit && (
         <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -576,40 +579,12 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
                     <div className="border border-gray-100 rounded-lg overflow-hidden">
                       <button
                         onClick={() => setPreviewAttachId(previewAttachId === att.id ? null : att.id)}
-                        className="w-full flex items-center gap-2 p-2.5 hover:bg-gray-50 transition-colors text-left"
+                        className={cn("w-full flex items-center gap-2 p-2.5 hover:bg-gray-50 transition-colors text-left", previewAttachId === att.id && 'bg-indigo-50/50')}
                       >
                         <span className="text-sm">📄</span>
                         <span className="flex-1 text-sm font-medium text-gray-700">{att.title}</span>
-                        <span className="text-[10px] text-gray-400">{previewAttachId === att.id ? '收起' : '预览'}</span>
+                        <span className="text-[10px] text-gray-400">{previewAttachId === att.id ? '收起预览' : '右侧预览'}</span>
                       </button>
-                      {previewAttachId === att.id && (
-                        <div className="border-t border-gray-100">
-                          {editingAttachId === att.id ? (
-                            <div className="p-3 space-y-2">
-                              <textarea
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm min-h-[120px] resize-y outline-none focus:ring-2 focus:ring-indigo-500/30 font-mono"
-                                value={editingAttachContent} onChange={e => setEditingAttachContent(e.target.value)} autoFocus
-                              />
-                              <div className="flex justify-end gap-2">
-                                <button onClick={() => { setEditingAttachId(null); setEditingAttachContent(''); }}
-                                  className="px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 rounded-lg">取消</button>
-                                <button onClick={() => updateAttachMut.mutate({ id: att.id, data: { content: editingAttachContent } })}
-                                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="p-3">
-                              <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap text-sm leading-relaxed">
-                                {att.content}
-                              </div>
-                              <button
-                                onClick={() => { setEditingAttachId(att.id); setEditingAttachContent(att.content); }}
-                                className="mt-2 text-xs text-indigo-500 hover:text-indigo-700"
-                              >编辑</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   ) : att.type === 'link' ? (
                     <a href={att.content} target="_blank" rel="noopener noreferrer"
@@ -987,6 +962,74 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
           {/* 权限管理（v2.5） */}
           <PermissionPanel taskId={task.taskId} owner={task.owner} />
         </div>
+      </div>
+      </div>{/* closes flex-1 scroll container */}
+
+      {/* 右侧附件预览面板 */}
+      {previewAttachId && (
+        <div className="w-[450px] flex-shrink-0 border-l border-gray-200 bg-white flex flex-col shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)] transition-all z-10">
+          <div className="h-[68px] border-b border-gray-200 flex items-center justify-between px-5 bg-white flex-shrink-0">
+            <h3 className="text-base font-semibold text-gray-800 truncate mr-4">
+              {(attachments as any[])?.find((a: any) => a.id === previewAttachId)?.title || '附件预览'}
+            </h3>
+            <button 
+              onClick={() => { setPreviewAttachId(null); setEditingAttachId(null); }}
+              className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-lg transition-colors flex-shrink-0"
+              title="关闭预览"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gray-50/30">
+            {(() => {
+              const att = (attachments as any[])?.find((a: any) => a.id === previewAttachId);
+              if (!att) return <div className="text-sm text-gray-500 text-center mt-10">附件不存在或已删除</div>;
+              
+              if (editingAttachId === att.id) {
+                return (
+                  <div className="h-full flex flex-col gap-4">
+                    <textarea
+                      className="w-full flex-1 border border-gray-200 rounded-xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-indigo-500/30 font-mono shadow-sm bg-white"
+                      value={editingAttachContent} 
+                      onChange={e => setEditingAttachContent(e.target.value)} 
+                      autoFocus
+                    />
+                    <div className="flex justify-end gap-3 shrink-0">
+                      <button onClick={() => { setEditingAttachId(null); setEditingAttachContent(''); }}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        取消
+                      </button>
+                      <button onClick={() => updateAttachMut.mutate({ id: att.id, data: { content: editingAttachContent } })}
+                        className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                        保存修改
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+              
+              return (
+                <div className="relative group min-h-full bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                  <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    <MarkdownPreview content={att.content} />
+                  </div>
+                  {canEdit && (
+                    <button
+                      onClick={() => { setEditingAttachId(att.id); setEditingAttachContent(att.content); }}
+                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-all shadow-sm"
+                    >
+                      编辑内容
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
