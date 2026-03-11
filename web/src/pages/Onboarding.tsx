@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { setCurrentUser, setOnboarded } from '../lib/useCurrentUser';
 
@@ -37,6 +38,19 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
   const [submitting, setSubmitting] = useState(false);
+
+  // 检查数据库中是否已有成员（换浏览器时会触发此页面但成员已存在）
+  const { data: existingMembers = [] } = useQuery<any[]>({
+    queryKey: ['members'],
+    queryFn: () => api.getMembers(),
+  });
+  const hasExistingMembers = (existingMembers as any[]).filter((m: any) => m.type === 'human').length > 0;
+
+  function handleSelectExisting(identifier: string) {
+    setCurrentUser(identifier);
+    setOnboarded();
+    navigate('/my/dashboard', { replace: true });
+  }
 
   // Step 2 状态
   const [name, setName] = useState('');
@@ -153,37 +167,84 @@ export default function Onboarding() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          {/* Step 1: 欢迎 */}
+          {/* Step 1: 欢迎 / 已有成员时直接选择 */}
           {step === 1 && (
-            <div className="p-8 text-center">
-              <div className="w-20 h-20 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <span className="text-4xl">🚀</span>
-              </div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-3">欢迎使用 ClawPM</h1>
-              <p className="text-gray-500 text-sm leading-relaxed mb-2">
-                AI 时代的项目管理工具
-              </p>
-              <p className="text-gray-400 text-xs leading-relaxed mb-8">
-                为人类与 Agent 协作而生 · 任务管理 · 迭代规划 · 需求追踪
-              </p>
-              <div className="grid grid-cols-3 gap-3 mb-8 text-center">
-                {[
-                  { icon: '📌', label: '任务追踪' },
-                  { icon: '🔄', label: '迭代管理' },
-                  { icon: '🤝', label: 'AI 协作' },
-                ].map(item => (
-                  <div key={item.label} className="bg-gray-50 rounded-xl p-3">
-                    <div className="text-xl mb-1">{item.icon}</div>
-                    <div className="text-xs text-gray-500 font-medium">{item.label}</div>
+            <div className="p-8">
+              {hasExistingMembers ? (
+                /* 换浏览器场景：数据库已有成员，直接选择身份 */
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">👋</span>
+                    </div>
+                    <h1 className="text-xl font-bold text-gray-900 mb-1">选择你的身份</h1>
+                    <p className="text-sm text-gray-400">检测到已有成员数据，直接选择即可进入</p>
                   </div>
-                ))}
-              </div>
-              <button
-                onClick={() => setStep(2)}
-                className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
-              >
-                开始使用 →
-              </button>
+                  <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                    {(existingMembers as any[])
+                      .filter((m: any) => m.type === 'human')
+                      .map((m: any) => (
+                        <button
+                          key={m.identifier}
+                          onClick={() => handleSelectExisting(m.identifier)}
+                          className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-left group"
+                        >
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+                            style={{ backgroundColor: m.color || '#6366f1' }}
+                          >
+                            {(m.name || '?')[0].toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900 text-sm">{m.name}</div>
+                            <div className="text-xs text-gray-400">@{m.identifier}</div>
+                          </div>
+                          <span className="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity">进入 →</span>
+                        </button>
+                      ))}
+                  </div>
+                  <div className="border-t border-gray-100 pt-4">
+                    <button
+                      onClick={() => setStep(2)}
+                      className="w-full text-sm text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 py-2 rounded-xl transition-colors"
+                    >
+                      + 创建新身份
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* 全新用户：展示欢迎信息 */
+                <div className="text-center">
+                  <div className="w-20 h-20 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <span className="text-4xl">🚀</span>
+                  </div>
+                  <h1 className="text-2xl font-bold text-gray-900 mb-3">欢迎使用 ClawPM</h1>
+                  <p className="text-gray-500 text-sm leading-relaxed mb-2">
+                    AI 时代的项目管理工具
+                  </p>
+                  <p className="text-gray-400 text-xs leading-relaxed mb-8">
+                    为人类与 Agent 协作而生 · 任务管理 · 迭代规划 · 需求追踪
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 mb-8 text-center">
+                    {[
+                      { icon: '📌', label: '任务追踪' },
+                      { icon: '🔄', label: '迭代管理' },
+                      { icon: '🤝', label: 'AI 协作' },
+                    ].map(item => (
+                      <div key={item.label} className="bg-gray-50 rounded-xl p-3">
+                        <div className="text-xl mb-1">{item.icon}</div>
+                        <div className="text-xs text-gray-500 font-medium">{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setStep(2)}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
+                  >
+                    开始使用 →
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
