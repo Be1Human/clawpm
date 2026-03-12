@@ -1895,7 +1895,7 @@ function MindMapCanvas() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDetailTaskId(null)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div
-            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[92vw] max-w-6xl max-h-[88vh] overflow-y-auto"
+            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[92vw] max-w-6xl h-[88vh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <TaskDetail taskId={detailTaskId} onClose={() => setDetailTaskId(null)} />
