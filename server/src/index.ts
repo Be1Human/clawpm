@@ -41,7 +41,7 @@ app.decorateRequest('clawpmPrincipal', null);
 
 app.addHook('onRequest', async (req, reply) => {
   // Skip auth for health check and static files
-  if (req.url === '/health' || req.url?.startsWith('/assets') || req.url === '/' || req.url?.startsWith('/uploads/')) return;
+  if (req.url === '/health' || req.url === '/runtime-config.js' || req.url?.startsWith('/assets') || req.url === '/' || req.url?.startsWith('/uploads/')) return;
 
   const pathname = req.url?.split('?')[0] || req.url;
   const sessionId = (req.query as any)?.sessionId as string | undefined;
@@ -83,6 +83,16 @@ app.addHook('onRequest', async (req, reply) => {
 
 // ── Health check ───────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', version: '1.0.0' }));
+
+// ── Runtime config for web client ──────────────────────────────────
+app.get('/runtime-config.js', async (_req, reply) => {
+  reply.type('application/javascript; charset=utf-8');
+  reply.header('Cache-Control', 'no-store');
+  return `window.__CLAWPM_RUNTIME_CONFIG__ = ${JSON.stringify({
+    apiBase: '/api/v1',
+    apiToken: config.apiToken,
+  })};`;
+});
 
 // ── MCP Server (SSE) ───────────────────────────────────────────────
 app.get('/mcp/sse', async (req, reply) => {
