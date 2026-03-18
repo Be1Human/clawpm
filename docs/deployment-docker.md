@@ -151,7 +151,7 @@ ssh petgo-old 'cd /opt/clawpm && docker compose down && docker compose up -d --b
 - 所有 `push` / `pull_request` 先执行 lint 和 build
 - 只有 `push` 到 `main` 时才会执行部署
 - GitHub Actions 会 SSH 到服务器 `/opt/clawpm`
-- 服务器先执行 `git fetch / checkout / pull`
+- 服务器先执行 `git fetch / checkout / reset / clean`
 - 然后执行 `docker compose up -d --build`
 
 ### 9.1 需要配置的 GitHub Secrets
@@ -196,7 +196,7 @@ git push origin main
 
 - GitHub Actions 自动执行 CI
 - CI 通过后自动 SSH 到服务器部署
-- 服务器执行 `git fetch origin main && git checkout main && git pull --ff-only origin main`
+- 服务器执行 `git fetch origin main && git checkout -B main origin/main && git reset --hard origin/main`
 - 服务会通过 `http://127.0.0.1:3210/health` 做健康检查
 
 ### 9.4 推荐做法
@@ -204,4 +204,4 @@ git push origin main
 - 先手动部署成功一次，再启用 CI/CD
 - `.env` 只保留在服务器，不放进 GitHub
 - 如果后续不想继续用 `root`，再切换为专门的部署用户
-- 服务器工作副本不要手改文件，避免 `git pull --ff-only` 失败
+- 服务器工作副本不要手改文件；当前脚本会自动 hard reset 到远端分支

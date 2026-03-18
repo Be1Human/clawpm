@@ -93,4 +93,4 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '${DEPLOY_PATH}' && git fetch origin main && git checkout main && git pull --ff-only origin main && CLAWPM_SKIP_GIT_PULL=1 CLAWPM_DEPLOY_BRANCH=main bash scripts/deploy-server.sh"
+            "cd '${DEPLOY_PATH}' && CLAWPM_DEPLOY_BRANCH=main bash scripts/deploy-server.sh"
