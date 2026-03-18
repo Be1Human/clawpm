@@ -663,7 +663,7 @@ function MmTaskNode({ data, selected }: NodeProps) {
         <div className="flex items-center justify-between mt-1">
           <span className="text-[10px] font-mono text-indigo-400">{task.taskId}</span>
           <div className="flex items-center gap-1.5">
-            {task.owner && <span className="text-[10px] text-gray-400 truncate max-w-[50px]">{task.owner}</span>}
+            {(task.assignee || task.owner) && <span className="text-[10px] text-gray-400 truncate max-w-[50px]" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>{task.assignee || task.owner}</span>}
             <div className={cn('w-2 h-2 rounded-full', sc.dot)} />
           </div>
         </div>

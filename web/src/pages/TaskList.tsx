@@ -102,7 +102,7 @@ export default function TaskList() {
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thOwner')}</div>
+            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">处理人</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-28">{t('taskList.thProgress')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDueDate')}</div>
           </div>
@@ -232,12 +232,15 @@ function TaskTreeRow({
           ) : <span className="text-slate-700">-</span>}
         </div>
         <div className="px-4 py-3 w-24">
-          {task.owner ? (
+          {(task.assignee || task.owner) ? (
             <div className="flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-full bg-brand-500/30 flex items-center justify-center text-xs text-brand-400">
-                {task.owner[0].toUpperCase()}
+              <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
+                task.assignee ? "bg-brand-500/30 text-brand-400" : "bg-slate-500/30 text-slate-400")}>
+                {(task.assignee || task.owner)[0].toUpperCase()}
               </span>
-              <span className="text-xs text-slate-400 truncate">{task.owner}</span>
+              <span className="text-xs text-slate-400 truncate" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>
+                {task.assignee || task.owner}
+              </span>
             </div>
           ) : <span className="text-slate-700">-</span>}
         </div>

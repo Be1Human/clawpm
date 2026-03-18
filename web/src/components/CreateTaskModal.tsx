@@ -61,12 +61,21 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     setForm(f => ({ ...f, labels: [...f.labels, v], customLabel: '' }));
   }
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   const mut = useMutation({
     mutationFn: (data: any) => api.createTask(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      setErrorMsg('');
+      // invalidate 所有与任务相关的查询（task-tree、task-tree-kanban、task-tree-req、tasks 等）
+      qc.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey[0];
+        return typeof key === 'string' && (key.startsWith('task') || key === 'backlog');
+      }});
       onClose();
+    },
+    onError: (err: any) => {
+      setErrorMsg(err?.message || '创建失败，请重试');
     },
   });
 
@@ -80,6 +89,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.labels.length) payload.labels = form.labels;
     if (form.priority !== 'P2') payload.priority = form.priority;
     if (form.owner) payload.owner = form.owner;
+    if (form.assignee) payload.assignee = form.assignee;
     if (form.due_date) payload.due_date = form.due_date;
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
@@ -219,6 +229,12 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
             </div>
           )}
         </div>
+
+        {errorMsg && (
+          <div className="px-6 pb-2">
+            <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">⚠️ {errorMsg}</div>
+          </div>
+        )}
 
         <div className="px-6 pb-5 flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">取消</button>

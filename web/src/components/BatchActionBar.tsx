@@ -25,8 +25,10 @@ export default function BatchActionBar({ selectedTaskIds, onClear }: BatchAction
   const batchUpdate = useMutation({
     mutationFn: (updates: Record<string, any>) => api.batchUpdateTasks(selectedTaskIds, updates),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      qc.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey[0];
+        return typeof key === 'string' && (key.startsWith('task') || key === 'backlog' || key.startsWith('my-task'));
+      }});
       onClear();
       setStatus('');
       setPriority('');

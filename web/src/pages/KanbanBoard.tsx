@@ -110,13 +110,13 @@ function TaskCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {task.owner && (
+          {(task.assignee || task.owner) && (
             <div
               className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ backgroundColor: '#6366f1' }}
-              title={task.owner}
+              style={{ backgroundColor: task.assignee ? '#6366f1' : '#94a3b8' }}
+              title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}
             >
-              {task.owner[0]?.toUpperCase()}
+              {(task.assignee || task.owner)[0]?.toUpperCase()}
             </div>
           )}
           {task.dueDate && (

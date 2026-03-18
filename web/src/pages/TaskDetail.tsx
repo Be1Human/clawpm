@@ -215,9 +215,12 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task', taskId] });
     qc.invalidateQueries({ queryKey: ['task-history', taskId] });
-    qc.invalidateQueries({ queryKey: ['tasks'] });
-    qc.invalidateQueries({ queryKey: ['task-tree'] });
     qc.invalidateQueries({ queryKey: ['attachments', taskId] });
+    // 刷新所有 task 相关列表/树查询
+    qc.invalidateQueries({ predicate: (q) => {
+      const key = q.queryKey[0];
+      return typeof key === 'string' && (key.startsWith('task') || key === 'backlog' || key.startsWith('my-task'));
+    }});
   };
 
   // Record recent visit
@@ -253,7 +256,10 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
     mutationFn: (data: any) => api.createTask(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task-children', taskId] });
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      qc.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey[0];
+        return typeof key === 'string' && (key.startsWith('task-tree') || key.startsWith('my-task'));
+      }});
       setChildTitle('');
       setShowAddChild(false);
     },
@@ -788,6 +794,23 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
                   renderValue={(v) => v ? (
                     <div className="flex items-center gap-1.5">
                       <span className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-xs text-indigo-600 font-medium">
+                        {v[0].toUpperCase()}
+                      </span>
+                      <span className="text-sm text-gray-700">{v}</span>
+                    </div>
+                  ) : <span className="text-sm text-gray-400">—</span>}
+                  disabled={!canEdit}
+                />
+              </MetaRow>
+
+              <MetaRow label="处理人">
+                <SelectField
+                  value={task.assignee || ''}
+                  options={[{ value: '', label: '未分配' }, ...(members as any[]).map((m: any) => ({ value: m.identifier, label: `${m.name} (${m.identifier})` }))]}
+                  onSave={v => updateMut.mutate({ assignee: v || undefined })}
+                  renderValue={(v) => v ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-xs text-emerald-600 font-medium">
                         {v[0].toUpperCase()}
                       </span>
                       <span className="text-sm text-gray-700">{v}</span>

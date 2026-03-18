@@ -56,6 +56,7 @@ function runMigrations(sqlite: Database.Database) {
       progress INTEGER NOT NULL DEFAULT 0,
       priority TEXT NOT NULL DEFAULT 'P2',
       owner TEXT,
+      assignee TEXT,
       due_date TEXT,
       start_date TEXT,
       source TEXT NOT NULL DEFAULT 'planned',
@@ -305,6 +306,10 @@ function runMigrations(sqlite: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_intake_project_status ON intake_items(project_id, status);
   `);
+
+  // v3.5 迁移：tasks 新增 assignee / start_date 字段
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN assignee TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN start_date TEXT`); } catch {}
 
   // v4.0 迁移：members 新增 role / onboarded_at 字段
   try { sqlite.exec(`ALTER TABLE members ADD COLUMN role TEXT`); } catch {}

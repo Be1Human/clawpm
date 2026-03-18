@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, like, or, isNull, lt, lte, sql } from 'drizzle-orm';
 import { getDb } from '../db/connection.js';
-import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues, taskAttachments, taskIterations } from '../db/schema.js';
+import { tasks, taskNotes, progressHistory, domains, milestones, customFields, taskFieldValues, taskAttachments, taskIterations, objectiveTaskLinks, reqLinks, taskPermissions } from '../db/schema.js';
 import { generateTaskId } from './id-generator.js';
 import { NotificationService } from './notification-service.js';
 
@@ -12,6 +12,7 @@ export interface CreateTaskParams {
   priority?: string;
   milestone?: string;
   owner?: string;
+  assignee?: string;
   due_date?: string;
   start_date?: string;
   parent_task_id?: string;
@@ -29,6 +30,7 @@ export interface UpdateTaskParams {
   status?: string;
   priority?: string;
   owner?: string;
+  assignee?: string;
   due_date?: string;
   start_date?: string;
   milestone?: string;
@@ -44,6 +46,7 @@ export interface TaskFilters {
   domain?: string;
   milestone?: string;
   owner?: string;
+  assignee?: string;
   priority?: string;
   search?: string;
   label?: string;
@@ -54,16 +57,17 @@ export interface TaskFilters {
 export const TaskService = {
   async create(params: CreateTaskParams) {
     const db = getDb();
+    const projectId = params.projectId || 1;
 
     let domainId: number | undefined;
     if (params.domain) {
-      const d = db.select().from(domains).where(eq(domains.name, params.domain)).get();
+      const d = db.select().from(domains).where(and(eq(domains.name, params.domain), eq(domains.projectId, projectId))).get();
       if (d) domainId = d.id;
     }
 
     let milestoneId: number | undefined;
     if (params.milestone) {
-      const m = db.select().from(milestones).where(eq(milestones.name, params.milestone)).get();
+      const m = db.select().from(milestones).where(and(eq(milestones.name, params.milestone), eq(milestones.projectId, projectId))).get();
       if (m) milestoneId = m.id;
     }
 
@@ -76,7 +80,7 @@ export const TaskService = {
       }
     }
 
-    const projectId = params.projectId || 1;
+
     const taskId = await generateTaskId(domainId, projectId);
 
     db.insert(tasks).values({
@@ -89,6 +93,7 @@ export const TaskService = {
       parentTaskId: parentTaskId ?? null,
       priority: params.priority || 'P2',
       owner: params.owner,
+      assignee: params.assignee || null,
       dueDate: params.due_date,
       startDate: params.start_date || null,
       source: params.source || 'planned',
@@ -127,6 +132,7 @@ export const TaskService = {
     if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
     if (filters.status) conditions.push(eq(tasks.status, filters.status));
     if (filters.owner) conditions.push(eq(tasks.owner, filters.owner));
+    if (filters.assignee) conditions.push(eq(tasks.assignee, filters.assignee));
     if (filters.priority) conditions.push(eq(tasks.priority, filters.priority));
     if (filters.label) {
       const label = filters.label;
@@ -182,6 +188,7 @@ export const TaskService = {
     if (params.status !== undefined) updates.status = params.status;
     if (params.priority !== undefined) updates.priority = params.priority;
     if (params.owner !== undefined) updates.owner = params.owner;
+    if (params.assignee !== undefined) updates.assignee = params.assignee;
     if (params.due_date !== undefined) updates.dueDate = params.due_date;
     if (params.start_date !== undefined) updates.startDate = params.start_date;
     if (params.blocker !== undefined) updates.blocker = params.blocker;
@@ -217,8 +224,18 @@ export const TaskService = {
           projectId,
           recipientId: params.owner,
           type: 'task_assigned',
-          title: `你被指派了任务: ${task.title}`,
-          content: `任务 ${taskId} 已分配给你`,
+          title: `你被指派为任务负责人: ${task.title}`,
+          content: `任务 ${taskId} 的负责人已设为你`,
+          taskId,
+        });
+      }
+      if (params.assignee !== undefined && params.assignee && params.assignee !== (task as any).assignee) {
+        NotificationService.create({
+          projectId,
+          recipientId: params.assignee,
+          type: 'task_assigned',
+          title: `你被指派为处理人: ${task.title}`,
+          content: `任务 ${taskId} 已分配给你处理`,
           taskId,
         });
       }
@@ -505,7 +522,9 @@ export const TaskService = {
       const parent = db.select().from(tasks).where(eq(tasks.taskId, newParentTaskId)).get();
       if (!parent) return null;
       // 检测是否会形成循环（新父节点不能是当前节点的子孙）
-      if (this._isDescendant(parent.id, task.id)) {
+      // _isDescendant(startId, targetId) 从 startId 的子树中查找 targetId
+      // 所以要从 task.id 的子树中找 parent.id
+      if (this._isDescendant(task.id, parent.id)) {
         throw new Error('循环引用：不能将节点移入自己的子树');
       }
       newParentId = parent.id;
@@ -547,14 +566,15 @@ export const TaskService = {
     return true;
   },
 
-  // 检查 candidateId 是否是 ancestorId 的子孙
-  _isDescendant(candidateId: number, ancestorId: number): boolean {
+  // 从 startId 的子树（后代）中查找 targetId 是否存在
+  // 返回 true 表示 targetId 是 startId 的子孙
+  _isDescendant(startId: number, targetId: number): boolean {
     const db = getDb();
     const visited = new Set<number>();
-    const queue = [candidateId];
+    const queue = [startId];
     while (queue.length) {
       const cur = queue.pop()!;
-      if (cur === ancestorId) return true;
+      if (cur === targetId) return true;
       if (visited.has(cur)) continue;
       visited.add(cur);
       const children = db.select().from(tasks).where(eq(tasks.parentTaskId, cur)).all();
@@ -649,7 +669,7 @@ export const TaskService = {
   },
 
   /** 批量更新任务 */
-  batchUpdate(taskIds: string[], updates: { status?: string; owner?: string; priority?: string; labels?: string[] }) {
+  batchUpdate(taskIds: string[], updates: { status?: string; owner?: string; assignee?: string; priority?: string; labels?: string[] }) {
     const db = getDb();
     const results: any[] = [];
     for (const tid of taskIds) {
@@ -658,6 +678,7 @@ export const TaskService = {
       const setObj: Record<string, unknown> = { updatedAt: new Date().toISOString() };
       if (updates.status !== undefined) setObj.status = updates.status;
       if (updates.owner !== undefined) setObj.owner = updates.owner;
+      if (updates.assignee !== undefined) setObj.assignee = updates.assignee;
       if (updates.priority !== undefined) setObj.priority = updates.priority;
       if (updates.labels !== undefined) setObj.labels = JSON.stringify(updates.labels);
       db.update(tasks).set(setObj as any).where(eq(tasks.taskId, tid)).run();
@@ -670,8 +691,18 @@ export const TaskService = {
             projectId,
             recipientId: updates.owner,
             type: 'task_assigned',
-            title: `你被指派了任务: ${task.title}`,
-            content: `任务 ${tid} 已分配给你（批量操作）`,
+            title: `你被指派为负责人: ${task.title}`,
+            content: `任务 ${tid} 的负责人已设为你（批量操作）`,
+            taskId: tid,
+          });
+        }
+        if (updates.assignee && updates.assignee !== (task as any).assignee) {
+          NotificationService.create({
+            projectId,
+            recipientId: updates.assignee,
+            type: 'task_assigned',
+            title: `你被指派为处理人: ${task.title}`,
+            content: `任务 ${tid} 已分配给你处理（批量操作）`,
             taskId: tid,
           });
         }
@@ -704,6 +735,11 @@ export const TaskService = {
       db.delete(taskFieldValues).where(eq(taskFieldValues.taskId, id)).run();
       db.delete(taskAttachments).where(eq(taskAttachments.taskId, id)).run();
       db.delete(taskIterations).where(eq(taskIterations.taskId, id)).run();
+      // 清理无 ON DELETE CASCADE 的关联表
+      db.delete(objectiveTaskLinks).where(eq(objectiveTaskLinks.taskId, id)).run();
+      // reqLinks 和 taskPermissions 虽有 CASCADE，但显式清理更安全
+      db.delete(reqLinks).where(or(eq(reqLinks.sourceTaskId, id), eq(reqLinks.targetTaskId, id))).run();
+      db.delete(taskPermissions).where(eq(taskPermissions.taskId, id)).run();
       db.delete(tasks).where(eq(tasks.id, id)).run();
     }
     return true;

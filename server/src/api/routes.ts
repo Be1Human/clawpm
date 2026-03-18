@@ -204,8 +204,14 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!body.owner && user) {
       body.owner = user;
     }
-    const task = await TaskService.create({ ...body, projectId });
-    return reply.code(201).send(task);
+    try {
+      const task = await TaskService.create({ ...body, projectId });
+      return reply.code(201).send(task);
+    } catch (e: any) {
+      const msg = e.message || '创建节点失败';
+      const code = msg.includes('UNIQUE') || msg.includes('unique') ? 409 : 500;
+      return reply.code(code).send({ error: msg });
+    }
   });
 
   app.get('/api/v1/tasks', async (req) => {
