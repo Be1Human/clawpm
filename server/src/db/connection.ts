@@ -309,4 +309,68 @@ function runMigrations(sqlite: Database.Database) {
   // v4.0 迁移：members 新增 role / onboarded_at 字段
   try { sqlite.exec(`ALTER TABLE members ADD COLUMN role TEXT`); } catch {}
   try { sqlite.exec(`ALTER TABLE members ADD COLUMN onboarded_at TEXT`); } catch {}
+
+  // v5.0 迁移：账号 / 会话 / Agent Token
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      username       TEXT NOT NULL UNIQUE,
+      password_hash  TEXT NOT NULL,
+      display_name   TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'active',
+      last_login_at  TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS account_sessions (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id    INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      token_prefix  TEXT NOT NULL,
+      token_hash    TEXT NOT NULL UNIQUE,
+      status        TEXT NOT NULL DEFAULT 'active',
+      expires_at    TEXT,
+      last_used_at  TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_account_sessions_account ON account_sessions(account_id, status);
+
+    CREATE TABLE IF NOT EXISTS account_member_bindings (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id         INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      member_identifier  TEXT NOT NULL,
+      is_default         INTEGER NOT NULL DEFAULT 0,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_account_member_binding_unique
+      ON account_member_bindings(account_id, project_id, member_identifier);
+
+    CREATE TABLE IF NOT EXISTS agent_tokens (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      member_identifier  TEXT NOT NULL,
+      client_type        TEXT NOT NULL DEFAULT 'openclaw',
+      name               TEXT,
+      token_prefix       TEXT NOT NULL,
+      token_hash         TEXT NOT NULL UNIQUE,
+      status             TEXT NOT NULL DEFAULT 'active',
+      expires_at         TEXT,
+      last_used_at       TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_tokens_member ON agent_tokens(project_id, member_identifier, status);
+
+    CREATE TABLE IF NOT EXISTS auth_audit_logs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id    INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+      actor_type    TEXT NOT NULL,
+      actor_id      TEXT NOT NULL,
+      action        TEXT NOT NULL,
+      target_type   TEXT,
+      target_id     TEXT,
+      metadata      TEXT NOT NULL DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }

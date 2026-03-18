@@ -1,31 +1,26 @@
-import { useSyncExternalStore } from 'react';
+import { clearCurrentMember, getCurrentMember, setCurrentMember, subscribeCurrentMember, useCurrentMember } from './useCurrentMember';
 
-const STORAGE_KEY = 'clawpm-user';
 const ONBOARDED_KEY = 'clawpm-onboarded';
-const _listeners = new Set<() => void>();
 
 export function getCurrentUser(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  return getCurrentMember();
 }
 
 export function setCurrentUser(identifier: string): void {
-  localStorage.setItem(STORAGE_KEY, identifier);
-  _listeners.forEach(fn => fn());
+  setCurrentMember(identifier);
 }
 
 export function clearCurrentUser(): void {
-  localStorage.removeItem(STORAGE_KEY);
-  _listeners.forEach(fn => fn());
+  clearCurrentMember();
 }
 
 export function subscribeCurrentUser(listener: () => void): () => void {
-  _listeners.add(listener);
-  return () => { _listeners.delete(listener); };
+  return subscribeCurrentMember(listener);
 }
 
-/** 响应式地读取当前用户 identifier，切换时自动重渲染 */
+/** 兼容旧调用：当前用户即当前成员 identifier */
 export function useCurrentUser(): string | null {
-  return useSyncExternalStore(subscribeCurrentUser, getCurrentUser);
+  return useCurrentMember();
 }
 
 export function isOnboarded(): boolean {

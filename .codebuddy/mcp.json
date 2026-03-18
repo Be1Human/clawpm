@@ -4,7 +4,10 @@
       "command": "npx",
       "args": ["tsx", "server/src/mcp/stdio.ts"],
       "cwd": "e:\\clawpm",
-      "transportType": "stdio"
+      "transportType": "stdio",
+      "env": {
+        "CLAWPM_AGENT_TOKEN": "<agent-token>"
+      }
     }
   }
 }

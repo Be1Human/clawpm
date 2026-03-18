@@ -10,6 +10,7 @@ import { ProjectService } from '../services/project-service.js';
 import { MemberService } from '../services/member-service.js';
 import { IterationService } from '../services/iteration-service.js';
 import { NotificationService } from '../services/notification-service.js';
+import type { AuthPrincipal } from '../services/auth-service.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks } from '../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
@@ -19,8 +20,9 @@ function resolveProject(project?: string): number {
   return ProjectService.resolveProjectId(project);
 }
 
-export function createMcpServer(options?: { agentId?: string }) {
-  const agentId = options?.agentId || null;
+export function createMcpServer(options?: { agentId?: string; memberIdentifier?: string; principal?: AuthPrincipal | null }) {
+  const principal = options?.principal || null;
+  const currentMember = options?.memberIdentifier || options?.agentId || principal?.memberIdentifier || null;
   const mcp = new McpServer({
     name: 'ClawPM',
     version: '1.0.0',
@@ -104,7 +106,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const effectiveOwner = p.owner || agentId;
+    const effectiveOwner = p.owner || currentMember;
     if (!effectiveOwner) return { content: [{ type: 'text' as const, text: 'owner 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
     const tasks = TaskService.list({ owner: effectiveOwner, status: p.status, projectId });
@@ -398,17 +400,17 @@ export function createMcpServer(options?: { agentId?: string }) {
 
   // ── Identity Tools（v2.4 协作身份）──────────────────────────────
   mcp.tool('whoami', '查询当前 Agent 绑定的身份信息', {}, async () => {
-    if (!agentId) {
-      return { content: [{ type: 'text' as const, text: '当前无身份绑定。请通过 CLAWPM_AGENT_ID 环境变量或 --agent-id 参数设置。' }] };
+    if (!currentMember) {
+      return { content: [{ type: 'text' as const, text: '当前无身份绑定。请通过 Agent token、CLAWPM_AGENT_TOKEN、CLAWPM_AGENT_ID 或 --agent-id 参数设置。' }] };
     }
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ agentId, message: `You are ${agentId}` }, null, 2) }] };
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ principalType: principal?.type || 'legacy', memberIdentifier: currentMember, message: `You are ${currentMember}` }, null, 2) }] };
   });
 
   mcp.tool('get_my_task_tree', '获取我的需求子树（带祖先路径上下文）', {
     owner: z.string().optional().describe('负责人标识（不传时使用 Agent 绑定身份）'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const effectiveOwner = p.owner || agentId;
+    const effectiveOwner = p.owner || currentMember;
     if (!effectiveOwner) return { content: [{ type: 'text' as const, text: 'owner 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
     const tree = TaskService.getTree(undefined, { owner: effectiveOwner, projectId });
@@ -491,7 +493,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     if (!task) return { content: [{ type: 'text' as const, text: '节点不存在' }] };
 
     // 验证调用者是 Owner
-    const caller = agentId;
+    const caller = currentMember;
     if (caller && task.owner !== caller) {
       return { content: [{ type: 'text' as const, text: `无权操作：仅 Owner (${task.owner}) 可管理权限` }] };
     }
@@ -515,7 +517,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     const task = TaskService.getByTaskId(p.task_id);
     if (!task) return { content: [{ type: 'text' as const, text: '节点不存在' }] };
 
-    const caller = agentId;
+    const caller = currentMember;
     if (caller && task.owner !== caller) {
       return { content: [{ type: 'text' as const, text: `无权操作：仅 Owner (${task.owner}) 可管理权限` }] };
     }
@@ -641,7 +643,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const effectiveRecipient = p.recipient || agentId;
+    const effectiveRecipient = p.recipient || currentMember;
     if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
     const list = NotificationService.listByRecipient(effectiveRecipient, projectId);
@@ -652,7 +654,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const effectiveRecipient = p.recipient || agentId;
+    const effectiveRecipient = p.recipient || currentMember;
     if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
     const count = NotificationService.getUnreadCount(effectiveRecipient, projectId);
@@ -670,7 +672,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     recipient: z.string().optional().describe('接收人标识（不传时使用 Agent 绑定身份）'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const effectiveRecipient = p.recipient || agentId;
+    const effectiveRecipient = p.recipient || currentMember;
     if (!effectiveRecipient) return { content: [{ type: 'text' as const, text: 'recipient 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
     NotificationService.markAllAsRead(effectiveRecipient, projectId);
@@ -736,7 +738,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
     const projectId = resolveProject(p.project);
-    const reviewedBy = agentId || 'mcp-user';
+    const reviewedBy = currentMember || 'mcp-user';
     try {
       const result = await IntakeService.review(p.intake_id, {
         action: p.action,

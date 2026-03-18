@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Component, type ReactNode } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import KanbanBoard from './pages/KanbanBoard';
@@ -21,16 +22,48 @@ import Archive from './pages/Archive';
 import IntakeSubmit from './pages/IntakeSubmit';
 import IntakeList from './pages/IntakeList';
 import Onboarding from './pages/Onboarding';
-import { isOnboarded, getCurrentUser } from './lib/useCurrentUser';
+import { useCurrentUser } from './lib/useCurrentUser';
+import { useAuthSession } from './lib/useAuthSession';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, fontFamily: 'monospace', background: '#fff1f0', minHeight: '100vh' }}>
+          <h2 style={{ color: '#cf1322', marginBottom: 12 }}>页面渲染出错</h2>
+          <pre style={{ color: '#333', whiteSpace: 'pre-wrap', background: '#fff', padding: 16, borderRadius: 8, border: '1px solid #ffa39e' }}>
+            {this.state.error.message}
+            {'\n\n'}
+            {this.state.error.stack}
+          </pre>
+          <button
+            style={{ marginTop: 16, padding: '8px 20px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+            onClick={() => { this.setState({ error: null }); window.location.href = '/onboarding'; }}
+          >
+            返回登录页
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function LayoutWrapper() {
   return <Layout><Outlet /></Layout>;
 }
 
 function OnboardingGuard() {
-  const onboarded = isOnboarded();
-  const currentUser = getCurrentUser();
-  if (!onboarded || !currentUser) {
+  const { isAuthenticated } = useAuthSession();
+  const currentUser = useCurrentUser();
+  if (!isAuthenticated || !currentUser) {
     return <Navigate to="/onboarding" replace />;
   }
   return <LayoutWrapper />;
@@ -38,6 +71,7 @@ function OnboardingGuard() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         {/* 公开页面（无侧边栏、无需引导） */}
@@ -84,5 +118,6 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

@@ -1,0 +1,23 @@
+---
+description: Self-evolved project rules managed by self-evolve
+alwaysApply: true
+---
+
+# Auto-Evolved Rules
+<!-- Last updated: 2026-03-18 by self-evolve agent | platform: cursor -->
+
+<!-- self-evolve:managed:start -->
+<!-- AI managed section: self-evolve can rewrite this block during rule refactors. -->
+
+## 工作流规范
+- 代码变更时同步更新相关文档和配置文件
+
+## 代码沉淀规则
+- useSyncExternalStore 的 getSnapshot 函数必须缓存返回对象，避免每次调用返回新引用
+
+<!-- self-evolve:managed:end -->
+
+## Manual Rules
+<!-- self-evolve:manual:start -->
+<!-- Manual section: add rules here if you do not want self-evolve to rewrite them. -->
+<!-- self-evolve:manual:end -->

@@ -34,7 +34,7 @@ ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Mod
 - **多项目隔离** — 项目间数据完全隔离，一键切换
 - **MCP Server（54 个工具）** — AI Agent 通过 MCP 协议领取任务、上报进度、创建需求、管理迭代
 - **Web Dashboard** — 思维导图、看板、任务列表、甘特图、需求池、项目仪表盘
-- **个人工作台** — "我的需求子树"三视图（平铺/树状/思维导图），轻量身份识别
+- **个人工作台** — "我的需求子树"三视图（列表/思维导图/甘特图），账号登录后自动恢复成员上下文
 - **Intake 收件箱** — 外部无需登录即可提交 Bug/功能建议/反馈，项目成员审核后一键转正式节点
 - **迭代管理** — 带时间盒约束的 Sprint 管理，关联任务，完成率跟踪
 - **节点附件** — Markdown 文档、外部链接、TAPD 关联，节点即信息中枢
@@ -77,7 +77,10 @@ start.bat
 | MCP SSE | http://localhost:3210/mcp/sse |
 | 健康检查 | http://localhost:3210/health |
 
-默认 API Token 为 `dev-token`，生产环境请在 `.env` 中修改 `CLAWPM_API_TOKEN`。
+默认兼容 Token 为 `dev-token`，生产环境请在 `.env` 中修改 `CLAWPM_API_TOKEN`。新版本同时支持：
+
+- 人类用户：通过账号登录获取会话 token
+- Agent / OpenClaw：通过专属 Agent token 接入 MCP
 
 ### Docker 部署（可选）
 
@@ -92,6 +95,16 @@ docker-compose up -d
 
 ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
 
+### 人类用户登录
+
+首次进入 Web 界面时，使用 `/onboarding` 页面完成：
+
+1. 注册账号或直接登录
+2. 自动绑定默认成员，或在引导页中绑定/创建成员
+3. 进入个人工作台
+
+后续浏览器会自动恢复登录态与当前成员上下文。
+
 ### CodeBuddy（推荐 stdio 模式）
 
 编辑用户级配置文件 `~/.codebuddy/mcp.json`（Windows: `C:\Users\<用户名>\.codebuddy\mcp.json`），添加：
@@ -103,6 +116,9 @@ ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
       "command": "npx",
       "args": ["tsx", "<项目绝对路径>/server/src/mcp/stdio.ts"],
       "transportType": "stdio",
+      "env": {
+        "CLAWPM_AGENT_TOKEN": "<在成员页生成的 Agent Token>"
+      },
       "disabled": false
     }
   }
@@ -113,7 +129,7 @@ ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
 >
 > 修改后**重启 CodeBuddy** 生效。
 
-**Agent 身份绑定**：可通过环境变量或命令行参数绑定 Agent 身份：
+**兼容模式**：如果你还没有升级到 Agent token，也可以继续使用旧身份绑定方式：
 
 ```json
 {
@@ -127,30 +143,37 @@ ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
 }
 ```
 
-或使用环境变量 `CLAWPM_AGENT_ID=cursor-agent`，绑定后 `get_my_tasks` 等工具自动关联身份。
+或使用环境变量 `CLAWPM_AGENT_ID=cursor-agent`。但推荐优先使用 `CLAWPM_AGENT_TOKEN`，这样 MCP 会自动识别绑定后的 Agent 身份。
 
 ### Cursor Agent（SSE 模式）
 
-在项目的 `.cursor/mcp.json` 中添加：
+在成员管理页为某个 Agent 点击“OpenClaw 接入配置”后，会直接生成专属 SSE 地址。`.cursor/mcp.json` 可配置为：
 
 ```json
 {
   "mcpServers": {
     "clawpm": {
       "type": "sse",
-      "url": "http://localhost:3210/mcp/sse?token=dev-token"
+      "url": "http://localhost:3210/mcp/sse?token=<agent-token>"
     }
   }
 }
 ```
 
 > SSE 模式需要先启动 ClawPM 服务（`start.bat` 或 `pnpm dev`）。
+>
+> 推荐不要再把全局 `dev-token` 暴露给 MCP 客户端，而是为每个 Agent 单独生成 token。
 
 ### 其他 MCP 客户端
 
 SSE 端点支持两种认证方式：
-- **Header**：`Authorization: Bearer <token>`
-- **URL 参数**：`?token=<token>`
+- **Header**：`Authorization: Bearer <agent-token>`
+- **URL 参数**：`?token=<agent-token>`
+
+其中：
+- 人类 Web 登录使用账号会话 token
+- Agent / OpenClaw MCP 连接使用专属 Agent token
+- `CLAWPM_API_TOKEN` 仅作为兼容与开发模式兜底
 
 ## MCP 工具列表（59 个）
 
@@ -421,9 +444,10 @@ clawpm/
 |------|--------|------|
 | `CLAWPM_PORT` | `3210` | 服务端口 |
 | `CLAWPM_DB_PATH` | `./data/clawpm.db` | SQLite 数据库路径 |
-| `CLAWPM_API_TOKEN` | （必填） | API 认证 Token |
+| `CLAWPM_API_TOKEN` | `dev-token` | 兼容模式与开发态全局 Token，生产环境建议仅作为管理员/迁移用途 |
 | `CLAWPM_LOG_LEVEL` | `info` | 日志级别 |
-| `CLAWPM_AGENT_ID` | — | MCP stdio 模式下的 Agent 身份标识 |
+| `CLAWPM_AGENT_TOKEN` | — | MCP stdio 模式下的 Agent 专属 Token，推荐使用 |
+| `CLAWPM_AGENT_ID` | — | 旧版 MCP stdio Agent 身份标识，保留兼容 |
 
 ## Documentation
 

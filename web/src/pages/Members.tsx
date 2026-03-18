@@ -126,8 +126,165 @@ function MemberModal({ member, onClose, t }: { member?: any; onClose: () => void
   );
 }
 
+function AgentAccessModal({ member, onClose }: { member: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [bundle, setBundle] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
+
+  const { data: tokens = [], isLoading } = useQuery({
+    queryKey: ['agent-tokens', member.identifier],
+    queryFn: () => api.getAgentTokens(member.identifier),
+    enabled: !!member,
+  });
+
+  async function handleGenerate() {
+    setCreating(true);
+    try {
+      const result = await api.getOpenClawConfig(member.identifier);
+      setBundle(result);
+      qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRotate(tokenId: number) {
+    const result = await api.rotateAgentToken(member.identifier, tokenId, { client_type: 'openclaw', name: `${member.identifier}-openclaw` });
+    setBundle({
+      token: result.token,
+      tokenPrefix: result.tokenPrefix,
+      sseUrl: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}`,
+      configJson: {
+        mcpServers: {
+          clawpm: {
+            type: 'sse',
+            url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}`,
+          },
+        },
+      },
+      powershellCommand: `$cfg = @'\n${JSON.stringify({
+        mcpServers: { clawpm: { type: 'sse', url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}` } },
+      }, null, 2)}\n'@; Set-Content -Path .\\mcp.json -Value $cfg`,
+      shellCommand: `cat <<'EOF' > mcp.json\n${JSON.stringify({
+        mcpServers: { clawpm: { type: 'sse', url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}` } },
+      }, null, 2)}\nEOF`,
+    });
+    qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+  }
+
+  async function handleRevoke(tokenId: number) {
+    await api.revokeAgentToken(member.identifier, tokenId);
+    qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+  }
+
+  async function copyText(text: string) {
+    await navigator.clipboard.writeText(text);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">OpenClaw 接入配置</h2>
+            <p className="text-sm text-slate-500 mt-1">{member.name} · {member.identifier}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(88vh-80px)]">
+          <div className="flex items-start justify-between gap-4 rounded-2xl bg-indigo-50 border border-indigo-100 p-4">
+            <div>
+              <p className="text-sm font-semibold text-indigo-900">一键生成 OpenClaw 配置</p>
+              <p className="text-sm text-indigo-700 mt-1">点击后会创建一个新的 Agent token，并返回专属 SSE 地址、JSON 配置和复制命令。</p>
+            </div>
+            <button
+              onClick={handleGenerate}
+              disabled={creating}
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {creating ? '生成中...' : '生成配置'}
+            </button>
+          </div>
+
+          {bundle && (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-900">SSE 地址</p>
+                    <button onClick={() => copyText(bundle.sseUrl)} className="text-xs text-indigo-600">复制</button>
+                  </div>
+                  <p className="text-xs text-slate-600 break-all">{bundle.sseUrl}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-900">本次生成的 token</p>
+                    <button onClick={() => copyText(bundle.token)} className="text-xs text-indigo-600">复制</button>
+                  </div>
+                  <p className="text-xs text-slate-600 break-all">{bundle.token}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-slate-900">OpenClaw / MCP JSON 配置</p>
+                  <button onClick={() => copyText(JSON.stringify(bundle.configJson, null, 2))} className="text-xs text-indigo-600">复制 JSON</button>
+                </div>
+                <pre className="text-xs bg-slate-50 rounded-xl p-3 overflow-x-auto text-slate-700">{JSON.stringify(bundle.configJson, null, 2)}</pre>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-900">PowerShell</p>
+                    <button onClick={() => copyText(bundle.powershellCommand)} className="text-xs text-indigo-600">复制</button>
+                  </div>
+                  <pre className="text-xs bg-slate-50 rounded-xl p-3 overflow-x-auto text-slate-700 whitespace-pre-wrap break-all">{bundle.powershellCommand}</pre>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-900">Shell</p>
+                    <button onClick={() => copyText(bundle.shellCommand)} className="text-xs text-indigo-600">复制</button>
+                  </div>
+                  <pre className="text-xs bg-slate-50 rounded-xl p-3 overflow-x-auto text-slate-700 whitespace-pre-wrap break-all">{bundle.shellCommand}</pre>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-3">已有 token</p>
+            {isLoading ? (
+              <p className="text-sm text-slate-500">加载中...</p>
+            ) : (tokens as any[]).length === 0 ? (
+              <p className="text-sm text-slate-500">还没有任何 token，点击上方按钮生成第一份配置即可。</p>
+            ) : (
+              <div className="space-y-2">
+                {(tokens as any[]).map((token: any) => (
+                  <div key={token.id} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">{token.name || token.tokenPrefix}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {token.tokenPrefix} · {token.clientType} · {token.status}
+                        {token.lastUsedAt ? ` · 最近使用 ${new Date(token.lastUsedAt).toLocaleString()}` : ' · 尚未使用'}
+                      </p>
+                    </div>
+                    <button onClick={() => handleRotate(token.id)} className="text-xs text-indigo-600 hover:text-indigo-700">轮换</button>
+                    <button onClick={() => handleRevoke(token.id)} className="text-xs text-red-500 hover:text-red-600">吊销</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Member card ──────────────────────────────────────────────────
-function MemberCard({ member, onEdit, onDelete, t }: { member: any; onEdit: () => void; onDelete: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
+function MemberCard({ member, onEdit, onDelete, onConfigureAgent, t }: { member: any; onEdit: () => void; onDelete: () => void; onConfigureAgent?: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   return (
     <div className="card p-4 group hover:border-slate-700 transition-colors">
       <div className="flex items-start gap-3">
@@ -150,6 +307,11 @@ function MemberCard({ member, onEdit, onDelete, t }: { member: any; onEdit: () =
         </div>
         {/* Action buttons (show on hover) */}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {member.type === 'agent' && onConfigureAgent && (
+            <button onClick={onConfigureAgent} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-indigo-500 hover:bg-indigo-50 text-xs transition-colors" title="OpenClaw 接入">
+              ⚙
+            </button>
+          )}
           <button onClick={onEdit} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-800 text-xs transition-colors" title={t('common.edit')}>✎</button>
           <button onClick={onDelete} className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-900/20 text-xs transition-colors" title={t('common.delete')}>✕</button>
         </div>
@@ -167,6 +329,7 @@ export default function Members() {
   const [showModal, setShowModal] = useState(false);
   const [editMember, setEditMember] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
+  const [agentToConfigure, setAgentToConfigure] = useState<any>(null);
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ['members', activeProject, typeFilter],
@@ -239,6 +402,7 @@ export default function Members() {
               t={t}
               onEdit={() => { setEditMember(m); setShowModal(true); }}
               onDelete={() => setDeleteConfirm(m)}
+              onConfigureAgent={m.type === 'agent' ? () => setAgentToConfigure(m) : undefined}
             />
           ))}
         </div>
@@ -247,6 +411,10 @@ export default function Members() {
       {/* Modal */}
       {showModal && (
         <MemberModal member={editMember} t={t} onClose={() => { setShowModal(false); setEditMember(null); }} />
+      )}
+
+      {agentToConfigure && (
+        <AgentAccessModal member={agentToConfigure} onClose={() => setAgentToConfigure(null)} />
       )}
 
       {/* Delete confirm */}

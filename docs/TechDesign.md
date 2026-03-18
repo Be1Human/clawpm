@@ -11,6 +11,7 @@
 > - **v2.2 (2026-03-02): 节点附件系统** — 新增 task_attachments 表，支持 Markdown 文档/外部链接/TAPD 关联三种附件类型，附件 CRUD API，前端附件面板
 > - **v2.3 (2026-03-02): 节点样式个性化** — 思维导图节点支持用户自定义背景色/边框色/包围框/字体色等视觉样式，纯前端 localStorage 方案
 > - **v2.4 (2026-03-04): 协作与个人工作台** — 轻量身份识别机制（X-ClawPM-User Header）、"我的需求子树"个人工作台、MCP Agent 身份绑定、仪表盘个人视角
+> - **v5.0 (2026-03-18): 账号与 Agent Token 鉴权** — 新增账号登录、成员绑定、Agent 专属 token、MCP session principal、OpenClaw 一键配置
 > - **v2.5 (2026-03-04): 节点权限控制** — 新增 task_permissions 表，Owner 可授权 edit/view 权限，写操作中间件校验，MCP 权限工具
 > - **v2.6 (2026-03-04): 我的任务三视图** — 平铺视图（按状态分组）、树状视图（现有）、思维导图视图（ReactFlow），localStorage 视图偏好记忆
 > - **v3.0 (2026-03-05): Plane 借鉴增强** — Cmd+K 命令面板(cmdk)、统一筛选 FilterBar/useFilters、迭代管理(iterations 表)、Markdown 描述编辑器(react-markdown)、归档机制(archived_at)、批量操作(batch API)、收藏/最近访问(localStorage)、站内通知(notifications 表+轮询)
@@ -909,6 +910,26 @@ function TapdCard({ attachment }) {
 
 ## 十、MCP Server 设计
 
+### 10.0 v5.0 认证更新
+
+当前版本在原有共享 Bearer Token 之上新增双主体认证：
+
+1. **账号会话 token**
+   - 用于人类用户登录 Web
+   - 后端解析后得到 `account principal`
+   - 再映射到一个 `current member`
+
+2. **Agent token**
+   - 用于 OpenClaw / Cursor / CodeBuddy 等 MCP 客户端
+   - 后端解析后得到 `agent principal`
+   - 直接绑定到 `member.identifier`
+
+兼容策略：
+
+- `CLAWPM_API_TOKEN` 仍保留，作为开发与迁移期兜底
+- `X-ClawPM-User` / `CLAWPM_AGENT_ID` 仍可继续使用，但优先级低于新版 principal
+- 新代码优先走 `AuthService.resolvePrincipalByToken()`
+
 ### 10.1 传输层
 
 支持两种传输模式：
@@ -922,11 +943,22 @@ function TapdCard({ attachment }) {
 
 SSE 模式支持两种认证方式：
 ```
-Authorization: Bearer <CLAWPM_API_TOKEN>
+Authorization: Bearer <agent-token>
 或
-?token=<CLAWPM_API_TOKEN>
+?token=<agent-token>
 ```
-stdio 模式无需认证（本地进程）。
+stdio 模式推荐通过环境变量传入：
+
+```
+CLAWPM_AGENT_TOKEN=<agent-token>
+```
+
+兼容保留：
+
+```
+CLAWPM_AGENT_ID=<legacy-identifier>
+--agent-id=<legacy-identifier>
+```
 
 ### 10.3 MCP 工具实现要点
 

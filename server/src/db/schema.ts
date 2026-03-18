@@ -237,3 +237,60 @@ export const notifications = sqliteTable('notifications', {
   isRead: integer('is_read').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
+
+export const accounts = sqliteTable('accounts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  displayName: text('display_name').notNull(),
+  status: text('status').notNull().default('active'),
+  lastLoginAt: text('last_login_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const accountSessions = sqliteTable('account_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  accountId: integer('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  tokenPrefix: text('token_prefix').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  status: text('status').notNull().default('active'),
+  expiresAt: text('expires_at'),
+  lastUsedAt: text('last_used_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const accountMemberBindings = sqliteTable('account_member_bindings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  accountId: integer('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  memberIdentifier: text('member_identifier').notNull(),
+  isDefault: integer('is_default').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const agentTokens = sqliteTable('agent_tokens', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  memberIdentifier: text('member_identifier').notNull(),
+  clientType: text('client_type').notNull().default('openclaw'),
+  name: text('name'),
+  tokenPrefix: text('token_prefix').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  status: text('status').notNull().default('active'),
+  expiresAt: text('expires_at'),
+  lastUsedAt: text('last_used_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const authAuditLogs = sqliteTable('auth_audit_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  actorType: text('actor_type').notNull(),
+  actorId: text('actor_id').notNull(),
+  action: text('action').notNull(),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  metadata: text('metadata').notNull().default('{}'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});

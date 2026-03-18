@@ -7,10 +7,12 @@ import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
 import { getDb } from './db/connection.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { AuthService, type AuthPrincipal } from './services/auth-service.js';
 import fs from 'fs';
 import path from 'path';
 
 const app = Fastify({ logger: { level: config.logLevel } });
+const transports: Record<string, { transport: SSEServerTransport; mcp: ReturnType<typeof createMcpServer> }> = {};
 
 // ── Middleware ─────────────────────────────────────────────────────
 await app.register(cors, {
@@ -34,50 +36,76 @@ await app.register(staticFiles, {
 
 // ── Auth hook + User identity extraction ──────────────────────────
 app.decorateRequest('clawpmUser', null);
+app.decorateRequest('clawpmMember', null);
+app.decorateRequest('clawpmPrincipal', null);
 
 app.addHook('onRequest', async (req, reply) => {
   // Skip auth for health check and static files
   if (req.url === '/health' || req.url?.startsWith('/assets') || req.url === '/' || req.url?.startsWith('/uploads/')) return;
 
-  // Support token via Authorization header OR ?token= query param (for SSE clients)
+  const pathname = req.url?.split('?')[0] || req.url;
+  const sessionId = (req.query as any)?.sessionId as string | undefined;
+  const isPublicApi = pathname === '/api/v1/auth/register'
+    || pathname === '/api/v1/auth/login'
+    || pathname === '/api/v1/intake';
+  const isKnownMcpSessionMessage = pathname === '/mcp/messages' && !!sessionId && !!transports[sessionId];
+
   const auth = req.headers.authorization;
   const queryToken = (req.query as any).token;
-  const isAuthed = auth === `Bearer ${config.apiToken}` || queryToken === config.apiToken;
+  const bearerToken = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  const providedToken = bearerToken || queryToken || null;
+  const preferredMember = (req.headers['x-clawpm-member'] as string) || (req.headers['x-clawpm-user'] as string) || null;
+  let principal: AuthPrincipal | null = null;
 
-  if (!isAuthed) {
+  if (providedToken) {
+    principal = AuthService.resolvePrincipalByToken(providedToken, preferredMember);
+    if (!principal && providedToken === config.apiToken) {
+      principal = {
+        type: 'legacy',
+        authSource: 'legacy_api_token',
+        memberIdentifier: preferredMember,
+      };
+    }
+  }
+
+  if (!principal) {
     // Allow unauthenticated access in dev for Web UI
     if (config.isDev && !req.url?.startsWith('/api') && !req.url?.startsWith('/mcp')) return;
-    if (req.url?.startsWith('/api') || req.url?.startsWith('/mcp')) {
+    if ((req.url?.startsWith('/api') || req.url?.startsWith('/mcp')) && !isPublicApi && !isKnownMcpSessionMessage) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
   }
 
-  // Extract user identity from X-ClawPM-User header (optional, for personal views)
-  (req as any).clawpmUser = (req.headers['x-clawpm-user'] as string) || null;
+  (req as any).clawpmPrincipal = principal;
+  (req as any).clawpmMember = principal?.memberIdentifier || preferredMember || null;
+  (req as any).clawpmUser = (req as any).clawpmMember;
 });
 
 // ── Health check ───────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', version: '1.0.0' }));
 
 // ── MCP Server (SSE) ───────────────────────────────────────────────
-const mcp = createMcpServer();
-const transports: Record<string, SSEServerTransport> = {};
-
 app.get('/mcp/sse', async (req, reply) => {
+  const principal = (req as any).clawpmPrincipal as AuthPrincipal | null;
+  if (!principal) return reply.code(401).send({ error: 'Unauthorized' });
   const transport = new SSEServerTransport('/mcp/messages', reply.raw);
+  const mcp = createMcpServer({
+    principal,
+    memberIdentifier: principal.memberIdentifier || undefined,
+  });
   // _sessionId 在构造函数里生成，与发给客户端的 endpoint URL 中的 sessionId 一致
   const sessionId = (transport as any)._sessionId as string;
-  transports[sessionId] = transport;
+  transports[sessionId] = { transport, mcp };
   reply.raw.on('close', () => { delete transports[sessionId]; });
   await mcp.connect(transport);
 });
 
 app.post('/mcp/messages', async (req, reply) => {
   const sessionId = (req.query as any).sessionId;
-  const transport = sessionId ? transports[sessionId] : Object.values(transports)[0];
-  if (!transport) return reply.code(404).send({ error: 'No MCP session' });
+  const session = sessionId ? transports[sessionId] : Object.values(transports)[0];
+  if (!session) return reply.code(404).send({ error: 'No MCP session' });
   // 将 Fastify 已解析的 body 直接传入，避免 SDK 重复读取 stream
-  await transport.handlePostMessage(req.raw, reply.raw, req.body);
+  await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
 });
 
 // ── REST API ───────────────────────────────────────────────────────

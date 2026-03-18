@@ -2,7 +2,7 @@
   "mcpServers": {
     "clawpm": {
       "type": "sse",
-      "url": "http://localhost:3210/mcp/sse?token=dev-token"
+      "url": "http://localhost:3210/mcp/sse?token=<agent-token>"
     }
   }
 }

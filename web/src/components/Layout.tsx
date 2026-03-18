@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { useActiveSpace, type Space } from '@/lib/useActiveSpace';
 import { useCurrentUser, clearCurrentUser, isOnboarded, clearOnboarded } from '@/lib/useCurrentUser';
+import { clearAuthSession, useAuthSession } from '@/lib/useAuthSession';
 import { useRecentTasks } from '@/lib/useRecentTasks';
 import { useFavorites } from '@/lib/useFavorites';
 import { api, setActiveProject } from '@/api/client';
@@ -262,6 +263,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const activeSlug = useActiveProject();
   const currentUser = useCurrentUser();
+  const { account } = useAuthSession();
   const [space, setSpace] = useActiveSpace();
   const { recentTasks } = useRecentTasks();
   const { favorites } = useFavorites();
@@ -334,6 +336,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setNewProjectName('');
     setShowCreateProject(false);
     qc.invalidateQueries({ queryKey: ['projects'] });
+  }
+
+  function handleLogout() {
+    api.logout().catch(() => undefined);
+    clearAuthSession();
+    clearCurrentUser();
+    clearOnboarded();
+    navigate('/onboarding');
   }
 
   return (
@@ -508,18 +518,30 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-gray-800 truncate">{currentMember.name}</p>
-                <p className="text-[10px] text-gray-400 truncate">{currentMember.identifier}</p>
+                <p className="text-[10px] text-gray-400 truncate">{account?.username || currentMember.identifier}</p>
               </div>
-              <button
-                onClick={() => setShowIdentityPicker(true)}
-                className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                title={t('nav.switchIdentity')}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M11.5 6A4.5 4.5 0 0 0 3 4.5M2.5 8A4.5 4.5 0 0 0 11 9.5" strokeLinecap="round" />
-                  <path d="M3 2v2.5H.5M11 12V9.5h2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowIdentityPicker(true)}
+                  className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                  title={t('nav.switchIdentity')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M11.5 6A4.5 4.5 0 0 0 3 4.5M2.5 8A4.5 4.5 0 0 0 11 9.5" strokeLinecap="round" />
+                    <path d="M3 2v2.5H.5M11 12V9.5h2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                  title="退出登录"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M5 2.5H3.5A1.5 1.5 0 0 0 2 4v6a1.5 1.5 0 0 0 1.5 1.5H5" strokeLinecap="round" />
+                    <path d="M8.5 4.5 11 7l-2.5 2.5M11 7H5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
             </div>
           ) : (
             <button

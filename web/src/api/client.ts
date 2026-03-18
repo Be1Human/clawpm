@@ -1,7 +1,8 @@
-import { getCurrentUser } from '../lib/useCurrentUser';
+import { getCurrentMember } from '../lib/useCurrentMember';
+import { getAuthToken } from '../lib/useAuthSession';
 
 const BASE = '/api/v1';
-const TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
+const LEGACY_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
 /** 当前活跃项目 slug，全局状态（带订阅通知） */
 let _activeProjectSlug = localStorage.getItem('clawpm-activeProject') || 'default';
@@ -25,18 +26,40 @@ function withProject(path: string): string {
   return `${path}${sep}project=${_activeProjectSlug}`;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+function buildAuthHeaders(options?: RequestInit, includeAuth = true): Record<string, string> {
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${TOKEN}`,
     ...options?.headers as Record<string, string>,
   };
-  if (options?.body) {
+  if (includeAuth) {
+    const token = getAuthToken() || LEGACY_TOKEN;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (options?.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
-  const currentUser = getCurrentUser();
-  if (currentUser) {
-    headers['X-ClawPM-User'] = currentUser;
+  const currentMember = getCurrentMember();
+  if (currentMember) {
+    headers['X-ClawPM-Member'] = currentMember;
+    headers['X-ClawPM-User'] = currentMember;
   }
+  return headers;
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = buildAuthHeaders(options, true);
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Request failed');
+  }
+  return res.json();
+}
+
+async function requestPublic<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = buildAuthHeaders(options, false);
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers,
@@ -49,6 +72,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Auth
+  register: (data: { username: string; password: string; display_name: string; project?: string; auto_create_member?: boolean }) =>
+    requestPublic<any>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  login: (data: { username: string; password: string }) =>
+    requestPublic<any>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  logout: () => request<any>('/auth/logout', { method: 'POST' }),
+  getAuthMe: () => request<any>('/auth/me'),
+  selectMember: (data: { member_identifier?: string; project?: string; create_member?: any }) =>
+    request<any>(withProject('/auth/select-member'), { method: 'POST', body: JSON.stringify(data) }),
+
   // Projects
   getProjects: () => request<any[]>('/projects'),
   createProject: (data: { name: string; slug?: string; description?: string }) =>
@@ -130,6 +163,18 @@ export const api = {
   deleteMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
   checkIdentifierAvailable: (identifier: string) =>
     request<{ available: boolean; reason?: string }>(`/members/check-identifier?identifier=${encodeURIComponent(identifier)}`),
+
+  // Agents
+  createAgent: (data: any) => request<any>(withProject('/agents'), { method: 'POST', body: JSON.stringify(data) }),
+  getAgentTokens: (identifier: string) => request<any[]>(withProject(`/agents/${encodeURIComponent(identifier)}/tokens`)),
+  createAgentToken: (identifier: string, data?: { name?: string; client_type?: string; expires_at?: string }) =>
+    request<any>(withProject(`/agents/${encodeURIComponent(identifier)}/tokens`), { method: 'POST', body: JSON.stringify(data || {}) }),
+  rotateAgentToken: (identifier: string, id: number, data?: { name?: string; client_type?: string }) =>
+    request<any>(withProject(`/agents/${encodeURIComponent(identifier)}/tokens/${id}/rotate`), { method: 'POST', body: JSON.stringify(data || {}) }),
+  revokeAgentToken: (identifier: string, id: number) =>
+    request<any>(withProject(`/agents/${encodeURIComponent(identifier)}/tokens/${id}/revoke`), { method: 'POST' }),
+  getOpenClawConfig: (identifier: string) =>
+    request<any>(withProject(`/agents/${encodeURIComponent(identifier)}/openclaw-config`)),
 
   // Gantt
   getGanttData: (params?: Record<string, string>) => {
@@ -254,11 +299,7 @@ export const api = {
   uploadImage: async (file: File): Promise<{ url: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
-    const currentUser = getCurrentUser();
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${TOKEN}`,
-    };
-    if (currentUser) headers['X-ClawPM-User'] = currentUser;
+    const headers = buildAuthHeaders({ body: formData }, true);
     const res = await fetch(`${BASE}/upload/image`, {
       method: 'POST',
       headers,

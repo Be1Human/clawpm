@@ -13,6 +13,7 @@ import { AttachmentService } from '../services/attachment-service.js';
 import { IntakeService } from '../services/intake-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
+import { AuthService } from '../services/auth-service.js';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members } from '../db/schema.js';
@@ -24,11 +25,28 @@ function getProjectId(req: any): number {
   return ProjectService.resolveProjectId(slug);
 }
 
+function getBaseUrl(req: any) {
+  const proto = (req.headers['x-forwarded-proto'] as string) || 'http';
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || `localhost:${config.port}`;
+  return `${proto}://${host}`;
+}
+
 export async function registerRoutes(app: FastifyInstance) {
+
+  function requireAccountPrincipal(req: any, reply?: any) {
+    const principal = req.clawpmPrincipal;
+    if (!principal || principal.type !== 'account') {
+      if (reply) return reply.code(401).send({ error: '需要账号登录' });
+      const err: any = new Error('需要账号登录');
+      err.statusCode = 401;
+      throw err;
+    }
+    return principal;
+  }
 
   /** 权限校验：要求当前用户对指定任务有 edit 权限 */
   async function requireEditPermission(req: any, taskId: string) {
-    const user = req.clawpmUser as string | null;
+    const user = req.clawpmMember as string | null;
     if (!user) return; // 未设身份 → 兼容模式，不拦截
     const db = getDb();
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
@@ -43,7 +61,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   /** 权限校验：要求当前用户是指定任务的 Owner */
   async function requireOwner(req: any, taskId: string) {
-    const user = req.clawpmUser as string | null;
+    const user = req.clawpmMember as string | null;
     if (!user) return;
     const db = getDb();
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
@@ -54,6 +72,91 @@ export async function registerRoutes(app: FastifyInstance) {
       throw err;
     }
   }
+
+  // ── Auth（v5.0）──────────────────────────────────────────────────────
+  app.post('/api/v1/auth/register', async (req, reply) => {
+    try {
+      const body = req.body as any;
+      const result = AuthService.register({
+        username: body.username,
+        password: body.password,
+        displayName: body.display_name || body.displayName || body.username,
+        projectSlug: body.project,
+        autoCreateMember: body.auto_create_member !== false,
+      });
+      return reply.code(201).send(result);
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.post('/api/v1/auth/login', async (req, reply) => {
+    try {
+      const body = req.body as any;
+      const result = AuthService.login({
+        username: body.username,
+        password: body.password,
+      });
+      return result;
+    } catch (e: any) {
+      return reply.code(401).send({ error: e.message });
+    }
+  });
+
+  app.post('/api/v1/auth/logout', async (req, reply) => {
+    const auth = req.headers.authorization;
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (token) AuthService.logout(token);
+    return { ok: true };
+  });
+
+  app.get('/api/v1/auth/me', async (req, reply) => {
+    const principal = requireAccountPrincipal(req, reply);
+    if (!principal) return;
+    return {
+      account: {
+        id: principal.accountId,
+        username: principal.username,
+        displayName: principal.displayName,
+      },
+      ...AuthService.getAccountSnapshot(principal.accountId, principal.memberIdentifier),
+    };
+  });
+
+  app.post('/api/v1/auth/select-member', async (req, reply) => {
+    const principal = requireAccountPrincipal(req, reply);
+    if (!principal) return;
+    const body = req.body as any;
+    const projectId = getProjectId(req);
+    try {
+      let memberIdentifier = body.member_identifier as string | undefined;
+      if (!memberIdentifier && body.create_member) {
+        const created = MemberService.create({
+          name: body.create_member.name,
+          identifier: body.create_member.identifier,
+          type: 'human',
+          color: body.create_member.color,
+          description: body.create_member.description,
+          role: body.create_member.role,
+          projectId,
+        });
+        memberIdentifier = created.identifier;
+      }
+      if (!memberIdentifier) return reply.code(400).send({ error: 'member_identifier is required' });
+      const currentMember = AuthService.bindMember(principal.accountId, projectId, memberIdentifier, true);
+      return {
+        account: {
+          id: principal.accountId,
+          username: principal.username,
+          displayName: principal.displayName,
+        },
+        currentMember,
+        bindings: AuthService.listBindings(principal.accountId),
+      };
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
 
   // ── Projects（v2.1 新增）────────────────────────────────────────────
   app.get('/api/v1/projects', async () => {
@@ -498,6 +601,105 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete('/api/v1/members/:identifier', async (req, reply) => {
     const { identifier } = req.params as any;
     return MemberService.delete(identifier);
+  });
+
+  // ── Agent Tokens / OpenClaw（v5.0）─────────────────────────────────
+  app.post('/api/v1/agents', async (req, reply) => {
+    const projectId = getProjectId(req);
+    try {
+      const body = req.body as any;
+      const member = MemberService.create({
+        ...body,
+        type: 'agent',
+        projectId,
+      });
+      return reply.code(201).send(member);
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.get('/api/v1/agents/:identifier/tokens', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const projectId = getProjectId(req);
+    return AuthService.listAgentTokens(identifier, projectId).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      clientType: row.clientType,
+      tokenPrefix: row.tokenPrefix,
+      status: row.status,
+      expiresAt: row.expiresAt,
+      lastUsedAt: row.lastUsedAt,
+      createdAt: row.createdAt,
+    }));
+  });
+
+  app.post('/api/v1/agents/:identifier/tokens', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const projectId = getProjectId(req);
+    try {
+      const body = req.body as any;
+      const result = AuthService.createAgentToken({
+        memberIdentifier: identifier,
+        projectId,
+        clientType: body.client_type,
+        name: body.name,
+        expiresAt: body.expires_at,
+      });
+      return reply.code(201).send({
+        id: result.row.id,
+        token: result.token,
+        tokenPrefix: result.row.tokenPrefix,
+        clientType: result.row.clientType,
+        name: result.row.name,
+        status: result.row.status,
+        expiresAt: result.row.expiresAt,
+      });
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.post('/api/v1/agents/:identifier/tokens/:id/rotate', async (req, reply) => {
+    const { identifier, id } = req.params as any;
+    const projectId = getProjectId(req);
+    try {
+      const body = req.body as any;
+      const result = AuthService.rotateAgentToken(parseInt(id, 10), identifier, projectId, body.client_type, body.name);
+      return {
+        id: result.row.id,
+        token: result.token,
+        tokenPrefix: result.row.tokenPrefix,
+        clientType: result.row.clientType,
+        name: result.row.name,
+        status: result.row.status,
+        expiresAt: result.row.expiresAt,
+      };
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.post('/api/v1/agents/:identifier/tokens/:id/revoke', async (req, reply) => {
+    const { identifier, id } = req.params as any;
+    const projectId = getProjectId(req);
+    AuthService.revokeAgentToken(parseInt(id, 10), identifier, projectId);
+    return { ok: true };
+  });
+
+  app.get('/api/v1/agents/:identifier/openclaw-config', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const projectId = getProjectId(req);
+    try {
+      const configBundle = AuthService.buildOpenClawConfig({
+        memberIdentifier: identifier,
+        projectId,
+        baseUrl: getBaseUrl(req),
+      });
+      return configBundle;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
   });
 
   // ── Req Links（需求关联） ────────────────────────────────────────────
