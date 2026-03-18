@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { cn } from '../lib/utils';
 import { useActiveProject } from '../lib/useActiveProject';
 import { useCurrentUser } from '../lib/useCurrentUser';
+import { sortTreeByPriority } from '@/lib/tree';
 import { useI18n } from '@/lib/i18n';
 import {
   ReactFlow,
@@ -1157,10 +1158,12 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
     },
   });
 
-  const allNodesMap = new Map<number, any>();
-  collectNodes(tree as any[], allNodesMap);
+  const sortedTree = useMemo(() => sortTreeByPriority(tree as any[]), [tree]);
 
-  const counts = currentUser ? countMyNodes(tree as any[], currentUser) : { active: 0, review: 0, planned: 0, overdue: 0, total: 0 };
+  const allNodesMap = new Map<number, any>();
+  collectNodes(sortedTree as any[], allNodesMap);
+
+  const counts = currentUser ? countMyNodes(sortedTree as any[], currentUser) : { active: 0, review: 0, planned: 0, overdue: 0, total: 0 };
 
   const handleAdvance = (taskId: string, status: string) => advanceMut.mutate({ taskId, status });
 
@@ -1182,7 +1185,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
   }
 
   const VIEW_TITLE_KEYS: Record<ViewMode, string> = {
-    flat: 'myTasks.viewTitleFlat', tree: 'myTasks.viewTitleTree', mindmap: 'myTasks.viewTitleMindmap',
+    flat: 'myTasks.viewTitleFlat', tree: 'myTasks.viewTitleTree', mindmap: 'nav.mindMap',
   };
 
   return (
@@ -1208,7 +1211,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
       {/* View Content */}
       {viewMode === 'tree' && (
         <MyTasksTreeView
-          tree={tree as any[]}
+          tree={sortedTree as any[]}
           currentUser={currentUser}
           allNodesMap={allNodesMap}
           onAdvanceStatus={handleAdvance}
@@ -1219,7 +1222,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
 
       {viewMode === 'flat' && (
         <MyTasksFlatView
-          tree={tree as any[]}
+          tree={sortedTree as any[]}
           currentUser={currentUser}
           onAdvanceStatus={handleAdvance}
           isLoading={isLoading}
@@ -1229,7 +1232,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
 
       {viewMode === 'mindmap' && (
         <MyTasksMindMapView
-          tree={tree as any[]}
+          tree={sortedTree as any[]}
           currentUser={currentUser}
           isLoading={isLoading}
           focusNodeId={focusNodeId}

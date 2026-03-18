@@ -4,6 +4,7 @@ import { TaskService } from '../services/task-service.js';
 import { BacklogService } from '../services/backlog-service.js';
 import { RiskService } from '../services/risk-service.js';
 import { AttachmentService } from '../services/attachment-service.js';
+import { IntakeService } from '../services/intake-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
 import { MemberService } from '../services/member-service.js';
@@ -350,7 +351,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     type: z.enum(['doc', 'link', 'tapd']).describe('附件类型：doc=Markdown文档, link=外部链接, tapd=TAPD单关联'),
     title: z.string().describe('附件标题，如"需求文档"、"Figma设计稿"'),
     content: z.string().describe('内容：doc类型为Markdown正文, link类型为URL, tapd类型为TAPD单ID'),
-    metadata: z.record(z.unknown()).optional().describe('扩展元数据 JSON'),
+    metadata: z.record(z.string(), z.unknown()).optional().describe('扩展元数据 JSON'),
     created_by: z.string().optional(),
   }, async (p) => {
     const a = AttachmentService.add(p.task_id, {
@@ -376,7 +377,7 @@ export function createMcpServer(options?: { agentId?: string }) {
     attachment_id: z.number().describe('附件 ID'),
     title: z.string().optional(),
     content: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   }, async (p) => {
     const a = AttachmentService.update(p.attachment_id, {
       title: p.title,

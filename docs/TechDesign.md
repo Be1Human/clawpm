@@ -1,8 +1,8 @@
 # ClawPM — 技术设计文档
 
-> **版本**: v3.2  
-> **日期**: 2026-03-05  
-> **关联 PRD**: [PRD.md](./PRD.md) v3.2  
+> **版本**: v3.6  
+> **日期**: 2026-03-17  
+> **关联 PRD**: [PRD.md](./PRD.md) v3.6  
 > **状态**: 迭代中  
 > **变更记录**:  
 > - v1.1 ~ v1.4: 需求树、人员管理、甘特图、标签/关联图谱等迭代  
@@ -18,6 +18,8 @@
 > - **v3.2 (2026-03-05): 成员管理 MCP 工具** — 新增 list_members/get_member/create_member/update_member/delete_member 五个 MCP 工具，AI Agent 可查询成员擅长领域和任务负载
 > - **v3.3 (2026-03-05): Markdown 全能预览** — MarkdownPreview 浅色主题重构、任务描述编辑时右侧实时预览面板、悬浮窗模式自适应尺寸
 > - **v3.4 (2026-03-10): 图片上传 + 节点样式增强** — 后端图片上传 API + 静态文件服务，前端描述编辑器粘贴/拖拽图片，脑图节点半包围/全包围边框效果
+> - **v3.5 (2026-03-17): 项目空间任务列表树形化** — `TaskList` 改为消费树形数据源，前端递归渲染，同级按优先级排序并兼容筛选与批量操作
+> - **v3.6 (2026-03-17): 树优先视图统一** — `KanbanBoard`、`GanttChart`、`Backlog`、`MyTasks`、`MyGantt` 围绕同一套需求树派生 UI，统一排序、筛选和祖先保留规则
 
 ---
 
@@ -1885,6 +1887,208 @@ mark_notification_read(notification_id, project?)
 | 新增 API 端点 | 纯新增，不修改现有端点签名 |
 | FilterBar 替换 | 现有筛选逻辑迁移到 FilterBar，功能完全等价 |
 | 新增 MCP 工具 | 纯新增，不影响现有工具 |
+
+---
+
+## 二十二、项目空间任务列表树形化技术设计 (v3.5)
+
+### 22.1 目标
+
+将项目空间 `/tasks` 页面从扁平表格切换为树形列表，但保留当前页面已经具备的高信息密度、筛选栏和批量操作能力。
+
+### 22.2 数据源方案
+
+- 前端从 `api.getTasks()` 切换为 `api.getTaskTree()`，直接复用后端已有树形接口。
+- 不新增后端端点，也不修改数据库结构。
+- 同级排序优先在前端完成，避免影响其他已经依赖 `sortOrder` 的页面。
+
+### 22.3 前端处理流程
+
+```typescript
+const { data: tree = [] } = useQuery({
+  queryKey: ['task-tree-list', activeProject],
+  queryFn: () => api.getTaskTree(),
+});
+
+const sortedTree = sortTreeByPriority(tree);
+const filteredTree = filterTreeKeepAncestors(sortedTree, filters);
+const visibleRows = flattenTree(filteredTree);
+```
+
+处理规则：
+
+1. `sortTreeByPriority()` 递归处理整棵树。
+2. 排序键为：`priorityOrder -> sortOrder -> title`。
+3. `filterTreeKeepAncestors()` 对命中节点保留祖先链，确保搜索/筛选后仍能理解上下文。
+4. `flattenTree()` 仅用于多选全选、计数和批量操作，不改变页面的树形展示。
+
+### 22.4 排序规则
+
+```typescript
+const PRIORITY_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+function compareSibling(a, b) {
+  return (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99)
+    || ((a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    || String(a.title || '').localeCompare(String(b.title || ''));
+}
+```
+
+说明：
+
+- 优先级更高的节点始终排在前面。
+- 当优先级相同时，尊重已有 `sortOrder`，避免完全打乱既有人工整理顺序。
+- 当 `priority` 和 `sortOrder` 都相同时，用标题排序保证结果稳定。
+
+### 22.5 UI 结构
+
+`TaskList.tsx` 调整为三层结构：
+
+1. 页面壳：标题、统计、筛选栏、新建按钮。
+2. 树形表头：保留现有字段列宽，视觉上仍是“列表”。
+3. 递归行组件：负责缩进、展开/折叠、勾选、字段展示。
+
+每行新增：
+
+- 展开/折叠按钮（无子节点时占位隐藏）
+- 基于 `depth` 的左侧缩进
+- 保持原有 checkbox 选择行为
+
+### 22.6 兼容性与风险
+
+| 变更点 | 方案 |
+|--------|------|
+| 数据源从扁平改树形 | 仅限 `TaskList.tsx` 页面消费变化，不影响其他页面 |
+| 批量操作 | 通过 `flattenTree(filteredTree)` 获取当前可见节点集合 |
+| 筛选行为 | 前端递归保留祖先路径，避免深层命中丢失上下文 |
+| 后端兼容性 | 无 schema/API 变更，零迁移成本 |
+
+---
+
+## 二十三、树优先视图统一技术设计 (v3.6)
+
+### 23.1 设计目标
+
+将“需求树是唯一底层结构”的产品理念贯彻到非脑图页面，避免不同页面各自做扁平映射，导致用户在列表、看板、甘特图、需求池和个人空间之间来回切换时丢失上下文。
+
+### 23.2 统一基础能力
+
+新增一组前端共享的树处理能力，供多个页面复用：
+
+```typescript
+sortTreeByPriority(nodes)
+filterTreeKeepAncestors(nodes, filters)
+flattenTree(nodes)
+buildBreadcrumb(node, allNodesMap)
+groupTreeByStatus(nodes)
+```
+
+统一规则：
+
+1. 同级排序：`priority -> sortOrder -> title`
+2. 筛选后保留祖先路径
+3. 个人空间数据集：`owner === currentUser` 的命中节点 + 必要祖先
+4. 树节点展示时优先复用同一套 row/card 元数据（标题、ID、标签、状态、优先级、owner、进度）
+
+### 23.3 看板树化
+
+#### 23.3.1 数据组织
+
+`KanbanBoard.tsx` 从 `api.getTasks()` 切换到 `api.getTaskTree()`，然后执行：
+
+```typescript
+const sortedTree = sortTreeByPriority(tree);
+const filteredTree = filterTreeKeepAncestors(sortedTree, filters);
+const columnTrees = buildStatusColumnsFromTree(filteredTree);
+```
+
+`buildStatusColumnsFromTree()` 规则：
+
+- 保留所有匹配节点的树层级
+- 每个状态列只展示 `node.status === column.status` 的节点
+- 节点的 `depth` 由其在原树中的层级决定
+- 当父节点不在当前列、子节点在当前列时，仍通过 breadcrumb 或占位缩进保留来源感
+
+#### 23.3.2 UI 形态
+
+- 列结构保持不变，仍然是状态列
+- 列内卡片改为“树卡片”：可缩进、可折叠、可显示父路径
+- 拖拽改状态时只变更 `status`，不变更树结构
+
+### 23.4 甘特图树行化
+
+#### 23.4.1 数据组织
+
+`GanttChart.tsx` 与 `MyGantt.tsx` 统一切到树驱动：
+
+```typescript
+const sortedTree = sortTreeByPriority(tree);
+const filteredTree = filterTreeKeepAncestors(sortedTree, filters);
+const rows = flattenTreeWithDepth(filteredTree);
+```
+
+#### 23.4.2 UI 形态
+
+- 左侧固定列：可展开/收起的树行
+- 右侧时间轴：每个树行一条时间 bar
+- 不再以 `domain` / `owner` 作为主分组容器，它们降级为筛选或附加信息
+- 个人甘特图只展示“我的节点 + 祖先路径”，但仍复用相同树行组件
+
+### 23.5 需求池树化
+
+#### 23.5.1 数据与接口
+
+需求池当前是独立表 `backlog_items`，没有父子结构字段。要实现树化，需要为需求池补充：
+
+```sql
+backlog_items.parent_backlog_id INTEGER NULL
+backlog_items.sort_order INTEGER NOT NULL DEFAULT 0
+```
+
+对应服务层需要补充：
+
+- 创建 backlog 条目时支持 `parent_backlog_id`
+- 列表接口返回树形结构或返回平铺后由前端组树
+- 排期时支持将 backlog 子树映射到正式任务树
+
+#### 23.5.2 排期规则
+
+- 单条排期：保留其父需求指向
+- 子树排期：允许整棵 backlog 子树转换为正式 task 子树
+- 同级排序与任务树一致：`priority -> sortOrder -> title`
+
+### 23.6 个人空间一致性
+
+当前个人空间实际存在的相关页面是：
+
+- `MyTasks`（目前默认 flat）
+- `MyGantt`
+- `MyDashboard`
+
+统一改造方案：
+
+1. `MyTasks` 默认视图切回树视图，`/my/tasks/list` 改为树优先入口。
+2. 现有 flat 视图不删除，但从默认主入口降级为辅助视图。
+3. `MyGantt` 改为树行模式，与项目甘特图共享实现。
+4. `MyDashboard` 的“近期任务”入口和快速入口文本，统一强调“需求树上下文”。
+
+### 23.7 实施顺序
+
+建议分 4 个批次，逐步收敛风险：
+
+1. 看板树化：纯前端，复用现有任务树接口
+2. 甘特图树行化：纯前端，项目/个人两页一起改
+3. 个人空间入口统一：调整 `MyTasks` 默认视图和工作台文案
+4. 需求池树化：涉及数据库字段、服务层和前端，单独一个批次
+
+### 23.8 风险
+
+| 风险点 | 说明 | 缓解方式 |
+|--------|------|----------|
+| 看板列内树化后拖拽复杂度上升 | 卡片既有状态又有树层级 | 首版只支持改状态，不支持列内拖拽重排 |
+| 甘特图树行化后高度同步复杂 | 左右两侧必须严格对齐 | 左侧树与右侧时间条采用同一 `rows` 数据源渲染 |
+| 需求池树化需要数据迁移 | 当前 backlog 无父子结构 | 单独 migration，默认旧数据全为根节点 |
+| 个人空间默认视图变更可能影响习惯 | 现用户当前默认是 flat | 保留 flat 作为可切换辅助视图 |
 
 ---
 

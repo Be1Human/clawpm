@@ -7,7 +7,6 @@ import TaskDetail from './pages/TaskDetail';
 import Backlog from './pages/Backlog';
 import Milestones from './pages/Milestones';
 import Goals from './pages/Goals';
-import Requirements from './pages/Requirements';
 import MindMap from './pages/MindMap';
 import GanttChart from './pages/GanttChart';
 import Members from './pages/Members';
@@ -52,17 +51,17 @@ export default function App() {
 
           {/* ── 个人空间 ── */}
           <Route path="/my/dashboard" element={<MyDashboard />} />
-          <Route path="/my/tasks/list" element={<MyTasks defaultView="flat" />} />
-          <Route path="/my/tasks/tree" element={<MyTasks defaultView="tree" />} />
+          <Route path="/my/tasks/list" element={<MyTasks defaultView="tree" />} />
+          <Route path="/my/tasks/tree" element={<Navigate to="/my/tasks/list" replace />} />
           <Route path="/my/tasks/mindmap" element={<MyTasks defaultView="mindmap" />} />
           <Route path="/my/gantt" element={<MyGantt />} />
 
           {/* 向后兼容：旧路由重定向 */}
-          <Route path="/my-tasks" element={<Navigate to="/my/tasks/tree" replace />} />
-          <Route path="/my/tasks" element={<Navigate to="/my/tasks/tree" replace />} />
+          <Route path="/my-tasks" element={<Navigate to="/my/tasks/list" replace />} />
+          <Route path="/my/tasks" element={<Navigate to="/my/tasks/list" replace />} />
           <Route path="/my/board" element={<Navigate to="/my/tasks/list" replace />} />
           <Route path="/my/mindmap" element={<Navigate to="/my/tasks/mindmap" replace />} />
-          <Route path="/my/requirements" element={<Navigate to="/my/tasks/tree" replace />} />
+          <Route path="/my/requirements" element={<Navigate to="/my/tasks/list" replace />} />
 
           {/* ── 项目空间 ── */}
           <Route path="/dashboard" element={<Dashboard />} />
@@ -72,7 +71,7 @@ export default function App() {
           <Route path="/backlog" element={<Backlog />} />
           <Route path="/milestones" element={<Milestones />} />
           <Route path="/goals" element={<Goals />} />
-          <Route path="/requirements" element={<Requirements />} />
+          <Route path="/requirements" element={<Navigate to="/mindmap" replace />} />
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/gantt" element={<GanttChart />} />
           <Route path="/members" element={<Members />} />

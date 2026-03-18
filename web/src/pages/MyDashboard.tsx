@@ -198,10 +198,9 @@ export default function MyDashboard() {
 
           {/* Quick links */}
           <div className="grid grid-cols-2 gap-2">
-            <QuickLink to="/my/tasks/list" label={t('myDashboard.taskListLabel')} desc={t('myDashboard.flatView')} icon="📋" />
-            <QuickLink to="/my/tasks/tree" label={t('myDashboard.taskTreeLabel')} desc={t('myDashboard.hierarchyView')} icon="🌳" />
-            <QuickLink to="/my/tasks/mindmap" label={t('myDashboard.mindMapLabel')} desc={t('myDashboard.globalView')} icon="🧠" />
-            <QuickLink to="/my/gantt" label={t('myDashboard.myGanttLabel')} desc={t('myDashboard.timeline')} icon="📅" />
+            <QuickLink to="/my/tasks/list" label={t('myDashboard.taskTreeLabel')} desc={t('myTasks.viewTitleTree')} icon="🌳" />
+            <QuickLink to="/my/tasks/mindmap" label={t('nav.mindMap')} desc={t('myDashboard.globalView')} icon="🧠" />
+            <QuickLink to="/my/gantt" label={t('nav.ganttChart')} desc={t('myDashboard.timeline')} icon="📅" />
           </div>
         </div>
       </div>

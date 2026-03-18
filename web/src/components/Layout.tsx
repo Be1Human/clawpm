@@ -23,17 +23,16 @@ const PERSONAL_NAV_GROUPS = [
     ],
   },
   {
-    labelKey: 'nav.myTasks',
+    labelKey: 'nav.myPlanning',
     items: [
-      { to: '/my/tasks/list',    labelKey: 'nav.taskList',    icon: ListIcon },
-      { to: '/my/tasks/tree',    labelKey: 'nav.taskTree',    icon: TreeIcon },
-      { to: '/my/tasks/mindmap', labelKey: 'nav.taskMindMap', icon: MapIcon },
+      { to: '/my/tasks/mindmap', labelKey: 'nav.mindMap', icon: MapIcon },
     ],
   },
   {
-    labelKey: 'nav.myPlanning',
+    labelKey: 'nav.executionTracking',
     items: [
-      { to: '/my/gantt', labelKey: 'nav.myGantt', icon: GanttIcon },
+      { to: '/my/tasks/list', labelKey: 'nav.taskList', icon: ListIcon },
+      { to: '/my/gantt', labelKey: 'nav.ganttChart', icon: GanttIcon },
     ],
   },
 ];
@@ -49,9 +48,7 @@ const PROJECT_NAV_GROUPS = [
   {
     labelKey: 'nav.productPlanning',
     items: [
-      { to: '/requirements', labelKey: 'nav.requirementTree', icon: TreeIcon },
       { to: '/mindmap',      labelKey: 'nav.mindMap',         icon: MapIcon },
-      { to: '/gantt',        labelKey: 'nav.ganttChart',      icon: GanttIcon },
     ],
   },
   {
@@ -59,6 +56,7 @@ const PROJECT_NAV_GROUPS = [
     items: [
       { to: '/board',       labelKey: 'nav.kanban',      icon: BoardIcon },
       { to: '/tasks',       labelKey: 'nav.taskListNav', icon: ListIcon },
+      { to: '/gantt',       labelKey: 'nav.ganttChart',  icon: GanttIcon },
       { to: '/backlog',     labelKey: 'nav.backlog',     icon: PoolIcon },
       { to: '/iterations',  labelKey: 'nav.iterations',  icon: IterationIcon },
       { to: '/intake',      labelKey: 'nav.inbox',       icon: InboxIcon },

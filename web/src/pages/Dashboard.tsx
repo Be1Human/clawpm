@@ -120,7 +120,7 @@ export default function Dashboard() {
 
       {/* 我的概览条带 — 仅在已设置身份时显示 */}
       {currentUser && myOverview && (
-        <Link to="/my/tasks/tree" className="block group">
+        <Link to="/my/tasks/list" className="block group">
           <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex items-center justify-between transition-all hover:shadow-md hover:border-indigo-200">
             <div className="flex items-center gap-3">
               {currentMember?.color ? (

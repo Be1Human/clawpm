@@ -91,6 +91,10 @@ export const api = {
     const qs = params ? '?' + new URLSearchParams(params) : '';
     return request<any[]>(withProject(`/backlog${qs}`));
   },
+  getBacklogTree: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params) : '';
+    return request<any[]>(withProject(`/backlog/tree${qs}`));
+  },
   createBacklogItem: (data: any) => request<any>(withProject('/backlog'), { method: 'POST', body: JSON.stringify(data) }),
   updateBacklogItem: (id: string, data: any) => request<any>(`/backlog/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   scheduleBacklogItem: (id: string, data: any) =>

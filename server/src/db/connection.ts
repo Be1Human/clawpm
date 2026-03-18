@@ -91,12 +91,14 @@ function runMigrations(sqlite: Database.Database) {
       title TEXT NOT NULL,
       description TEXT,
       domain_id INTEGER REFERENCES domains(id),
+      parent_backlog_item_id INTEGER,
       priority TEXT NOT NULL DEFAULT 'P2',
       source TEXT,
       source_context TEXT,
       estimated_scope TEXT,
       tags TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'pool',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       scheduled_task_id INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -235,6 +237,8 @@ function runMigrations(sqlite: Database.Database) {
   for (const table of tablesNeedProjectId) {
     try { sqlite.exec(`ALTER TABLE ${table} ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1`); } catch {}
   }
+  try { sqlite.exec(`ALTER TABLE backlog_items ADD COLUMN parent_backlog_item_id INTEGER`); } catch {}
+  try { sqlite.exec(`ALTER TABLE backlog_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // 项目内唯一约束
   try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_project_name ON domains(project_id, name)`); } catch {}

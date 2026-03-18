@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
-import { useFilters, applyFilters } from '@/lib/useFilters';
+import { useFilters } from '@/lib/useFilters';
+import { getNodeLabels, sortTreeByPriority, filterTreeByFilters, filterTreeKeepAncestors, flattenTree } from '@/lib/tree';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { Link } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import FilterBar from '@/components/FilterBar';
 
@@ -32,22 +33,20 @@ const PRIORITY_BADGE: Record<string, { bg: string; text: string }> = {
   P3: { bg: '#f8fafc', text: '#64748b' },
 };
 
-function getLabels(task: any): string[] {
-  try { return JSON.parse(task.labels || '[]'); } catch { return task.type ? [task.type] : []; }
-}
-
 function TaskCard({
   task,
+  depth,
   onDragStart,
 }: {
   task: any;
+  depth: number;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
 }) {
   const { t } = useI18n();
   const days = getDaysUntil(task.dueDate);
   const isOverdue = days !== null && days < 0;
   const isUrgent = days !== null && days >= 0 && days <= 3;
-  const labels = getLabels(task);
+  const labels = getNodeLabels(task);
   const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.P2;
 
   return (
@@ -55,6 +54,7 @@ function TaskCard({
       draggable
       onDragStart={e => onDragStart(e, task.taskId)}
       className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all cursor-grab active:cursor-grabbing active:opacity-70 active:scale-95 group"
+      style={{ marginLeft: `${depth * 14}px` }}
     >
       {/* Top row */}
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -137,6 +137,94 @@ function TaskCard({
   );
 }
 
+function ContextRow({
+  task,
+  depth,
+  expanded,
+  hasChildren,
+  onToggle,
+}: {
+  task: any;
+  depth: number;
+  expanded: boolean;
+  hasChildren: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-50/70 text-gray-400 border border-dashed border-gray-200"
+      style={{ marginLeft: `${depth * 14}px` }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          'w-4 h-4 flex items-center justify-center text-[10px] flex-shrink-0',
+          !hasChildren && 'invisible',
+          expanded && 'rotate-90'
+        )}
+      >
+        ▶
+      </button>
+      <span className="text-[10px] font-mono">{task.taskId}</span>
+      <span className="text-[11px] truncate">{task.title}</span>
+    </div>
+  );
+}
+
+function KanbanTreeNode({
+  task,
+  depth,
+  columnKey,
+  collapsedIds,
+  onToggleCollapse,
+  onDragStart,
+}: {
+  task: any;
+  depth: number;
+  columnKey: string;
+  collapsedIds: Set<string>;
+  onToggleCollapse: (taskId: string) => void;
+  onDragStart: (e: React.DragEvent, taskId: string) => void;
+}) {
+  const children = task.children || [];
+  const hasChildren = children.length > 0;
+  const expanded = !collapsedIds.has(task.taskId);
+  const isMatch = task.status === columnKey;
+
+  return (
+    <div className="space-y-2">
+      {isMatch ? (
+        <TaskCard task={task} depth={depth} onDragStart={onDragStart} />
+      ) : (
+        <ContextRow
+          task={task}
+          depth={depth}
+          expanded={expanded}
+          hasChildren={hasChildren}
+          onToggle={() => hasChildren && onToggleCollapse(task.taskId)}
+        />
+      )}
+
+      {expanded && hasChildren && (
+        <div className="space-y-2">
+          {children.map((child: any) => (
+            <KanbanTreeNode
+              key={child.id}
+              task={child}
+              depth={depth + 1}
+              columnKey={columnKey}
+              collapsedIds={collapsedIds}
+              onToggleCollapse={onToggleCollapse}
+              onDragStart={onDragStart}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function KanbanBoard() {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
@@ -144,21 +232,36 @@ export default function KanbanBoard() {
   const filterHook = useFilters('kanban');
   const [showCreate, setShowCreate] = useState(false);
   const [draggingOver, setDraggingOver] = useState<string | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const dragTaskId = useRef<string | null>(null);
 
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', activeProject],
-    queryFn: () => api.getTasks(),
+  const { data: tree = [], isLoading } = useQuery({
+    queryKey: ['task-tree-kanban', activeProject],
+    queryFn: () => api.getTaskTree(),
     refetchInterval: 15000,
   });
 
   const moveMut = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string; status: string }) =>
       api.updateTask(taskId, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-tree-kanban'] });
+      qc.invalidateQueries({ queryKey: ['task-tree-list'] });
+      qc.invalidateQueries({ queryKey: ['my-task-tree'] });
+    },
   });
 
-  const filtered = applyFilters(tasks as any[], filterHook.filters);
+  const sortedTree = useMemo(() => sortTreeByPriority(tree as any[]), [tree]);
+  const filteredTree = useMemo(() => filterTreeByFilters(sortedTree, filterHook.filters), [sortedTree, filterHook.filters]);
+  const visibleTasks = useMemo(() => flattenTree(filteredTree), [filteredTree]);
+  const columnTrees = useMemo(
+    () => Object.fromEntries(COLUMNS.map(col => [
+      col.key,
+      filterTreeKeepAncestors(filteredTree, (node: any) => node.status === col.key),
+    ])),
+    [filteredTree]
+  );
 
   function handleDragStart(e: React.DragEvent, taskId: string) {
     dragTaskId.current = taskId;
@@ -176,13 +279,24 @@ export default function KanbanBoard() {
     setDraggingOver(null);
     const taskId = dragTaskId.current;
     if (!taskId) return;
-    const task = (tasks as any[]).find(t => t.taskId === taskId);
+    const task = visibleTasks.find(t => t.taskId === taskId);
     if (!task || task.status === targetStatus) return;
     moveMut.mutate({ taskId, status: targetStatus });
     dragTaskId.current = null;
   }
 
-  const totalByStatus = (status: string) => (tasks as any[]).filter(t => t.status === status).length;
+  const totalByStatus = useCallback(
+    (status: string) => visibleTasks.filter(task => task.status === status).length,
+    [visibleTasks]
+  );
+
+  const toggleCollapse = useCallback((taskId: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-[#f4f5f7]">
@@ -190,7 +304,9 @@ export default function KanbanBoard() {
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">{t('kanban.title')}</h1>
-          <p className="text-xs text-gray-400">{t('kanban.taskCount', { count: (tasks as any[]).length })}</p>
+          <p className="text-xs text-gray-400">
+            {t('kanban.taskCount', { count: visibleTasks.length })}，列内按需求树展开
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -209,7 +325,7 @@ export default function KanbanBoard() {
       <div className="flex-1 overflow-x-auto px-6 py-5">
         <div className="flex gap-4 h-full min-w-max">
           {COLUMNS.map(col => {
-            const colTasks = filtered.filter((t: any) => t.status === col.key);
+            const colTree = (columnTrees[col.key] as any[]) || [];
             const isDragOver = draggingOver === col.key;
             return (
               <div
@@ -258,11 +374,19 @@ export default function KanbanBoard() {
                     Array.from({ length: 3 }).map((_, i) => (
                       <div key={i} className="bg-white border border-gray-100 rounded-xl h-24 animate-pulse" />
                     ))
-                  ) : colTasks.length === 0 && !isDragOver ? (
+                  ) : colTree.length === 0 && !isDragOver ? (
                     <div className="text-center py-10 text-gray-300 text-sm select-none">{t('kanban.noTasks')}</div>
                   ) : (
-                    colTasks.map((task: any) => (
-                      <TaskCard key={task.id} task={task} onDragStart={handleDragStart} />
+                    colTree.map((task: any) => (
+                      <KanbanTreeNode
+                        key={`${col.key}-${task.id}`}
+                        task={task}
+                        depth={0}
+                        columnKey={col.key}
+                        collapsedIds={collapsedIds}
+                        onToggleCollapse={toggleCollapse}
+                        onDragStart={handleDragStart}
+                      />
                     ))
                   )}
                 </div>
@@ -277,6 +401,7 @@ export default function KanbanBoard() {
           onClose={() => {
             setShowCreate(false);
             qc.invalidateQueries({ queryKey: ['tasks'] });
+            qc.invalidateQueries({ queryKey: ['task-tree-kanban'] });
           }}
         />
       )}

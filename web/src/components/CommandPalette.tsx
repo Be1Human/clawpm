@@ -112,7 +112,6 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                   { label: '项目仪表盘', to: '/dashboard' },
                   { label: '任务列表', to: '/tasks' },
                   { label: '看板', to: '/board' },
-                  { label: '需求树', to: '/requirements' },
                   { label: '思维导图', to: '/mindmap' },
                   { label: '甘特图', to: '/gantt' },
                   { label: '迭代管理', to: '/iterations' },

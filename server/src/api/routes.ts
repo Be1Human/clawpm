@@ -10,6 +10,7 @@ import { ReqLinkService } from '../services/req-link-service.js';
 import { IterationService } from '../services/iteration-service.js';
 import { NotificationService } from '../services/notification-service.js';
 import { AttachmentService } from '../services/attachment-service.js';
+import { IntakeService } from '../services/intake-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
 import { config } from '../config.js';
@@ -253,6 +254,12 @@ export async function registerRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const projectId = getProjectId(req);
     return BacklogService.list({ domain: q.domain, priority: q.priority, status: q.status, projectId });
+  });
+
+  app.get('/api/v1/backlog/tree', async (req) => {
+    const q = req.query as any;
+    const projectId = getProjectId(req);
+    return BacklogService.listTree({ domain: q.domain, priority: q.priority, status: q.status, projectId });
   });
 
   app.patch('/api/v1/backlog/:backlogId', async (req, reply) => {
