@@ -89,8 +89,9 @@ app.get('/runtime-config.js', async (_req, reply) => {
   reply.type('application/javascript; charset=utf-8');
   reply.header('Cache-Control', 'no-store');
   return `window.__CLAWPM_RUNTIME_CONFIG__ = ${JSON.stringify({
-    apiBase: '/api/v1',
+    apiBase: `${config.basePath}/api/v1`,
     apiToken: config.apiToken,
+    basePath: config.basePath,
   })};`;
 });
 

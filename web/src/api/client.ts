@@ -6,13 +6,28 @@ declare global {
     __CLAWPM_RUNTIME_CONFIG__?: {
       apiBase?: string;
       apiToken?: string;
+      basePath?: string;
     };
   }
 }
 
+function normalizeBasePath(input?: string) {
+  if (!input || input === '/') return '';
+  let value = input.trim();
+  if (!value.startsWith('/')) value = `/${value}`;
+  if (value.endsWith('/')) value = value.slice(0, -1);
+  return value;
+}
+
 const runtimeConfig = typeof window !== 'undefined' ? window.__CLAWPM_RUNTIME_CONFIG__ : undefined;
-const BASE = runtimeConfig?.apiBase || '/api/v1';
+export const BASE_PATH = normalizeBasePath(runtimeConfig?.basePath || import.meta.env.BASE_URL);
+const BASE = runtimeConfig?.apiBase || `${BASE_PATH}/api/v1`;
 const LEGACY_TOKEN = runtimeConfig?.apiToken || import.meta.env.VITE_API_TOKEN || 'dev-token';
+
+export function withBasePath(path: string) {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_PATH}${normalized}` || normalized;
+}
 
 /** 当前活跃项目 slug，全局状态（带订阅通知） */
 let _activeProjectSlug = localStorage.getItem('clawpm-activeProject') || 'default';

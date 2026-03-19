@@ -1,6 +1,8 @@
 FROM node:20-alpine AS web-builder
 
 WORKDIR /app/web
+ARG CLAWPM_WEB_BASE_PATH=/
+ENV CLAWPM_WEB_BASE_PATH=$CLAWPM_WEB_BASE_PATH
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 

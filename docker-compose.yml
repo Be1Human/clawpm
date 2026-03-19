@@ -4,6 +4,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        CLAWPM_WEB_BASE_PATH: ${CLAWPM_WEB_BASE_PATH:-/}
     ports:
       - "${CLAWPM_HOST_PORT:-3210}:3210"
     volumes:
@@ -13,6 +15,7 @@ services:
       CLAWPM_PORT: 3210
       CLAWPM_API_TOKEN: ${CLAWPM_API_TOKEN:?请设置 CLAWPM_API_TOKEN}
       CLAWPM_DB_PATH: /app/data/clawpm.db
+      CLAWPM_BASE_PATH: ${CLAWPM_BASE_PATH:-}
       CLAWPM_LOG_LEVEL: ${CLAWPM_LOG_LEVEL:-info}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3210/health >/dev/null || exit 1"]

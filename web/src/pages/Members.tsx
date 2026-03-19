@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '@/api/client';
+import { api, withBasePath } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -150,23 +150,24 @@ function AgentAccessModal({ member, onClose }: { member: any; onClose: () => voi
 
   async function handleRotate(tokenId: number) {
     const result = await api.rotateAgentToken(member.identifier, tokenId, { client_type: 'openclaw', name: `${member.identifier}-openclaw` });
+    const sseUrl = `${window.location.origin}${withBasePath('/mcp/sse')}?token=${encodeURIComponent(result.token)}`;
     setBundle({
       token: result.token,
       tokenPrefix: result.tokenPrefix,
-      sseUrl: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}`,
+      sseUrl,
       configJson: {
         mcpServers: {
           clawpm: {
             type: 'sse',
-            url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}`,
+            url: sseUrl,
           },
         },
       },
       powershellCommand: `$cfg = @'\n${JSON.stringify({
-        mcpServers: { clawpm: { type: 'sse', url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}` } },
+        mcpServers: { clawpm: { type: 'sse', url: sseUrl } },
       }, null, 2)}\n'@; Set-Content -Path .\\mcp.json -Value $cfg`,
       shellCommand: `cat <<'EOF' > mcp.json\n${JSON.stringify({
-        mcpServers: { clawpm: { type: 'sse', url: `${window.location.origin}/mcp/sse?token=${encodeURIComponent(result.token)}` } },
+        mcpServers: { clawpm: { type: 'sse', url: sseUrl } },
       }, null, 2)}\nEOF`,
     });
     qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });

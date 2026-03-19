@@ -27,7 +27,7 @@ import { useCurrentUser } from './lib/useCurrentUser';
 import { useAuthSession, clearAuthSession, updateAuthAccount } from './lib/useAuthSession';
 import { setCurrentMember, clearCurrentMember } from './lib/useCurrentMember';
 import { setOnboarded, clearOnboarded } from './lib/useCurrentUser';
-import { api } from './api/client';
+import { api, BASE_PATH, withBasePath } from './api/client';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -49,7 +49,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
           </pre>
           <button
             style={{ marginTop: 16, padding: '8px 20px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-            onClick={() => { this.setState({ error: null }); window.location.href = '/onboarding'; }}
+            onClick={() => { this.setState({ error: null }); window.location.href = withBasePath('/onboarding'); }}
           >
             返回登录页
           </button>
@@ -142,7 +142,7 @@ function OnboardingGuard() {
 export default function App() {
   return (
     <ErrorBoundary>
-    <BrowserRouter>
+    <BrowserRouter basename={BASE_PATH || undefined}>
       <Routes>
         {/* 公开页面（无侧边栏、无需引导） */}
         <Route path="/intake/submit" element={<IntakeSubmit />} />

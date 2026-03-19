@@ -28,7 +28,7 @@ function getProjectId(req: any): number {
 function getBaseUrl(req: any) {
   const proto = (req.headers['x-forwarded-proto'] as string) || 'http';
   const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || `localhost:${config.port}`;
-  return `${proto}://${host}`;
+  return `${proto}://${host}${config.basePath}`;
 }
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -894,7 +894,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const filePath = path.join(uploadPath, filename);
     await pipeline(data.file, fs.createWriteStream(filePath));
 
-    return reply.code(201).send({ url: `/uploads/${filename}`, filename });
+    return reply.code(201).send({ url: `${config.basePath}/uploads/${filename}`, filename });
   });
 
   // ── My Overview（个人概览 v2.4）────────────────────────────────────

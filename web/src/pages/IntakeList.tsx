@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/api/client';
+import { api, withBasePath } from '@/api/client';
 import { useI18n } from '@/lib/i18n';
 
 const CATEGORY_CONFIG: Record<string, { labelKey: string; color: string; bgColor: string; icon: string }> = {
@@ -98,8 +98,8 @@ export default function IntakeList() {
           </div>
           <button
             onClick={() => {
-              const url = `${window.location.origin}/intake/submit?project=${api.getIntakeList.length}`;
-              navigator.clipboard.writeText(`${window.location.origin}/intake/submit`);
+              const intakeUrl = `${window.location.origin}${withBasePath('/intake/submit')}`;
+              navigator.clipboard.writeText(intakeUrl);
             }}
             className="px-3 py-1.5 text-xs bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors font-medium"
           >
