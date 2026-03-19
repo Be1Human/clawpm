@@ -316,9 +316,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if ((members as any[]).length > 0 && currentUser && isOnboarded()) {
       if (!(members as any[]).find((m: any) => m.identifier === currentUser)) {
-        // stored identifier not found in current project members — reset and re-onboard
-        clearCurrentUser();
-        clearOnboarded();
+        // stored identifier not found in current project members — 弹出身份选择器
+        // 注意：不要清除 currentUser / onboarded，否则会和 OnboardingGuard 形成闪屏循环
+        setShowIdentityPicker(true);
       }
     }
   }, [currentUser, members]);

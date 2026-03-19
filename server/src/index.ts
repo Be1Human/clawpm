@@ -116,10 +116,10 @@ if (fs.existsSync(config.webDistPath)) {
   await app.register(staticFiles, {
     root: config.webDistPath,
     prefix: '/',
-    wildcard: false,
+    // wildcard 必须开启（默认 true），否则 /assets/* 等子目录文件无法被自动路由匹配
   });
 
-  // SPA fallback
+  // SPA fallback：非 API / MCP / 静态资源的路由 fallback 到 index.html
   app.setNotFoundHandler(async (req, reply) => {
     if (!req.url?.startsWith('/api') && !req.url?.startsWith('/mcp')) {
       return reply.sendFile('index.html', config.webDistPath);

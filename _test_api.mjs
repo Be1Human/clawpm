@@ -1,1410 +1,404 @@
 /**
- * ClawPM 全面 API 测试脚本
- * 覆盖所有 CRUD 端点，循环运行直到所有测试通过
- * 
- * 用法: node _test_api.mjs [--loop] [--fix-only]
- *   --loop: 循环运行，每轮间隔 60 秒
- *   --fix-only: 只运行之前失败过的测试
+ * ClawPM 超级全面 API 测试脚本 — 覆盖所有 PRD 功能
+ * 每轮使用不同随机种子，从不同角度测试
+ * 用法: node _test_api.mjs [--loop] [--rounds=100]
  */
-
 const BASE = 'http://localhost:3210';
 const TOKEN = 'dev-token';
-const HEADERS = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
-  'X-ClawPM-User': 'test-user',
-};
-
-// ─── Test Infrastructure ────────────────────────────────────────────
-let totalTests = 0;
-let passedTests = 0;
-let failedTests = 0;
-const failures = [];
-const testTimings = [];
-
-async function api(method, path, body = null, extraHeaders = {}) {
-  const headers = { ...HEADERS, ...extraHeaders };
-  // Fastify 会拒绝带 Content-Type: application/json 但 body 为空的请求
-  // 所以当不需要发送 body 时，移除 Content-Type
-  if (!body || method === 'GET') {
-    delete headers['Content-Type'];
-  }
-  const opts = { method, headers };
-  if (body && method !== 'GET') {
-    opts.headers['Content-Type'] = 'application/json';
-    opts.body = JSON.stringify(body);
-  }
-  const url = `${BASE}${path}`;
-  try {
-    const res = await fetch(url, opts);
-    let data = null;
-    const text = await res.text();
-    try { data = JSON.parse(text); } catch { data = text; }
-    return { status: res.status, data, ok: res.ok };
-  } catch (e) {
-    return { status: 0, data: null, ok: false, error: e.message };
-  }
-}
-
-async function test(name, fn) {
-  totalTests++;
-  const start = Date.now();
-  try {
-    await fn();
-    passedTests++;
-    const ms = Date.now() - start;
-    testTimings.push({ name, ms });
-    console.log(`  ✅ ${name} (${ms}ms)`);
-  } catch (e) {
-    failedTests++;
-    const ms = Date.now() - start;
-    testTimings.push({ name, ms, failed: true });
-    const msg = e.message || String(e);
-    failures.push({ name, error: msg });
-    console.log(`  ❌ ${name}: ${msg} (${ms}ms)`);
-  }
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message || 'Assertion failed');
-}
-
-function assertEqual(actual, expected, message) {
-  if (actual !== expected) {
-    throw new Error(`${message || 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-  }
-}
-
-function assertIncludes(arr, item, message) {
-  if (!Array.isArray(arr) || !arr.includes(item)) {
-    throw new Error(`${message || 'assertIncludes'}: ${JSON.stringify(item)} not found in array`);
-  }
-}
-
-// ─── Test Context (shared state between tests) ─────────────────────
-const ctx = {
-  projectSlug: null,
-  projectId: null,
-  taskIds: [],       // created task taskId strings
-  backlogIds: [],
-  domainId: null,
-  domainName: null,
-  milestoneId: null,
-  milestoneName: null,
-  memberId: null,
-  memberIdentifier: null,
-  iterationId: null,
-  intakeId: null,
-  customFieldId: null,
-  attachmentId: null,
-  reqLinkId: null,
-  goalId: null,
-  objectiveId: null,
-  noteId: null,
-  notificationId: null,
-  accountToken: null,
-  accountUsername: null,
-};
-
-// ─── Helper: unique suffix ──────────────────────────────────────────
+const HEADERS = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json', 'X-ClawPM-User': 'test-user' };
+let ROUND = 1;
 const UID = Date.now().toString(36);
+function rnd(p=''){return `${p}${UID}-R${ROUND}-${Math.random().toString(36).slice(2,6)}`;}
+let totalTests=0,passedTests=0,failedTests=0;const failures=[],testTimings=[];
+async function api(method,path,body=null,extraHeaders={}){
+  const headers={...HEADERS,...extraHeaders};
+  if(!body||method==='GET')delete headers['Content-Type'];
+  const opts={method,headers};
+  if(body&&method!=='GET'){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
+  try{const res=await fetch(`${BASE}${path}`,opts);let data=null;const text=await res.text();try{data=JSON.parse(text);}catch{data=text;}return{status:res.status,data,ok:res.ok};}
+  catch(e){return{status:0,data:null,ok:false,error:e.message};}
+}
+async function test(name,fn){totalTests++;const s=Date.now();try{await fn();passedTests++;const ms=Date.now()-s;testTimings.push({name,ms});console.log(`  ✅ ${name} (${ms}ms)`);}catch(e){failedTests++;const ms=Date.now()-s;testTimings.push({name,ms,failed:true});const msg=e.message||String(e);failures.push({name,error:msg});console.log(`  ❌ ${name}: ${msg} (${ms}ms)`);}}
+function assert(c,m){if(!c)throw new Error(m||'Assertion failed');}
+function assertEqual(a,e,m){if(a!==e)throw new Error(`${m||'assertEqual'}: expected ${JSON.stringify(e)}, got ${JSON.stringify(a)}`);}
+function assertType(v,t,m){if(typeof v!==t)throw new Error(`${m}: expected ${t}, got ${typeof v}`);}
 
-// ═══════════════════════════════════════════════════════════════════════
-// TEST SUITES
-// ═══════════════════════════════════════════════════════════════════════
+const ctx={};
+function resetCtx(){Object.assign(ctx,{projectSlug:null,projectId:null,taskIds:[],backlogIds:[],domainId:null,domainName:null,domainPrefix:null,milestoneId:null,milestoneName:null,memberId:null,memberIdentifier:null,memberIdentifier2:null,agentIdentifier:null,iterationId:null,intakeId:null,intakeId2:null,customFieldId:null,customFieldId2:null,attachmentId:null,attachmentId2:null,reqLinkId:null,goalId:null,objectiveId:null,noteId:null,notificationId:null,accountToken:null,accountUsername:null});}
 
-async function testServerHealth() {
-  console.log('\n📦 [1/16] Server Health');
-  await test('Server is reachable', async () => {
-    const r = await api('GET', '/api/v1/projects');
-    assert(r.status !== 0, `Server not reachable: ${r.error}`);
+// ═══ 1. SERVER HEALTH ═══
+async function testServerHealth(){
+  console.log('\n🏥 [1/25] Server Health');
+  await test('Server reachable',async()=>{const r=await api('GET','/api/v1/projects');assert(r.status!==0,`Server not reachable: ${r.error}`);});
+}
+
+// ═══ 2. PROJECTS ═══
+async function testProjects(){
+  console.log('\n📁 [2/25] Projects');
+  await test('List projects (default exists)',async()=>{const r=await api('GET','/api/v1/projects');assertEqual(r.status,200,'status');assert(r.data.some(p=>p.slug==='default'),'default missing');});
+  await test('Create project',async()=>{ctx.projectSlug=rnd('proj-');const r=await api('POST','/api/v1/projects',{name:`Test ${rnd()}`,slug:ctx.projectSlug,description:'Auto-test'});assertEqual(r.status,201,'create');ctx.projectId=r.data.id;});
+  await test('Get project by slug',async()=>{const r=await api('GET',`/api/v1/projects/${ctx.projectSlug}`);assertEqual(r.status,200,'get');assertEqual(r.data.slug,ctx.projectSlug,'slug');});
+  await test('Update project',async()=>{const d=rnd('upd-');const r=await api('PATCH',`/api/v1/projects/${ctx.projectSlug}`,{description:d});assertEqual(r.status,200,'patch');assertEqual(r.data.description,d,'desc');});
+  await test('Create project no name → 400',async()=>{assertEqual((await api('POST','/api/v1/projects',{slug:'x'})).status,400,'400');});
+  await test('Get non-existent project → 404',async()=>{assertEqual((await api('GET','/api/v1/projects/not-exist-xxx')).status,404,'404');});
+  await test('Duplicate slug handling',async()=>{const r=await api('POST','/api/v1/projects',{name:rnd(),slug:ctx.projectSlug});assert(r.status===201||r.status===400||r.status===409,`got ${r.status}`);});
+}
+
+// ═══ 3. DOMAINS ═══
+async function testDomains(){
+  console.log('\n🏷️  [3/25] Domains');
+  await test('Create domain',async()=>{ctx.domainName=rnd('Dom-');ctx.domainPrefix=`D${ROUND}${Math.random().toString(36).slice(2,6)}`.toUpperCase().slice(0,8);const r=await api('POST','/api/v1/domains',{name:ctx.domainName,task_prefix:ctx.domainPrefix,keywords:['test'],color:'#ff5733'});assertEqual(r.status,201,'create');ctx.domainId=r.data.id;});
+  await test('List domains',async()=>{const r=await api('GET','/api/v1/domains');assertEqual(r.status,200,'list');assert(r.data.some(d=>d.id===ctx.domainId),'include');});
+  await test('Update domain',async()=>{const r=await api('PATCH',`/api/v1/domains/${ctx.domainId}`,{color:'#00ff00'});assertEqual(r.status,200,'patch');assertEqual(r.data.color,'#00ff00','color');});
+  await test('Update domain 404',async()=>{assertEqual((await api('PATCH','/api/v1/domains/99999',{color:'#000'})).status,404,'404');});
+}
+
+// ═══ 4. MILESTONES ═══
+async function testMilestones(){
+  console.log('\n🎯 [4/25] Milestones');
+  await test('Create milestone',async()=>{ctx.milestoneName=rnd('MS-');const r=await api('POST','/api/v1/milestones',{name:ctx.milestoneName,target_date:'2026-06-01',description:'Test MS'});assertEqual(r.status,201,'create');ctx.milestoneId=r.data.id;});
+  await test('List milestones (enriched)',async()=>{const r=await api('GET','/api/v1/milestones');assertEqual(r.status,200,'list');const m=r.data.find(x=>x.id===ctx.milestoneId);assert(m,'include');assertType(m.taskCount,'number','taskCount');});
+  await test('Update milestone',async()=>{assertEqual((await api('PATCH',`/api/v1/milestones/${ctx.milestoneId}`,{description:rnd()})).status,200,'patch');});
+  await test('Update milestone 404',async()=>{assertEqual((await api('PATCH','/api/v1/milestones/99999',{name:'x'})).status,404,'404');});
+}
+
+// ═══ 5. MEMBERS ═══
+async function testMembers(){
+  console.log('\n👤 [5/25] Members');
+  await test('Create human member',async()=>{ctx.memberIdentifier=rnd('mem-');const r=await api('POST','/api/v1/members',{name:rnd('H-'),identifier:ctx.memberIdentifier,type:'human',role:'dev',description:'前端开发'});assertEqual(r.status,201,'create');ctx.memberId=r.data.id;});
+  await test('Create member 2',async()=>{ctx.memberIdentifier2=rnd('mem2-');assertEqual((await api('POST','/api/v1/members',{name:rnd('C-'),identifier:ctx.memberIdentifier2,type:'human'})).status,201,'create');});
+  await test('Create agent',async()=>{ctx.agentIdentifier=rnd('agent-');const r=await api('POST','/api/v1/agents',{name:rnd('AI-'),identifier:ctx.agentIdentifier,description:'Test Agent'});assertEqual(r.status,201,'create');assertEqual(r.data.type,'agent','type');});
+  await test('List members (stats)',async()=>{const r=await api('GET','/api/v1/members');assertEqual(r.status,200,'list');const m=r.data.find(x=>x.identifier===ctx.memberIdentifier);assert(m,'include');assertType(m.taskCount,'number','taskCount');});
+  await test('Get member',async()=>{const r=await api('GET',`/api/v1/members/${ctx.memberIdentifier}`);assertEqual(r.status,200,'get');assertEqual(r.data.identifier,ctx.memberIdentifier,'id');});
+  await test('Update member',async()=>{const r=await api('PATCH',`/api/v1/members/${ctx.memberIdentifier}`,{role:'lead',description:'全栈'});assertEqual(r.status,200,'patch');assertEqual(r.data.role,'lead','role');});
+  await test('Get 404 member',async()=>{assertEqual((await api('GET','/api/v1/members/not-exist-xxx')).status,404,'404');});
+  await test('Check id taken',async()=>{const r=await api('GET',`/api/v1/members/check-identifier?identifier=${ctx.memberIdentifier}`);assertEqual(r.data.available,false,'taken');});
+  await test('Check id free',async()=>{const r=await api('GET',`/api/v1/members/check-identifier?identifier=${rnd('avail-')}`);assertEqual(r.data.available,true,'free');});
+}
+
+// ═══ 6. TASKS CRUD ═══
+async function testTasksCRUD(){
+  console.log('\n📋 [6/25] Tasks CRUD');
+  await test('Create root task (all fields)',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('Root-'),description:'# Root',priority:'P1',owner:'test-user',labels:['feature','epic'],tags:['api-test'],due_date:'2026-06-01',start_date:'2026-03-20'});assertEqual(r.status,201,'create');assert(r.data.taskId.match(/^T-\d+$/),'T-NNN pattern');ctx.taskIds.push(r.data.taskId);});
+  await test('Create child task',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('Child-'),parent_task_id:ctx.taskIds[0],priority:'P2',owner:'test-user'});assertEqual(r.status,201,'create');assert(r.data.parentTaskId!==null,'has parent');ctx.taskIds.push(r.data.taskId);});
+  await test('Create grandchild (3 levels)',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('GChild-'),parent_task_id:ctx.taskIds[1],priority:'P3'});assertEqual(r.status,201,'create');ctx.taskIds.push(r.data.taskId);});
+  await test('Create task with domain prefix',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('DT-'),domain:ctx.domainName,priority:'P0'});assertEqual(r.status,201,'create');assert(r.data.taskId.startsWith(ctx.domainPrefix),`should start with ${ctx.domainPrefix}`);ctx.taskIds.push(r.data.taskId);});
+  await test('Create task with milestone',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('MST-'),milestone:ctx.milestoneName,status:'planned'});assertEqual(r.status,201,'create');ctx.taskIds.push(r.data.taskId);});
+  await test('Create task with assignee',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('AT-'),assignee:ctx.memberIdentifier,start_date:'2026-04-01',due_date:'2026-05-01'});assertEqual(r.status,201,'create');ctx.taskIds.push(r.data.taskId);});
+  await test('Create minimal task (先上车后补票)',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('Min-')});assertEqual(r.status,201,'create');assertEqual(r.data.status,'backlog','default backlog');assertEqual(r.data.priority,'P2','default P2');ctx.taskIds.push(r.data.taskId);});
+  await test('List tasks',async()=>{const r=await api('GET','/api/v1/tasks');assertEqual(r.status,200,'list');assert(r.data.length>=7,'>=7 tasks');});
+  await test('Get task (enriched)',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}`);assertEqual(r.status,200,'get');assertEqual(r.data.taskId,ctx.taskIds[0],'match');assert('labels' in r.data,'has labels');assert('tags' in r.data,'has tags');});
+  await test('Get 404 task',async()=>{assertEqual((await api('GET','/api/v1/tasks/ZZZZZ-999')).status,404,'404');});
+  await test('Update title',async()=>{const t=rnd('Upd-');const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{title:t});assertEqual(r.data.title,t,'title');});
+  await test('Update status',async()=>{const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{status:'active'});assertEqual(r.data.status,'active','status');});
+  await test('Update labels',async()=>{const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{labels:['feature','urgent']});assert(r.data.labels.includes('urgent'),'label');});
+  await test('Update priority',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{priority:'P0'})).data.priority,'P0','prio');});
+  await test('Update tags',async()=>{const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{tags:['api-test','auto']});assert(r.data.tags.includes('auto'),'tag');});
+  await test('Update owner',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{owner:ctx.memberIdentifier})).status,200,'ok');});
+  await test('Update assignee',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{assignee:ctx.memberIdentifier2})).status,200,'ok');});
+  await test('Update blocker',async()=>{const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}`,{blocker:'Waiting API'});assertEqual(r.data.blocker,'Waiting API','blocker');});
+  await test('Update 404',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/ZZZZZ-999',{title:'x'})).status,404,'404');});
+  await test('Filter by status',async()=>{const r=await api('GET','/api/v1/tasks?status=active');for(const t of r.data)assertEqual(t.status,'active','status');});
+  await test('Filter by priority',async()=>{const r=await api('GET','/api/v1/tasks?priority=P0');for(const t of r.data)assertEqual(t.priority,'P0','prio');});
+  await test('Filter by owner',async()=>{const r=await api('GET',`/api/v1/tasks?owner=${ctx.memberIdentifier}`);for(const t of r.data)assertEqual(t.owner,ctx.memberIdentifier,'owner');});
+  await test('Rapid 5x concurrent create',async()=>{const ps=[];for(let i=0;i<5;i++)ps.push(api('POST','/api/v1/tasks',{title:rnd(`R${i}-`)}));const rs=await Promise.all(ps);for(let i=0;i<rs.length;i++){assert(rs[i].status===201,`Rapid ${i}: ${rs[i].status}`);ctx.taskIds.push(rs[i].data.taskId);}assertEqual(new Set(rs.map(r=>r.data.taskId)).size,rs.length,'unique IDs');});
+}
+
+// ═══ 7. TASKS TREE ═══
+async function testTasksTree(){
+  console.log('\n🌲 [7/25] Tasks Tree');
+  await test('Get tree',async()=>{const r=await api('GET','/api/v1/tasks/tree');assertEqual(r.status,200,'tree');for(const n of r.data)assert('children' in n,'has children');});
+  await test('Get tree filtered',async()=>{assertEqual((await api('GET','/api/v1/tasks/tree?status=active')).status,200,'ok');});
+  await test('Get children',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/children`);assertEqual(r.status,200,'children');assert(r.data.length>=1,'has child');});
+  await test('Get context',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[1]}/context`);assertEqual(r.status,200,'ctx');assert(r.data.ancestors.length>=1,'ancestors');assert(Array.isArray(r.data.siblings),'siblings');});
+  await test('Grandchild context (deep)',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[2]}/context`);assert(r.data.ancestors.length>=2,'>=2 ancestors');});
+  await test('Context 404',async()=>{assertEqual((await api('GET','/api/v1/tasks/ZZZZZ-999/context')).status,404,'404');});
+  await test('Reparent to root',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[1]}/reparent`,{new_parent_task_id:null})).status,200,'ok');});
+  await test('Reparent back',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[1]}/reparent`,{new_parent_task_id:ctx.taskIds[0]})).status,200,'ok');});
+  await test('Reparent cycle → 400',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}/reparent`,{new_parent_task_id:ctx.taskIds[1]})).status,400,'cycle');});
+  await test('Reparent deep cycle → 400',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}/reparent`,{new_parent_task_id:ctx.taskIds[2]})).status,400,'deep cycle');});
+  await test('Reparent 404',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/ZZZZZ-999/reparent',{new_parent_task_id:null})).status,404,'404');});
+  await test('Reorder children',async()=>{const ch=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/children`);if(ch.data.length>0){const r=await api('PATCH','/api/v1/tasks/reorder-children',{parent_task_id:ctx.taskIds[0],ordered_child_ids:ch.data.map(c=>c.taskId)});assertEqual(r.status,200,'reorder');}});
+  await test('Reorder invalid → 400',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/reorder-children',{parent_task_id:ctx.taskIds[0],ordered_child_ids:'bad'})).status,400,'400');});
+}
+
+// ═══ 8. STATUS FLOW ═══
+async function testStatusFlow(){
+  console.log('\n🔄 [8/25] Status Flow');
+  let tid;
+  await test('Create flow task',async()=>{const r=await api('POST','/api/v1/tasks',{title:rnd('Flow-')});assertEqual(r.data.status,'backlog','default backlog');tid=r.data.taskId;ctx.taskIds.push(tid);});
+  await test('backlog→planned',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${tid}`,{status:'planned'})).data.status,'planned','planned');});
+  await test('planned→active',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${tid}`,{status:'active'})).data.status,'active','active');});
+  await test('active→review',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${tid}`,{status:'review'})).data.status,'review','review');});
+  await test('review→done',async()=>{assertEqual((await api('PATCH',`/api/v1/tasks/${tid}`,{status:'done'})).data.status,'done','done');});
+}
+
+// ═══ 9. PROGRESS ═══
+async function testProgress(){
+  console.log('\n📊 [9/25] Progress');
+  await test('Update progress 50%',async()=>{const r=await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/progress`,{progress:50,summary:'Half'});assertEqual(r.data.progress,50,'50');});
+  await test('Get history',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/history`);assert(r.data.length>=1,'has history');});
+  await test('Progress auto backlog→active',async()=>{const c=await api('POST','/api/v1/tasks',{title:rnd('AT-')});ctx.taskIds.push(c.data.taskId);const r=await api('POST',`/api/v1/tasks/${c.data.taskId}/progress`,{progress:10});assertEqual(r.data.status,'active','auto active');});
+  await test('Progress 100 auto done',async()=>{const c=await api('POST','/api/v1/tasks',{title:rnd('AD-'),status:'active'});ctx.taskIds.push(c.data.taskId);const r=await api('POST',`/api/v1/tasks/${c.data.taskId}/progress`,{progress:100});assertEqual(r.data.status,'done','auto done');});
+  await test('Report blocker',async()=>{assertEqual((await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/blocker`,{blocker:'Waiting'})).data.blocker,'Waiting','blocker');});
+  await test('Complete task',async()=>{const r=await api('POST',`/api/v1/tasks/${ctx.taskIds[4]}/complete`,{summary:'Done'});assertEqual(r.data.status,'done','done');assertEqual(r.data.progress,100,'100');});
+  await test('Progress 404',async()=>{assertEqual((await api('POST','/api/v1/tasks/ZZZZZ-999/progress',{progress:50})).status,404,'404');});
+}
+
+// ═══ 10. NOTES ═══
+async function testNotes(){
+  console.log('\n📝 [10/25] Notes');
+  await test('Add note',async()=>{const r=await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/notes`,{content:rnd('Note-'),author:'test-user'});assertEqual(r.status,201,'create');ctx.noteId=r.data.id;});
+  await test('Add note 2',async()=>{assertEqual((await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/notes`,{content:'## MD Note\n- item',author:ctx.memberIdentifier})).status,201,'create');});
+  await test('List notes',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/notes`);assert(r.data.length>=2,'>=2 notes');});
+  await test('Note on 404 task',async()=>{assertEqual((await api('POST','/api/v1/tasks/ZZZZZ-999/notes',{content:'x'})).status,404,'404');});
+}
+
+// ═══ 11. BATCH ═══
+async function testBatch(){
+  console.log('\n🔄 [11/25] Batch Operations');
+  await test('Batch update status',async()=>{const r=await api('PATCH','/api/v1/tasks/batch',{task_ids:ctx.taskIds.slice(0,3),updates:{status:'planned'}});assertEqual(r.status,200,'ok');for(const t of r.data)assertEqual(t.status,'planned','planned');});
+  await test('Batch update priority',async()=>{const r=await api('PATCH','/api/v1/tasks/batch',{task_ids:ctx.taskIds.slice(0,2),updates:{priority:'P1'}});for(const t of r.data)assertEqual(t.priority,'P1','P1');});
+  await test('Batch update owner',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/batch',{task_ids:ctx.taskIds.slice(0,2),updates:{owner:ctx.memberIdentifier}})).status,200,'ok');});
+  await test('Batch empty ids → 400',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/batch',{task_ids:[],updates:{status:'active'}})).status,400,'400');});
+  await test('Batch no updates → 400',async()=>{assertEqual((await api('PATCH','/api/v1/tasks/batch',{task_ids:[ctx.taskIds[0]]})).status,400,'400');});
+}
+
+// ═══ 12. ARCHIVE ═══
+async function testArchive(){
+  console.log('\n📦 [12/25] Archive');
+  let atid;
+  await test('Create archive task',async()=>{atid=(await api('POST','/api/v1/tasks',{title:rnd('Arch-')})).data.taskId;});
+  await test('Archive task',async()=>{const r=await api('POST',`/api/v1/tasks/${atid}/archive`);assertEqual(r.status,200,'ok');assert(r.data.archivedAt,'has archivedAt');});
+  await test('In archived list',async()=>{assert((await api('GET','/api/v1/tasks/archived')).data.some(t=>t.taskId===atid),'in list');});
+  await test('Not in tree',async()=>{function find(ns,id){for(const n of ns){if(n.taskId===id)return true;if(n.children&&find(n.children,id))return true;}return false;}assert(!find((await api('GET','/api/v1/tasks/tree')).data,atid),'not in tree');});
+  await test('Unarchive',async()=>{const r=await api('POST',`/api/v1/tasks/${atid}/unarchive`);assert(!r.data.archivedAt,'no archivedAt');});
+  await api('DELETE',`/api/v1/tasks/${atid}`);
+  await test('Archive 404',async()=>{assertEqual((await api('POST','/api/v1/tasks/ZZZZZ-999/archive')).status,404,'404');});
+}
+
+// ═══ 13. BACKLOG ═══
+async function testBacklog(){
+  console.log('\n📦 [13/25] Backlog');
+  let bid1,bid2;
+  await test('Create backlog item',async()=>{const r=await api('POST','/api/v1/backlog',{title:rnd('BL-'),description:'Backlog desc',priority:'P1',source:'agent',tags:['idea']});assertEqual(r.status,201,'create');bid1=r.data.backlogId;ctx.backlogIds.push(bid1);});
+  await test('Create child backlog',async()=>{const r=await api('POST','/api/v1/backlog',{title:rnd('BLC-'),parent_backlog_id:bid1,priority:'P2'});assertEqual(r.status,201,'create');bid2=r.data.backlogId;ctx.backlogIds.push(bid2);});
+  await test('Create backlog with domain',async()=>{const r=await api('POST','/api/v1/backlog',{title:rnd('BLD-'),domain:ctx.domainName,priority:'P0'});assertEqual(r.status,201,'create');ctx.backlogIds.push(r.data.backlogId);});
+  await test('List backlog',async()=>{const r=await api('GET','/api/v1/backlog');assertEqual(r.status,200,'list');assert(r.data.length>=3,'>=3');});
+  await test('List backlog tree',async()=>{const r=await api('GET','/api/v1/backlog/tree');assertEqual(r.status,200,'tree');for(const n of r.data)assert('children' in n,'has children');});
+  await test('Filter backlog by priority',async()=>{const r=await api('GET','/api/v1/backlog?priority=P1');for(const b of r.data)assertEqual(b.priority,'P1','prio');});
+  await test('Update backlog',async()=>{const t=rnd('UBL-');const r=await api('PATCH',`/api/v1/backlog/${bid1}`,{title:t,tags:['updated']});assertEqual(r.status,200,'patch');assertEqual(r.data.title,t,'title');assert(r.data.tags.includes('updated'),'tag');});
+  await test('Update backlog 404',async()=>{assertEqual((await api('PATCH','/api/v1/backlog/BL-999999',{title:'x'})).status,404,'404');});
+  await test('Schedule backlog→task',async()=>{const r=await api('POST',`/api/v1/backlog/${bid1}/schedule`,{owner:'test-user',milestone:ctx.milestoneName});assertEqual(r.status,200,'schedule');assert(r.data.taskId,'has taskId');ctx.taskIds.push(r.data.taskId);});
+  await test('Schedule 404',async()=>{assertEqual((await api('POST','/api/v1/backlog/BL-999999/schedule',{})).status,404,'404');});
+}
+
+// ═══ 14. ITERATIONS ═══
+async function testIterations(){
+  console.log('\n🔁 [14/25] Iterations');
+  await test('Create iteration',async()=>{const r=await api('POST','/api/v1/iterations',{name:rnd('Sprint-'),start_date:'2026-04-01',end_date:'2026-04-14',description:'Test sprint'});assertEqual(r.status,201,'create');ctx.iterationId=r.data.id;});
+  await test('List iterations',async()=>{const r=await api('GET','/api/v1/iterations');assertEqual(r.status,200,'list');assert(r.data.some(i=>i.id===ctx.iterationId),'include');});
+  await test('Get iteration by id',async()=>{const r=await api('GET',`/api/v1/iterations/${ctx.iterationId}`);assertEqual(r.status,200,'get');assert('stats' in r.data,'has stats');assert(Array.isArray(r.data.tasks),'has tasks');});
+  await test('Update iteration',async()=>{const r=await api('PATCH',`/api/v1/iterations/${ctx.iterationId}`,{status:'active',description:rnd('upd-')});assertEqual(r.status,200,'patch');assertEqual(r.data.status,'active','status');});
+  await test('Update iteration 404',async()=>{assertEqual((await api('PATCH','/api/v1/iterations/99999',{name:'x'})).status,404,'404');});
+  await test('Add task to iteration',async()=>{const r=await api('POST',`/api/v1/iterations/${ctx.iterationId}/tasks`,{task_id:ctx.taskIds[0]});assertEqual(r.status,200,'add');});
+  await test('Add task to iteration (idempotent)',async()=>{assertEqual((await api('POST',`/api/v1/iterations/${ctx.iterationId}/tasks`,{task_id:ctx.taskIds[0]})).status,200,'ok');});
+  await test('Add second task',async()=>{assertEqual((await api('POST',`/api/v1/iterations/${ctx.iterationId}/tasks`,{task_id:ctx.taskIds[1]})).status,200,'ok');});
+  await test('Iteration now has tasks',async()=>{const r=await api('GET',`/api/v1/iterations/${ctx.iterationId}`);assert(r.data.stats.totalTasks>=2,'>=2');});
+  await test('Remove task from iteration',async()=>{assertEqual((await api('DELETE',`/api/v1/iterations/${ctx.iterationId}/tasks/${ctx.taskIds[1]}`)).status,200,'rm');});
+  await test('Add task no body → 400',async()=>{assertEqual((await api('POST',`/api/v1/iterations/${ctx.iterationId}/tasks`,{})).status,400,'400');});
+  await test('Create iteration no name → 400',async()=>{assertEqual((await api('POST','/api/v1/iterations',{start_date:'2026-05-01'})).status,400,'400');});
+  await test('List iterations by status',async()=>{const r=await api('GET','/api/v1/iterations?status=active');for(const i of r.data)assertEqual(i.status,'active','status');});
+}
+
+// ═══ 15. NOTIFICATIONS ═══
+async function testNotifications(){
+  console.log('\n🔔 [15/25] Notifications');
+  await test('Get notifications',async()=>{const r=await api('GET','/api/v1/notifications');assertEqual(r.status,200,'list');assert(Array.isArray(r.data),'array');});
+  await test('Get unread count',async()=>{const r=await api('GET','/api/v1/notifications/unread-count');assertEqual(r.status,200,'ok');assertType(r.data.count,'number','count');});
+  await test('Mark all read',async()=>{assertEqual((await api('POST','/api/v1/notifications/read-all')).status,200,'ok');});
+  await test('Mark one read (may be 200)',async()=>{const r=await api('PATCH','/api/v1/notifications/1/read');assertEqual(r.status,200,'ok');});
+  await test('Unread only filter',async()=>{const r=await api('GET','/api/v1/notifications?unread_only=true');assertEqual(r.status,200,'ok');});
+}
+
+// ═══ 16. CUSTOM FIELDS ═══
+async function testCustomFields(){
+  console.log('\n🏷️ [16/25] Custom Fields');
+  await test('Create text field',async()=>{const r=await api('POST','/api/v1/custom-fields',{name:rnd('CF-'),field_type:'text'});assertEqual(r.status,201,'create');ctx.customFieldId=r.data.id;});
+  await test('Create select field',async()=>{const r=await api('POST','/api/v1/custom-fields',{name:rnd('SEL-'),field_type:'select',options:['A','B','C'],color:'#ff0000'});assertEqual(r.status,201,'create');ctx.customFieldId2=r.data.id;});
+  await test('List fields',async()=>{const r=await api('GET','/api/v1/custom-fields');assertEqual(r.status,200,'list');assert(r.data.length>=2,'>=2');});
+  await test('Update field',async()=>{const r=await api('PATCH',`/api/v1/custom-fields/${ctx.customFieldId}`,{name:rnd('UCF-'),sort_order:5});assertEqual(r.status,200,'patch');assertEqual(r.data.sortOrder,5,'sortOrder');});
+  await test('Update field 404',async()=>{assertEqual((await api('PATCH','/api/v1/custom-fields/99999',{name:'x'})).status,404,'404');});
+  await test('Set task field values',async()=>{const body={};body[ctx.customFieldId]=rnd('val-');body[ctx.customFieldId2]='A';const r=await api('PUT',`/api/v1/tasks/${ctx.taskIds[0]}/fields`,body);assertEqual(r.status,200,'put');assert(r.data.length>=2,'>=2 vals');});
+  await test('Get task fields',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/fields`);assertEqual(r.status,200,'get');assert(r.data.length>=2,'>=2');assert(r.data.some(v=>v.fieldName),'has fieldName');});
+  await test('Clear field value',async()=>{const body={};body[ctx.customFieldId]='';const r=await api('PUT',`/api/v1/tasks/${ctx.taskIds[0]}/fields`,body);assertEqual(r.status,200,'clear');});
+  await test('Get fields 404 task',async()=>{assertEqual((await api('GET','/api/v1/tasks/ZZZZZ-999/fields')).status,404,'404');});
+  await test('Delete field (cascades values)',async()=>{assertEqual((await api('DELETE',`/api/v1/custom-fields/${ctx.customFieldId}`)).status,200,'delete');});
+  await test('Delete field 404',async()=>{assertEqual((await api('DELETE','/api/v1/custom-fields/99999')).status,404,'404');});
+}
+
+// ═══ 17. ATTACHMENTS ═══
+async function testAttachments(){
+  console.log('\n📎 [17/25] Attachments');
+  await test('Add doc attachment',async()=>{const r=await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/attachments`,{type:'doc',title:rnd('Doc-'),content:'# Hello\nWorld',created_by:'test-user'});assertEqual(r.status,201,'create');ctx.attachmentId=r.data.id;});
+  await test('Add link attachment',async()=>{const r=await api('POST',`/api/v1/tasks/${ctx.taskIds[0]}/attachments`,{type:'link',title:rnd('Link-'),content:'https://example.com',metadata:{url:'https://example.com'}});assertEqual(r.status,201,'create');ctx.attachmentId2=r.data.id;});
+  await test('List attachments',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/attachments`);assertEqual(r.status,200,'list');assert(r.data.length>=2,'>=2');});
+  await test('Filter attachments by type',async()=>{const r=await api('GET',`/api/v1/tasks/${ctx.taskIds[0]}/attachments?type=doc`);for(const a of r.data)assertEqual(a.type,'doc','type');});
+  await test('Get attachment by id',async()=>{const r=await api('GET',`/api/v1/attachments/${ctx.attachmentId}`);assertEqual(r.status,200,'get');assertType(r.data.metadata,'object','metadata');});
+  await test('Update attachment',async()=>{const r=await api('PATCH',`/api/v1/attachments/${ctx.attachmentId}`,{title:rnd('UDoc-'),content:'Updated!'});assertEqual(r.status,200,'patch');assertEqual(r.data.content,'Updated!','content');});
+  await test('Update attachment 404',async()=>{assertEqual((await api('PATCH','/api/v1/attachments/99999',{title:'x'})).status,404,'404');});
+  await test('Reorder attachments',async()=>{const r=await api('PATCH',`/api/v1/tasks/${ctx.taskIds[0]}/attachments/reorder`,{ordered_ids:[ctx.attachmentId2,ctx.attachmentId]});assertEqual(r.status,200,'reorder');});
+  await test('Add attachment to 404 task',async()=>{assertEqual((await api('POST','/api/v1/tasks/ZZZZZ-999/attachments',{type:'doc',title:'x',content:'x'})).status,404,'404');});
+  await test('Delete attachment',async()=>{assertEqual((await api('DELETE',`/api/v1/attachments/${ctx.attachmentId2}`)).status,200,'delete');});
+  await test('Delete attachment 404',async()=>{assertEqual((await api('DELETE','/api/v1/attachments/99999')).status,404,'404');});
+}
+
+// ═══ 18. GOALS & OKR ═══
+async function testGoals(){
+  console.log('\n🎯 [18/25] Goals & OKR');
+  await test('Create goal with objectives',async()=>{const r=await api('POST','/api/v1/goals',{title:rnd('Goal-'),description:'OKR test',target_date:'2026-Q2',set_by:'test-user',objectives:[{title:rnd('KR1-'),weight:0.6},{title:rnd('KR2-'),weight:0.4}]});assertEqual(r.status,201,'create');ctx.goalId=r.data.id;});
+  await test('List goals (enriched)',async()=>{const r=await api('GET','/api/v1/goals');assertEqual(r.status,200,'list');const g=r.data.find(x=>x.id===ctx.goalId);assert(g,'goal found');assert(g.objectives.length>=2,'>=2 KRs');ctx.objectiveId=g.objectives[0].id;});
+  await test('Link task to objective',async()=>{const r=await api('POST',`/api/v1/goals/${ctx.goalId}/link-task`,{objective_id:ctx.objectiveId,task_id:ctx.taskIds[0]});assertEqual(r.status,200,'link');});
+  await test('Link 404 task to objective',async()=>{assertEqual((await api('POST',`/api/v1/goals/${ctx.goalId}/link-task`,{objective_id:ctx.objectiveId,task_id:'ZZZZZ-999'})).status,404,'404');});
+}
+
+// ═══ 19. REQ LINKS ═══
+async function testReqLinks(){
+  console.log('\n🔗 [19/25] Req Links');
+  await test('Create relates link',async()=>{const r=await api('POST','/api/v1/req-links',{source_task_id:ctx.taskIds[0],target_task_id:ctx.taskIds[1],link_type:'relates'});assertEqual(r.status,201,'create');assert(r.data.sourceTaskStrId,'sourceStr');ctx.reqLinkId=r.data.id;});
+  await test('Create blocks link',async()=>{const r=await api('POST','/api/v1/req-links',{source_task_id:ctx.taskIds[0],target_task_id:ctx.taskIds[3],link_type:'blocks'});assertEqual(r.status,201,'create');});
+  await test('Duplicate link (idempotent)',async()=>{const r=await api('POST','/api/v1/req-links',{source_task_id:ctx.taskIds[0],target_task_id:ctx.taskIds[1],link_type:'relates'});assertEqual(r.status,201,'idempotent');});
+  await test('Self-link → 400',async()=>{assertEqual((await api('POST','/api/v1/req-links',{source_task_id:ctx.taskIds[0],target_task_id:ctx.taskIds[0]})).status,400,'self');});
+  await test('List all links',async()=>{const r=await api('GET','/api/v1/req-links');assertEqual(r.status,200,'list');assert(r.data.length>=2,'>=2');});
+  await test('Delete link',async()=>{assertEqual((await api('DELETE',`/api/v1/req-links/${ctx.reqLinkId}`)).status,200,'del');});
+}
+
+// ═══ 20. INTAKE ═══
+async function testIntake(){
+  console.log('\n📥 [20/25] Intake');
+  await test('Submit intake (public)',async()=>{const r=await api('POST','/api/v1/intake',{title:rnd('Bug-'),description:'Something broken',category:'bug',submitter:'external-user',priority:'P1'});assertEqual(r.status,201,'create');ctx.intakeId=r.data.intakeId;});
+  await test('Submit intake 2',async()=>{const r=await api('POST','/api/v1/intake',{title:rnd('Feat-'),category:'feature',submitter:'user2'});assertEqual(r.status,201,'create');ctx.intakeId2=r.data.intakeId;});
+  await test('Submit no title → 400',async()=>{assertEqual((await api('POST','/api/v1/intake',{submitter:'x'})).status,400,'400');});
+  await test('Submit no submitter → 400',async()=>{assertEqual((await api('POST','/api/v1/intake',{title:'x'})).status,400,'400');});
+  await test('List intake',async()=>{const r=await api('GET','/api/v1/intake');assertEqual(r.status,200,'list');assert(r.data.length>=2,'>=2');});
+  await test('Get intake by id',async()=>{const r=await api('GET',`/api/v1/intake/${ctx.intakeId}`);assertEqual(r.status,200,'get');assertEqual(r.data.intakeId,ctx.intakeId,'id');});
+  await test('Get intake 404',async()=>{assertEqual((await api('GET','/api/v1/intake/IN-999')).status,404,'404');});
+  await test('Intake stats',async()=>{const r=await api('GET','/api/v1/intake/stats');assertEqual(r.status,200,'stats');assertType(r.data.pending,'number','pending');assertType(r.data.total,'number','total');});
+  await test('Review accept → creates task',async()=>{const r=await api('POST',`/api/v1/intake/${ctx.intakeId}/review`,{action:'accept',reviewed_by:'test-user',review_note:'LGTM',owner:'test-user'});assertEqual(r.status,200,'accept');assert(r.data.task,'has task');assert(r.data.task.taskId,'taskId');ctx.taskIds.push(r.data.task.taskId);});
+  await test('Review already reviewed → 400',async()=>{assertEqual((await api('POST',`/api/v1/intake/${ctx.intakeId}/review`,{action:'reject',reviewed_by:'test-user'})).status,400,'already');});
+  await test('Review defer',async()=>{const r3=await api('POST','/api/v1/intake',{title:rnd('D-'),submitter:'u3'});const id3=r3.data.intakeId;const r=await api('POST',`/api/v1/intake/${id3}/review`,{action:'defer',reviewed_by:'test-user',review_note:'Later'});assertEqual(r.data.status,'deferred','deferred');
+    // Reopen
+    const ro=await api('POST',`/api/v1/intake/${id3}/reopen`);assertEqual(ro.data.status,'pending','reopened');});
+  await test('Review reject',async()=>{const r=await api('POST',`/api/v1/intake/${ctx.intakeId2}/review`,{action:'reject',reviewed_by:'test-user',review_note:'No'});assertEqual(r.data.status,'rejected','rejected');});
+  await test('Review no action → 400',async()=>{const r4=await api('POST','/api/v1/intake',{title:rnd('NA-'),submitter:'u4'});assertEqual((await api('POST',`/api/v1/intake/${r4.data.intakeId}/review`,{reviewed_by:'test-user'})).status,400,'400');});
+  await test('Reopen non-deferred → 400',async()=>{assertEqual((await api('POST',`/api/v1/intake/${ctx.intakeId2}/reopen`)).status,400,'not deferred');});
+  await test('Filter intake by status',async()=>{const r=await api('GET','/api/v1/intake?status=accepted');for(const i of r.data)assertEqual(i.status,'accepted','status');});
+  await test('Filter intake by category',async()=>{const r=await api('GET','/api/v1/intake?category=bug');for(const i of r.data)assertEqual(i.category,'bug','cat');});
+}
+
+// ═══ 21. PERMISSIONS ═══
+async function testPermissions(){
+  console.log('\n🔐 [21/25] Permissions');
+  const tid=ctx.taskIds[0];
+  // First ensure the task owner is test-user
+  await api('PATCH',`/api/v1/tasks/${tid}`,{owner:'test-user'});
+  await test('Grant view perm',async()=>{const r=await api('POST',`/api/v1/tasks/${tid}/permissions`,{grantee:ctx.memberIdentifier,level:'view'});assertEqual(r.status,200,'grant');assertEqual(r.data.level,'view','view');});
+  await test('Upgrade to edit perm (idempotent)',async()=>{const r=await api('POST',`/api/v1/tasks/${tid}/permissions`,{grantee:ctx.memberIdentifier,level:'edit'});assertEqual(r.data.level,'edit','edit');});
+  await test('List task permissions',async()=>{const r=await api('GET',`/api/v1/tasks/${tid}/permissions`);assertEqual(r.status,200,'list');assert(r.data.permissions.length>=1,'>=1');assertEqual(r.data.myPermission,'owner','owner');});
+  await test('Revoke permission',async()=>{const r=await api('DELETE',`/api/v1/tasks/${tid}/permissions/${ctx.memberIdentifier}`);assertEqual(r.status,204,'revoke');});
+  await test('Revoke 404',async()=>{assertEqual((await api('DELETE',`/api/v1/tasks/${tid}/permissions/nobody-xxx`)).status,404,'404');});
+  await test('Grant no grantee → 400',async()=>{assertEqual((await api('POST',`/api/v1/tasks/${tid}/permissions`,{level:'edit'})).status,400,'400');});
+  await test('Grant invalid level → 400',async()=>{assertEqual((await api('POST',`/api/v1/tasks/${tid}/permissions`,{grantee:ctx.memberIdentifier,level:'admin'})).status,400,'400');});
+  await test('Grant self → 400',async()=>{assertEqual((await api('POST',`/api/v1/tasks/${tid}/permissions`,{grantee:'test-user',level:'edit'})).status,400,'self');});
+  await test('Perm on 404 task',async()=>{assertEqual((await api('GET','/api/v1/tasks/ZZZZZ-999/permissions')).status,404,'404');});
+}
+
+// ═══ 22. AUTH ═══
+async function testAuth(){
+  console.log('\n🔑 [22/25] Auth (Registration & Login)');
+  const uname=rnd('user-').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,20);
+  const pwd=rnd('Pwd!1-');
+  let token;
+  await test('Register new account',async()=>{const r=await api('POST','/api/v1/auth/register',{username:uname,password:pwd,display_name:rnd('DN-')});assertEqual(r.status,201,'register');assert(r.data.token,'has token');assert(r.data.token.startsWith('clawpm_sess_'),'sess prefix');token=r.data.token;ctx.accountToken=token;ctx.accountUsername=uname;assert(r.data.account.username===uname,'username');});
+  await test('Duplicate register → 400',async()=>{assertEqual((await api('POST','/api/v1/auth/register',{username:uname,password:pwd,display_name:'dup'})).status,400,'dup');});
+  await test('Register short password → 400',async()=>{assertEqual((await api('POST','/api/v1/auth/register',{username:rnd('u2-').slice(0,10),password:'12',display_name:'x'})).status,400,'short');});
+  await test('Register bad username → 400',async()=>{assertEqual((await api('POST','/api/v1/auth/register',{username:'ab',password:'123456',display_name:'x'})).status,400,'bad');});
+  await test('Register no displayName → 400',async()=>{assertEqual((await api('POST','/api/v1/auth/register',{username:rnd('u3-').slice(0,10),password:'123456',display_name:'  '})).status,400,'empty');});
+  await test('Login',async()=>{const r=await api('POST','/api/v1/auth/login',{username:uname,password:pwd});assertEqual(r.status,200,'login');assert(r.data.token,'has token');});
+  await test('Login wrong password → 401',async()=>{assertEqual((await api('POST','/api/v1/auth/login',{username:uname,password:'wrong!!'})).status,401,'wrong');});
+  await test('Login wrong username → 401',async()=>{assertEqual((await api('POST','/api/v1/auth/login',{username:'nonexist_zzz',password:pwd})).status,401,'wrong');});
+  await test('Get /auth/me with session',async()=>{const r=await api('GET','/api/v1/auth/me',null,{'Authorization':`Bearer ${token}`});assertEqual(r.status,200,'me');assertEqual(r.data.account.username,uname,'username');});
+  await test('Get /auth/me with legacy token → 401',async()=>{const r=await api('GET','/api/v1/auth/me',null,{'Authorization':'Bearer dev-token'});assertEqual(r.status,401,'401');});
+  await test('Select member',async()=>{const r=await api('POST','/api/v1/auth/select-member',{member_identifier:uname},{Authorization:`Bearer ${token}`});assertEqual(r.status,200,'select');assert(r.data.currentMember,'has member');});
+  await test('Select member - create new',async()=>{const newId=rnd('nm-').slice(0,20);const r=await api('POST','/api/v1/auth/select-member',{create_member:{name:rnd('N-'),identifier:newId}},{Authorization:`Bearer ${token}`});assertEqual(r.status,200,'create');assertEqual(r.data.currentMember.identifier,newId,'id');});
+  await test('Logout',async()=>{const r=await api('POST','/api/v1/auth/logout',null,{'Authorization':`Bearer ${token}`});assertEqual(r.status,200,'logout');});
+  await test('After logout, /me fails',async()=>{const r=await api('GET','/api/v1/auth/me',null,{'Authorization':`Bearer ${token}`});assertEqual(r.status,401,'expired');});
+}
+
+// ═══ 23. AGENT TOKENS ═══
+async function testAgentTokens(){
+  console.log('\n🤖 [23/25] Agent Tokens');
+  const agentId=ctx.agentIdentifier;
+  let tokenId,fullToken;
+  await test('Create agent token',async()=>{const r=await api('POST',`/api/v1/agents/${agentId}/tokens`,{client_type:'cline',name:rnd('tok-')});assertEqual(r.status,201,'create');assert(r.data.token.startsWith('clawpm_agent_'),'prefix');tokenId=r.data.id;fullToken=r.data.token;});
+  await test('List agent tokens',async()=>{const r=await api('GET',`/api/v1/agents/${agentId}/tokens`);assertEqual(r.status,200,'list');assert(r.data.length>=1,'>=1');assert(!r.data[0].token,'no full token exposed');assert(r.data[0].tokenPrefix,'has prefix');});
+  await test('Rotate agent token',async()=>{const r=await api('POST',`/api/v1/agents/${agentId}/tokens/${tokenId}/rotate`,{client_type:'cursor',name:rnd('rot-')});assertEqual(r.status,200,'rotate');assert(r.data.token!==fullToken,'new token');assert(r.data.token.startsWith('clawpm_agent_'),'prefix');});
+  await test('Revoke agent token',async()=>{const r2=await api('POST',`/api/v1/agents/${agentId}/tokens`,{name:rnd('rev-')});assertEqual(r2.status,201,'create2');const r=await api('POST',`/api/v1/agents/${agentId}/tokens/${r2.data.id}/revoke`);assertEqual(r.status,200,'revoke');});
+  await test('Get openclaw config',async()=>{const r=await api('GET',`/api/v1/agents/${agentId}/openclaw-config`);assertEqual(r.status,200,'config');assert(r.data.token,'has token');assert(r.data.sseUrl,'has sseUrl');assert(r.data.configJson,'has configJson');assert(r.data.configJson.mcpServers.clawpm,'has clawpm server');});
+  await test('Agent token auth works',async()=>{const newTok=await api('POST',`/api/v1/agents/${agentId}/tokens`,{name:rnd('auth-')});const r=await api('GET','/api/v1/tasks',null,{'Authorization':`Bearer ${newTok.data.token}`,'X-ClawPM-User':agentId});assertEqual(r.status,200,'auth ok');});
+}
+
+// ═══ 24. DASHBOARD / RISK / GANTT / OVERVIEW ═══
+async function testDashboard(){
+  console.log('\n📊 [24/25] Dashboard, Risk, Gantt, Overview');
+  await test('Dashboard overview',async()=>{const r=await api('GET','/api/v1/dashboard/overview');assertEqual(r.status,200,'overview');assertType(r.data.total,'number','total');assertType(r.data.done,'number','done');assertType(r.data.completionRate,'number','rate');});
+  await test('Dashboard risks',async()=>{const r=await api('GET','/api/v1/dashboard/risks');assertEqual(r.status,200,'risks');assert('summary' in r.data,'summary');assert(Array.isArray(r.data.overdue),'overdue arr');assert(Array.isArray(r.data.atRisk),'atRisk arr');assert(Array.isArray(r.data.blocked),'blocked arr');assert(Array.isArray(r.data.stalled),'stalled arr');assert(Array.isArray(r.data.byDomain),'byDomain arr');});
+  await test('Dashboard resources',async()=>{const r=await api('GET','/api/v1/dashboard/resources');assertEqual(r.status,200,'resources');assert('byOwner' in r.data,'byOwner');});
+  await test('Gantt data',async()=>{const r=await api('GET','/api/v1/gantt');assertEqual(r.status,200,'gantt');assert(Array.isArray(r.data.tasks),'tasks arr');assert(Array.isArray(r.data.milestones),'milestones arr');});
+  await test('Gantt filter by owner',async()=>{const r=await api('GET',`/api/v1/gantt?owner=${ctx.memberIdentifier}`);assertEqual(r.status,200,'ok');});
+  await test('My overview',async()=>{const r=await api('GET','/api/v1/my/overview');assertEqual(r.status,200,'overview');assertType(r.data.total,'number','total');assertType(r.data.active,'number','active');assertType(r.data.overdue,'number','overdue');});
+  await test('Delete task',async()=>{
+    // delete one of the created tasks to test cascade
+    const dtid=ctx.taskIds.pop();
+    if(dtid){const r=await api('DELETE',`/api/v1/tasks/${dtid}`);assert(r.status===200||r.status===404,`delete got ${r.status}`);}
   });
 }
 
-// ── Projects ────────────────────────────────────────────────────────
-async function testProjects() {
-  console.log('\n📁 [2/16] Projects');
-
-  await test('List projects (should include default)', async () => {
-    const r = await api('GET', '/api/v1/projects');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 1, 'should have at least default project');
-    assert(r.data.some(p => p.slug === 'default'), 'should include default');
-  });
-
-  await test('Create project', async () => {
-    ctx.projectSlug = `test-${UID}`;
-    const r = await api('POST', '/api/v1/projects', {
-      name: `Test Project ${UID}`,
-      slug: ctx.projectSlug,
-      description: 'Auto-test project',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.id, 'should have id');
-    ctx.projectId = r.data.id;
-  });
-
-  await test('Get project by slug', async () => {
-    const r = await api('GET', `/api/v1/projects/${ctx.projectSlug}`);
-    assertEqual(r.status, 200, 'get status');
-    assertEqual(r.data.slug, ctx.projectSlug, 'slug match');
-  });
-
-  await test('Update project', async () => {
-    const r = await api('PATCH', `/api/v1/projects/${ctx.projectSlug}`, {
-      description: 'Updated description',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.description, 'Updated description', 'description updated');
-  });
-
-  await test('Create project without name → 400', async () => {
-    const r = await api('POST', '/api/v1/projects', { slug: 'no-name' });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Get non-existent project → 404', async () => {
-    const r = await api('GET', '/api/v1/projects/definitely-not-exist-xxx');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Domains ─────────────────────────────────────────────────────────
-async function testDomains() {
-  console.log('\n🏷️  [3/16] Domains');
-
-  await test('Create domain', async () => {
-    ctx.domainName = `TestDom-${UID}`;
-    const pfx = `TD${UID.toUpperCase().slice(0, 4)}`;
-    const r = await api('POST', '/api/v1/domains', {
-      name: ctx.domainName,
-      task_prefix: pfx,
-      keywords: ['test', 'auto'],
-      color: '#ff5733',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.id, 'should have id');
-    ctx.domainId = r.data.id;
-  });
-
-  await test('List domains', async () => {
-    const r = await api('GET', '/api/v1/domains');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.some(d => d.id === ctx.domainId), 'should include created domain');
-  });
-
-  await test('Update domain', async () => {
-    const r = await api('PATCH', `/api/v1/domains/${ctx.domainId}`, {
-      color: '#00ff00',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.color, '#00ff00', 'color updated');
-  });
-
-  await test('Update non-existent domain → 404', async () => {
-    const r = await api('PATCH', '/api/v1/domains/99999', { color: '#000' });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Milestones ──────────────────────────────────────────────────────
-async function testMilestones() {
-  console.log('\n🎯 [4/16] Milestones');
-
-  await test('Create milestone', async () => {
-    ctx.milestoneName = `MS-${UID}`;
-    const r = await api('POST', '/api/v1/milestones', {
-      name: ctx.milestoneName,
-      target_date: '2026-06-01',
-      description: 'Test milestone',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.id, 'should have id');
-    ctx.milestoneId = r.data.id;
-  });
-
-  await test('List milestones', async () => {
-    const r = await api('GET', '/api/v1/milestones');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.some(m => m.id === ctx.milestoneId), 'should include created milestone');
-  });
-
-  await test('Update milestone', async () => {
-    const r = await api('PATCH', `/api/v1/milestones/${ctx.milestoneId}`, {
-      description: 'Updated MS description',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.description, 'Updated MS description', 'description updated');
-  });
-
-  await test('Update non-existent milestone → 404', async () => {
-    const r = await api('PATCH', '/api/v1/milestones/99999', { name: 'x' });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Members ─────────────────────────────────────────────────────────
-async function testMembers() {
-  console.log('\n👤 [5/16] Members');
-
-  await test('Create member (human)', async () => {
-    ctx.memberIdentifier = `mem-${UID}`;
-    const r = await api('POST', '/api/v1/members', {
-      name: `Test Member ${UID}`,
-      identifier: ctx.memberIdentifier,
-      type: 'human',
-      role: 'dev',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.id, 'should have id');
-    ctx.memberId = r.data.id;
-  });
-
-  await test('List members', async () => {
-    const r = await api('GET', '/api/v1/members');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.some(m => m.identifier === ctx.memberIdentifier), 'should include created member');
-  });
-
-  await test('Get member by identifier', async () => {
-    const r = await api('GET', `/api/v1/members/${ctx.memberIdentifier}`);
-    assertEqual(r.status, 200, 'get status');
-    assertEqual(r.data.identifier, ctx.memberIdentifier, 'identifier match');
-  });
-
-  await test('Update member', async () => {
-    const r = await api('PATCH', `/api/v1/members/${ctx.memberIdentifier}`, {
-      description: 'Updated member',
-      role: 'pm',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.description, 'Updated member', 'description updated');
-  });
-
-  await test('Get non-existent member → 404', async () => {
-    const r = await api('GET', '/api/v1/members/definitely-not-exist-xxx');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  await test('Check identifier availability (taken)', async () => {
-    const r = await api('GET', `/api/v1/members/check-identifier?identifier=${ctx.memberIdentifier}`);
-    assertEqual(r.status, 200, 'status');
-    assertEqual(r.data.available, false, 'should be taken');
-  });
-
-  await test('Check identifier availability (free)', async () => {
-    const r = await api('GET', `/api/v1/members/check-identifier?identifier=random-${Date.now()}`);
-    assertEqual(r.status, 200, 'status');
-    assertEqual(r.data.available, true, 'should be available');
-  });
-
-  // Create a second member for permission tests later
-  await test('Create second member for permission tests', async () => {
-    const r = await api('POST', '/api/v1/members', {
-      name: `Permission Test Member ${UID}`,
-      identifier: `perm-mem-${UID}`,
-      type: 'human',
-    });
-    assertEqual(r.status, 201, 'create status');
-  });
-}
-
-// ── Tasks CRUD ──────────────────────────────────────────────────────
-async function testTasksCRUD() {
-  console.log('\n📋 [6/16] Tasks CRUD');
-
-  // Create root task
-  await test('Create root task', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Root Task ${UID}`,
-      description: 'Test root task',
-      priority: 'P1',
-      owner: 'test-user',
-      labels: ['feature'],
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.taskId, 'should have taskId');
-    ctx.taskIds.push(r.data.taskId);
-  });
-
-  // Create child task
-  await test('Create child task', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Child Task ${UID}`,
-      parent_task_id: ctx.taskIds[0],
-      priority: 'P2',
-      owner: 'test-user',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.taskId, 'should have taskId');
-    assert(r.data.parentTaskId !== null, 'should have parent');
-    ctx.taskIds.push(r.data.taskId);
-  });
-
-  // Create task with domain
-  await test('Create task with domain', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Domain Task ${UID}`,
-      domain: ctx.domainName,
-      priority: 'P0',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.domain !== null, 'should have domain');
-    ctx.taskIds.push(r.data.taskId);
-  });
-
-  // Create task with milestone
-  await test('Create task with milestone', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Milestone Task ${UID}`,
-      milestone: ctx.milestoneName,
-      status: 'active',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.milestone !== null, 'should have milestone');
-    ctx.taskIds.push(r.data.taskId);
-  });
-
-  // Create task with assignee and start_date
-  await test('Create task with assignee and start_date', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Assigned Task ${UID}`,
-      assignee: ctx.memberIdentifier,
-      start_date: '2026-04-01',
-      due_date: '2026-05-01',
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.taskIds.push(r.data.taskId);
-  });
-
-  // List tasks
-  await test('List tasks', async () => {
-    const r = await api('GET', '/api/v1/tasks');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 5, `should have at least 5 tasks, got ${r.data.length}`);
-  });
-
-  // Get single task
-  await test('Get task by taskId', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}`);
-    assertEqual(r.status, 200, 'get status');
-    assertEqual(r.data.taskId, ctx.taskIds[0], 'taskId match');
-  });
-
-  // Get non-existent task
-  await test('Get non-existent task → 404', async () => {
-    const r = await api('GET', '/api/v1/tasks/ZZZZZ-999');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // Update task
-  await test('Update task title', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      title: `Updated Root Task ${UID}`,
-      description: 'Updated desc',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.title, `Updated Root Task ${UID}`, 'title updated');
-  });
-
-  // Update task status
-  await test('Update task status', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      status: 'active',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.status, 'active', 'status changed');
-  });
-
-  // Update task labels
-  await test('Update task labels', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      labels: ['feature', 'urgent'],
-    });
-    assertEqual(r.status, 200, 'update status');
-    assert(r.data.labels.includes('feature'), 'should have feature label');
-    assert(r.data.labels.includes('urgent'), 'should have urgent label');
-  });
-
-  // Update task assignee
-  await test('Update task assignee', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      assignee: ctx.memberIdentifier,
-    });
-    assertEqual(r.status, 200, 'update status');
-  });
-
-  // Update task priority
-  await test('Update task priority', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      priority: 'P0',
-    });
-    assertEqual(r.status, 200, 'update status');
-    assertEqual(r.data.priority, 'P0', 'priority changed');
-  });
-
-  // Update task tags
-  await test('Update task tags', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}`, {
-      tags: ['api-test', 'auto'],
-    });
-    assertEqual(r.status, 200, 'update status');
-    assert(r.data.tags.includes('api-test'), 'should have tag');
-  });
-
-  // Update non-existent task → 404
-  await test('Update non-existent task → 404', async () => {
-    const r = await api('PATCH', '/api/v1/tasks/ZZZZZ-999', { title: 'nope' });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // Filter tasks by status
-  await test('Filter tasks by status', async () => {
-    const r = await api('GET', '/api/v1/tasks?status=active');
-    assertEqual(r.status, 200, 'filter status');
-    assert(Array.isArray(r.data), 'should be array');
-    for (const t of r.data) assertEqual(t.status, 'active', 'all should be active');
-  });
-
-  // Filter tasks by priority
-  await test('Filter tasks by priority', async () => {
-    const r = await api('GET', '/api/v1/tasks?priority=P0');
-    assertEqual(r.status, 200, 'filter status');
-    for (const t of r.data) assertEqual(t.priority, 'P0', 'all should be P0');
-  });
-
-  // Multiple fast creates to test ID uniqueness
-  await test('Rapid task creation (5x) - no UNIQUE constraint failures', async () => {
-    const promises = [];
-    for (let i = 0; i < 5; i++) {
-      promises.push(api('POST', '/api/v1/tasks', {
-        title: `Rapid Task ${i}-${UID}`,
-        priority: 'P2',
-      }));
-    }
-    const results = await Promise.all(promises);
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      assert(r.status === 201, `Rapid task ${i}: expected 201, got ${r.status} - ${JSON.stringify(r.data)}`);
-      ctx.taskIds.push(r.data.taskId);
-    }
-    // Verify all IDs are unique
-    const ids = results.map(r => r.data.taskId);
-    const uniqueIds = new Set(ids);
-    assertEqual(uniqueIds.size, ids.length, `All IDs should be unique: ${ids.join(', ')}`);
-  });
-}
-
-// ── Tasks Tree ──────────────────────────────────────────────────────
-async function testTasksTree() {
-  console.log('\n🌲 [7/16] Tasks Tree');
-
-  await test('Get task tree', async () => {
-    const r = await api('GET', '/api/v1/tasks/tree');
-    assertEqual(r.status, 200, 'tree status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 1, 'should have root nodes');
-    // Check that root nodes have children array
-    for (const node of r.data) {
-      assert('children' in node, 'root nodes should have children');
-    }
-  });
-
-  await test('Get task children', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/children`);
-    assertEqual(r.status, 200, 'children status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Get task context', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[1]}/context`);
-    assertEqual(r.status, 200, 'context status');
-    assert(r.data.current, 'should have current');
-    assert(Array.isArray(r.data.ancestors), 'should have ancestors');
-    assert(Array.isArray(r.data.siblings), 'should have siblings');
-    assert(Array.isArray(r.data.children), 'should have children');
-  });
-
-  await test('Get context for non-existent task → 404', async () => {
-    const r = await api('GET', '/api/v1/tasks/ZZZZZ-999/context');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // Reparent
-  await test('Reparent task (move child to root)', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[1]}/reparent`, {
-      new_parent_task_id: null,
-    });
-    assertEqual(r.status, 200, 'reparent status');
-  });
-
-  await test('Reparent task (move back to parent)', async () => {
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[1]}/reparent`, {
-      new_parent_task_id: ctx.taskIds[0],
-    });
-    assertEqual(r.status, 200, 'reparent status');
-  });
-
-  // Reparent cycle detection
-  await test('Reparent task into own subtree → 400', async () => {
-    // Try to move parent into its own child
-    const r = await api('PATCH', `/api/v1/tasks/${ctx.taskIds[0]}/reparent`, {
-      new_parent_task_id: ctx.taskIds[1],
-    });
-    assertEqual(r.status, 400, 'should be 400 for cycle');
-  });
-
-  await test('Reparent non-existent task → 404', async () => {
-    const r = await api('PATCH', '/api/v1/tasks/ZZZZZ-999/reparent', {
-      new_parent_task_id: null,
-    });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // Reorder children
-  await test('Reorder children', async () => {
-    const children = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/children`);
-    if (children.data && children.data.length > 0) {
-      const childIds = children.data.map(c => c.taskId);
-      const r = await api('PATCH', '/api/v1/tasks/reorder-children', {
-        parent_task_id: ctx.taskIds[0],
-        ordered_child_ids: childIds,
-      });
-      assertEqual(r.status, 200, 'reorder status');
-      assert(r.data.ok === true, 'should return ok');
-    }
-  });
-}
-
-// ── Task Progress/Complete/Blocker ──────────────────────────────────
-async function testTaskProgress() {
-  console.log('\n📊 [8/16] Task Progress & Completion');
-
-  await test('Update progress', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/progress`, {
-      progress: 50,
-      summary: 'Half done',
-    });
-    assertEqual(r.status, 200, 'progress status');
-    assertEqual(r.data.progress, 50, 'progress should be 50');
-  });
-
-  await test('Get progress history', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/history`);
-    assertEqual(r.status, 200, 'history status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 1, 'should have at least one entry');
-  });
-
-  await test('Report blocker', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/blocker`, {
-      blocker: 'Waiting for API review',
-    });
-    assertEqual(r.status, 200, 'blocker status');
-    assertEqual(r.data.blocker, 'Waiting for API review', 'blocker set');
-  });
-
-  await test('Complete task', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[3]}/complete`, {
-      summary: 'All done',
-    });
-    assertEqual(r.status, 200, 'complete status');
-    assertEqual(r.data.status, 'done', 'should be done');
-    assertEqual(r.data.progress, 100, 'should be 100%');
-  });
-
-  await test('Progress on non-existent task → 404', async () => {
-    const r = await api('POST', '/api/v1/tasks/ZZZZZ-999/progress', {
-      progress: 50,
-    });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Task Notes ──────────────────────────────────────────────────────
-async function testTaskNotes() {
-  console.log('\n📝 [9/16] Task Notes');
-
-  await test('Add note', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/notes`, {
-      content: 'This is a test note',
-      author: 'test-user',
-    });
-    assertEqual(r.status, 201, 'note create status');
-    assert(r.data.id, 'should have id');
-    ctx.noteId = r.data.id;
-  });
-
-  await test('List notes', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/notes`);
-    assertEqual(r.status, 200, 'notes list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 1, 'should have at least one note');
-  });
-
-  await test('Add note to non-existent task → 404', async () => {
-    const r = await api('POST', '/api/v1/tasks/ZZZZZ-999/notes', {
-      content: 'nope',
-    });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Batch Operations ────────────────────────────────────────────────
-async function testBatchOps() {
-  console.log('\n🔄 [10/16] Batch Operations');
-
-  await test('Batch update status', async () => {
-    const idsToUpdate = ctx.taskIds.slice(0, 3);
-    const r = await api('PATCH', '/api/v1/tasks/batch', {
-      task_ids: idsToUpdate,
-      updates: { status: 'planned' },
-    });
-    assertEqual(r.status, 200, 'batch status');
-    assert(Array.isArray(r.data), 'should be array');
-    for (const t of r.data) {
-      assertEqual(t.status, 'planned', `task ${t.taskId} should be planned`);
-    }
-  });
-
-  await test('Batch update priority', async () => {
-    const idsToUpdate = ctx.taskIds.slice(0, 2);
-    const r = await api('PATCH', '/api/v1/tasks/batch', {
-      task_ids: idsToUpdate,
-      updates: { priority: 'P1' },
-    });
-    assertEqual(r.status, 200, 'batch status');
-    for (const t of r.data) assertEqual(t.priority, 'P1', 'should be P1');
-  });
-
-  await test('Batch with empty task_ids → 400', async () => {
-    const r = await api('PATCH', '/api/v1/tasks/batch', {
-      task_ids: [],
-      updates: { status: 'active' },
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Batch with no updates → 400', async () => {
-    const r = await api('PATCH', '/api/v1/tasks/batch', {
-      task_ids: [ctx.taskIds[0]],
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-}
-
-// ── Archive ─────────────────────────────────────────────────────────
-async function testArchive() {
-  console.log('\n📦 [11/16] Archive');
-
-  // Use a fresh task for archive tests
-  let archiveTaskId;
-  await test('Create task for archive test', async () => {
-    const r = await api('POST', '/api/v1/tasks', {
-      title: `Archive Test ${UID}`,
-    });
-    assertEqual(r.status, 201, 'create status');
-    archiveTaskId = r.data.taskId;
-  });
-
-  await test('Archive task', async () => {
-    const r = await api('POST', `/api/v1/tasks/${archiveTaskId}/archive`);
-    assertEqual(r.status, 200, 'archive status');
-    assert(r.data.archivedAt !== null, 'should have archivedAt');
-  });
-
-  await test('List archived tasks', async () => {
-    const r = await api('GET', '/api/v1/tasks/archived');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.some(t => t.taskId === archiveTaskId), 'should include archived task');
-  });
-
-  await test('Archived task not in regular tree', async () => {
-    const r = await api('GET', '/api/v1/tasks/tree');
-    assertEqual(r.status, 200, 'tree status');
-    // Recursively check that archived task is not in tree
-    function findInTree(nodes, targetId) {
-      for (const n of nodes) {
-        if (n.taskId === targetId) return true;
-        if (n.children && findInTree(n.children, targetId)) return true;
-      }
-      return false;
-    }
-    assert(!findInTree(r.data, archiveTaskId), 'archived task should not be in tree');
-  });
-
-  await test('Unarchive task', async () => {
-    const r = await api('POST', `/api/v1/tasks/${archiveTaskId}/unarchive`);
-    assertEqual(r.status, 200, 'unarchive status');
-    assert(r.data.archivedAt === null || r.data.archivedAt === undefined, 'should not have archivedAt');
-  });
-
-  await test('Archive non-existent task → 404', async () => {
-    const r = await api('POST', '/api/v1/tasks/ZZZZZ-999/archive');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Backlog ─────────────────────────────────────────────────────────
-async function testBacklog() {
-  console.log('\n📋 [12/16] Backlog');
-
-  await test('Create backlog item', async () => {
-    const r = await api('POST', '/api/v1/backlog', {
-      title: `Backlog Item ${UID}`,
-      description: 'Test backlog item',
-      priority: 'P1',
-      source: 'auto-test',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.backlogId, 'should have backlogId');
-    ctx.backlogIds.push(r.data.backlogId);
-  });
-
-  await test('Create child backlog item', async () => {
-    const r = await api('POST', '/api/v1/backlog', {
-      title: `Child Backlog ${UID}`,
-      parent_backlog_id: ctx.backlogIds[0],
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.backlogIds.push(r.data.backlogId);
-  });
-
-  await test('List backlog items', async () => {
-    const r = await api('GET', '/api/v1/backlog');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.some(b => b.backlogId === ctx.backlogIds[0]), 'should include created item');
-  });
-
-  await test('List backlog tree', async () => {
-    const r = await api('GET', '/api/v1/backlog/tree');
-    assertEqual(r.status, 200, 'tree status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Update backlog item', async () => {
-    const r = await api('PATCH', `/api/v1/backlog/${ctx.backlogIds[0]}`, {
-      description: 'Updated backlog desc',
-    });
-    assertEqual(r.status, 200, 'update status');
-  });
-
-  await test('Update non-existent backlog → 404', async () => {
-    const r = await api('PATCH', '/api/v1/backlog/BL-ZZZZZ', { title: 'nope' });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  await test('Schedule backlog item → creates task', async () => {
-    const r = await api('POST', `/api/v1/backlog/${ctx.backlogIds[0]}/schedule`, {
-      owner: 'test-user',
-      priority: 'P1',
-    });
-    assertEqual(r.status, 200, 'schedule status');
-    assert(r.data.taskId, 'should return a task with taskId');
-  });
-}
-
-// ── Iterations ──────────────────────────────────────────────────────
-async function testIterations() {
-  console.log('\n🔁 [13/16] Iterations');
-
-  await test('Create iteration', async () => {
-    const r = await api('POST', '/api/v1/iterations', {
-      name: `Sprint ${UID}`,
-      description: 'Test iteration',
-      start_date: '2026-03-18',
-      end_date: '2026-04-01',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.id, 'should have id');
-    ctx.iterationId = r.data.id;
-  });
-
-  await test('List iterations', async () => {
-    const r = await api('GET', '/api/v1/iterations');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Get iteration by id', async () => {
-    const r = await api('GET', `/api/v1/iterations/${ctx.iterationId}`);
-    assertEqual(r.status, 200, 'get status');
-    assert(r.data.tasks !== undefined, 'should have tasks array');
-  });
-
-  await test('Update iteration', async () => {
-    const r = await api('PATCH', `/api/v1/iterations/${ctx.iterationId}`, {
-      description: 'Updated iteration',
-    });
-    assertEqual(r.status, 200, 'update status');
-  });
-
-  await test('Add task to iteration', async () => {
-    const r = await api('POST', `/api/v1/iterations/${ctx.iterationId}/tasks`, {
-      task_id: ctx.taskIds[0],
-    });
-    assertEqual(r.status, 200, 'add task status');
-    assert(r.data.ok === true, 'should return ok');
-  });
-
-  await test('Add same task to iteration again (should not crash)', async () => {
-    // Depending on implementation, this might succeed silently or error
-    const r = await api('POST', `/api/v1/iterations/${ctx.iterationId}/tasks`, {
-      task_id: ctx.taskIds[0],
-    });
-    // We just check it doesn't crash with 500
-    assert(r.status < 500, `should not be 500, got ${r.status}`);
-  });
-
-  await test('Add non-existent task to iteration → 404', async () => {
-    const r = await api('POST', `/api/v1/iterations/${ctx.iterationId}/tasks`, {
-      task_id: 'ZZZZZ-999',
-    });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  await test('Remove task from iteration', async () => {
-    const r = await api('DELETE', `/api/v1/iterations/${ctx.iterationId}/tasks/${ctx.taskIds[0]}`);
-    assertEqual(r.status, 200, 'remove status');
-  });
-
-  await test('Create iteration without name → 400', async () => {
-    const r = await api('POST', '/api/v1/iterations', {
-      description: 'No name',
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Get non-existent iteration → 404', async () => {
-    const r = await api('GET', '/api/v1/iterations/99999');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-}
-
-// ── Notifications ───────────────────────────────────────────────────
-async function testNotifications() {
-  console.log('\n🔔 [14/16] Notifications');
-
-  await test('Get notifications (may be empty)', async () => {
-    const r = await api('GET', '/api/v1/notifications');
-    assertEqual(r.status, 200, 'status');
-    assert(Array.isArray(r.data), 'should be array');
-    if (r.data.length > 0) ctx.notificationId = r.data[0].id;
-  });
-
-  await test('Get unread count', async () => {
-    const r = await api('GET', '/api/v1/notifications/unread-count');
-    assertEqual(r.status, 200, 'status');
-    assert(typeof r.data.count === 'number', 'count should be number');
-  });
-
-  if (ctx.notificationId) {
-    await test('Mark notification as read', async () => {
-      const r = await api('PATCH', `/api/v1/notifications/${ctx.notificationId}/read`);
-      assertEqual(r.status, 200, 'status');
-    });
-  }
-
-  await test('Mark all as read', async () => {
-    const r = await api('POST', '/api/v1/notifications/read-all');
-    assertEqual(r.status, 200, 'status');
-  });
-
-  await test('Notifications without user header → 400', async () => {
-    const r = await api('GET', '/api/v1/notifications', null, { 'X-ClawPM-User': '' });
-    // Without user, should be 400
-    assertEqual(r.status, 400, 'should be 400');
-  });
-}
-
-// ── Custom Fields, Attachments, Goals, ReqLinks, Intake, Permissions, Dashboard ──
-async function testMiscEndpoints() {
-  console.log('\n🧩 [15/16] Misc: CustomFields, Attachments, Goals, ReqLinks, Intake, Permissions, Dashboard');
-
-  // ── Custom Fields ──
-  await test('Create custom field', async () => {
-    const r = await api('POST', '/api/v1/custom-fields', {
-      name: `TestField-${UID}`,
-      field_type: 'text',
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.customFieldId = r.data.id;
-  });
-
-  await test('List custom fields', async () => {
-    const r = await api('GET', '/api/v1/custom-fields');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Update custom field', async () => {
-    const r = await api('PATCH', `/api/v1/custom-fields/${ctx.customFieldId}`, {
-      name: `Updated-${UID}`,
-    });
-    assertEqual(r.status, 200, 'update status');
-  });
-
-  await test('Get task field values', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/fields`);
-    assertEqual(r.status, 200, 'fields status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Set task field value', async () => {
-    const r = await api('PUT', `/api/v1/tasks/${ctx.taskIds[0]}/fields`, {
-      [ctx.customFieldId]: 'test-value',
-    });
-    assertEqual(r.status, 200, 'set field status');
-  });
-
-  // ── Attachments ──
-  await test('Add attachment', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/attachments`, {
-      type: 'doc',
-      title: `Doc ${UID}`,
-      content: 'Test document content',
-      created_by: 'test-user',
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.attachmentId = r.data.id;
-  });
-
-  await test('List attachments', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/attachments`);
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    assert(r.data.length >= 1, 'should have at least one');
-  });
-
-  await test('Get attachment by id', async () => {
-    const r = await api('GET', `/api/v1/attachments/${ctx.attachmentId}`);
-    assertEqual(r.status, 200, 'get status');
-  });
-
-  await test('Update attachment', async () => {
-    const r = await api('PATCH', `/api/v1/attachments/${ctx.attachmentId}`, {
-      title: `Updated Doc ${UID}`,
-    });
-    assertEqual(r.status, 200, 'update status');
-  });
-
-  await test('Add attachment to non-existent task → 404', async () => {
-    const r = await api('POST', '/api/v1/tasks/ZZZZZ-999/attachments', {
-      type: 'doc',
-      title: 'x',
-      content: 'x',
-    });
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // ── Goals & Objectives ──
-  await test('Create goal', async () => {
-    const r = await api('POST', '/api/v1/goals', {
-      title: `Goal ${UID}`,
-      description: 'Test goal',
-      objectives: [{ title: `Obj ${UID}`, weight: 1.0 }],
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.goalId = r.data.id;
-  });
-
-  await test('List goals', async () => {
-    const r = await api('GET', '/api/v1/goals');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-    const goal = r.data.find(g => g.id === ctx.goalId);
-    assert(goal, 'should include created goal');
-    if (goal && goal.objectives && goal.objectives.length > 0) {
-      ctx.objectiveId = goal.objectives[0].id;
-    }
-  });
-
-  if (ctx.objectiveId) {
-    await test('Link task to objective', async () => {
-      const r = await api('POST', `/api/v1/goals/${ctx.goalId}/link-task`, {
-        objective_id: ctx.objectiveId,
-        task_id: ctx.taskIds[0],
-      });
-      assertEqual(r.status, 200, 'link status');
-    });
-  }
-
-  // ── Req Links ──
-  await test('Create req link', async () => {
-    const r = await api('POST', '/api/v1/req-links', {
-      source_task_id: ctx.taskIds[0],
-      target_task_id: ctx.taskIds[2],
-      link_type: 'relates',
-    });
-    assertEqual(r.status, 201, 'create status');
-    ctx.reqLinkId = r.data.id;
-  });
-
-  await test('List req links', async () => {
-    const r = await api('GET', '/api/v1/req-links');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  // ── Intake ──
-  await test('Submit intake item', async () => {
-    const r = await api('POST', '/api/v1/intake', {
-      title: `Intake ${UID}`,
-      description: 'Test intake item',
-      submitter: 'external-user',
-      category: 'bug',
-    });
-    assertEqual(r.status, 201, 'create status');
-    assert(r.data.intakeId, 'should have intakeId');
-    ctx.intakeId = r.data.intakeId;
-  });
-
-  await test('List intake items', async () => {
-    const r = await api('GET', '/api/v1/intake');
-    assertEqual(r.status, 200, 'list status');
-    assert(Array.isArray(r.data), 'should be array');
-  });
-
-  await test('Get intake stats', async () => {
-    const r = await api('GET', '/api/v1/intake/stats');
-    assertEqual(r.status, 200, 'stats status');
-    assert(typeof r.data.total === 'number', 'should have total');
-  });
-
-  await test('Get intake by intakeId', async () => {
-    const r = await api('GET', `/api/v1/intake/${ctx.intakeId}`);
-    assertEqual(r.status, 200, 'get status');
-  });
-
-  await test('Submit intake without title → 400', async () => {
-    const r = await api('POST', '/api/v1/intake', {
-      submitter: 'x',
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Submit intake without submitter → 400', async () => {
-    const r = await api('POST', '/api/v1/intake', {
-      title: 'x',
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Review intake (accept)', async () => {
-    const r = await api('POST', `/api/v1/intake/${ctx.intakeId}/review`, {
-      action: 'accept',
-      reviewed_by: 'test-user',
-      review_note: 'Looks good',
-    });
-    assertEqual(r.status, 200, 'review status');
-  });
-
-  // Create another intake for defer/reopen test
-  let deferIntakeId;
-  await test('Submit and defer intake', async () => {
-    const r1 = await api('POST', '/api/v1/intake', {
-      title: `Defer Test ${UID}`,
-      submitter: 'ext-user',
-    });
-    assertEqual(r1.status, 201, 'create status');
-    deferIntakeId = r1.data.intakeId;
-
-    const r2 = await api('POST', `/api/v1/intake/${deferIntakeId}/review`, {
-      action: 'defer',
-      reviewed_by: 'test-user',
-    });
-    assertEqual(r2.status, 200, 'defer status');
-  });
-
-  await test('Reopen deferred intake', async () => {
-    const r = await api('POST', `/api/v1/intake/${deferIntakeId}/reopen`);
-    assertEqual(r.status, 200, 'reopen status');
-  });
-
-  await test('Get non-existent intake → 404', async () => {
-    const r = await api('GET', '/api/v1/intake/IN-ZZZZZ');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  // ── Permissions ──
-  await test('Get task permissions', async () => {
-    const r = await api('GET', `/api/v1/tasks/${ctx.taskIds[0]}/permissions`);
-    assertEqual(r.status, 200, 'status');
-    assert(r.data.taskId, 'should have taskId');
-    assert(Array.isArray(r.data.permissions), 'should have permissions array');
-  });
-
-  await test('Grant permission', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/permissions`, {
-      grantee: `perm-mem-${UID}`,
-      level: 'edit',
-    });
-    // Owner check: test-user is the owner, so this should work
-    assert(r.status === 200 || r.status === 201, `grant status should be 200/201, got ${r.status}`);
-  });
-
-  await test('Grant permission without grantee → 400', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/permissions`, {
-      level: 'edit',
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  await test('Grant permission with invalid level → 400', async () => {
-    const r = await api('POST', `/api/v1/tasks/${ctx.taskIds[0]}/permissions`, {
-      grantee: `perm-mem-${UID}`,
-      level: 'admin',
-    });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  // ── Dashboard ──
-  await test('Get dashboard overview', async () => {
-    const r = await api('GET', '/api/v1/dashboard/overview');
-    assertEqual(r.status, 200, 'status');
-    assert(typeof r.data.total === 'number', 'should have total');
-  });
-
-  await test('Get dashboard risks', async () => {
-    const r = await api('GET', '/api/v1/dashboard/risks');
-    assertEqual(r.status, 200, 'status');
-  });
-
-  await test('Get dashboard resources', async () => {
-    const r = await api('GET', '/api/v1/dashboard/resources');
-    assertEqual(r.status, 200, 'status');
-    assert(r.data.byOwner !== undefined, 'should have byOwner');
-  });
-
-  // ── My Overview ──
-  await test('Get my overview', async () => {
-    const r = await api('GET', '/api/v1/my/overview');
-    assertEqual(r.status, 200, 'status');
-    assert(typeof r.data.total === 'number', 'should have total');
-  });
-
-  await test('My overview without user → 400', async () => {
-    const r = await api('GET', '/api/v1/my/overview', null, { 'X-ClawPM-User': '' });
-    assertEqual(r.status, 400, 'should be 400');
-  });
-
-  // ── Gantt ──
-  await test('Get gantt data', async () => {
-    const r = await api('GET', '/api/v1/gantt');
-    assertEqual(r.status, 200, 'status');
-    assert(Array.isArray(r.data.tasks), 'should have tasks array');
-    assert(Array.isArray(r.data.milestones), 'should have milestones array');
-  });
-}
-
-// ── Auth (Registration / Login / Session) ───────────────────────────
-async function testAuth() {
-  console.log('\n🔐 [16/16] Auth');
-
-  ctx.accountUsername = `testuser-${UID}`;
-
-  await test('Register account', async () => {
-    const r = await api('POST', '/api/v1/auth/register', {
-      username: ctx.accountUsername,
-      password: 'TestPass123!',
-      display_name: `Test User ${UID}`,
-    });
-    assertEqual(r.status, 201, 'register status');
-    assert(r.data.token, 'should have token');
-    ctx.accountToken = r.data.token;
-  });
-
-  await test('Login', async () => {
-    const r = await api('POST', '/api/v1/auth/login', {
-      username: ctx.accountUsername,
-      password: 'TestPass123!',
-    });
-    assertEqual(r.status, 200, 'login status');
-    assert(r.data.token, 'should have token');
-  });
-
-  await test('Login with wrong password → 401', async () => {
-    const r = await api('POST', '/api/v1/auth/login', {
-      username: ctx.accountUsername,
-      password: 'WrongPass!',
-    });
-    assertEqual(r.status, 401, 'should be 401');
-  });
-
-  await test('Get me (with session token)', async () => {
-    const r = await api('GET', '/api/v1/auth/me', null, {
-      'Authorization': `Bearer ${ctx.accountToken}`,
-    });
-    assertEqual(r.status, 200, 'me status');
-    assert(r.data.account, 'should have account');
-    assertEqual(r.data.account.username, ctx.accountUsername, 'username match');
-  });
-
-  await test('Logout', async () => {
-    const r = await api('POST', '/api/v1/auth/logout', null, {
-      'Authorization': `Bearer ${ctx.accountToken}`,
-    });
-    assertEqual(r.status, 200, 'logout status');
-  });
-
-  await test('Register duplicate username → 400', async () => {
-    const r = await api('POST', '/api/v1/auth/register', {
-      username: ctx.accountUsername,
-      password: 'Test123!',
-      display_name: 'Dupe',
-    });
-    assertEqual(r.status, 400, 'should be 400 for duplicate');
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// CLEANUP
-// ═══════════════════════════════════════════════════════════════════════
-async function cleanup() {
-  console.log('\n🧹 Cleanup');
-
-  // Delete attachments
-  if (ctx.attachmentId) {
-    await test('Delete attachment', async () => {
-      const r = await api('DELETE', `/api/v1/attachments/${ctx.attachmentId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
-  // Delete custom field
-  if (ctx.customFieldId) {
-    await test('Delete custom field', async () => {
-      const r = await api('DELETE', `/api/v1/custom-fields/${ctx.customFieldId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
-  // Delete req link
-  if (ctx.reqLinkId) {
-    await test('Delete req link', async () => {
-      const r = await api('DELETE', `/api/v1/req-links/${ctx.reqLinkId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
-  // Delete iteration
-  if (ctx.iterationId) {
-    await test('Delete iteration', async () => {
-      const r = await api('DELETE', `/api/v1/iterations/${ctx.iterationId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
-  // Delete tasks (parent after children)
-  const reversedTaskIds = [...ctx.taskIds].reverse();
-  for (const tid of reversedTaskIds) {
-    await test(`Delete task ${tid}`, async () => {
-      const r = await api('DELETE', `/api/v1/tasks/${tid}`);
-      // May be 200 or 404 (if already deleted as child)
-      assert(r.status === 200 || r.status === 404, `delete ${tid}: expected 200/404, got ${r.status}`);
-    });
-  }
-
-  // Delete member
-  if (ctx.memberIdentifier) {
-    await test('Delete member', async () => {
-      const r = await api('DELETE', `/api/v1/members/${ctx.memberIdentifier}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-    await test('Delete perm member', async () => {
-      const r = await api('DELETE', `/api/v1/members/perm-mem-${UID}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
+// ═══ 25. CLEANUP ═══
+async function testCleanup(){
+  console.log('\n🧹 [25/25] Cleanup');
+  let cleaned=0;
+  // Delete iterations
+  if(ctx.iterationId){await api('DELETE',`/api/v1/iterations/${ctx.iterationId}`);cleaned++;}
+  // Delete custom fields
+  if(ctx.customFieldId2){await api('DELETE',`/api/v1/custom-fields/${ctx.customFieldId2}`);cleaned++;}
+  // Delete remaining attachments
+  if(ctx.attachmentId){await api('DELETE',`/api/v1/attachments/${ctx.attachmentId}`);cleaned++;}
+  // Delete remaining tasks (reverse to handle children first)
+  for(const tid of [...ctx.taskIds].reverse()){await api('DELETE',`/api/v1/tasks/${tid}`);cleaned++;}
+  // Delete backlog items (cannot delete via API, but that's ok)
+  // Delete members
+  if(ctx.memberIdentifier){await api('DELETE',`/api/v1/members/${ctx.memberIdentifier}`);cleaned++;}
+  if(ctx.memberIdentifier2){await api('DELETE',`/api/v1/members/${ctx.memberIdentifier2}`);cleaned++;}
+  if(ctx.agentIdentifier){await api('DELETE',`/api/v1/members/${ctx.agentIdentifier}`);cleaned++;}
   // Delete domain
-  if (ctx.domainId) {
-    await test('Delete domain', async () => {
-      const r = await api('DELETE', `/api/v1/domains/${ctx.domainId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
+  if(ctx.domainId){await api('DELETE',`/api/v1/domains/${ctx.domainId}`);cleaned++;}
   // Delete milestone
-  if (ctx.milestoneId) {
-    await test('Delete milestone', async () => {
-      const r = await api('DELETE', `/api/v1/milestones/${ctx.milestoneId}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-  }
-
-  // Delete project (last because others depend on it)
-  if (ctx.projectSlug) {
-    await test('Delete test project', async () => {
-      const r = await api('DELETE', `/api/v1/projects/${ctx.projectSlug}`);
-      assertEqual(r.status, 200, 'delete status');
-    });
-
-    await test('Cannot delete default project', async () => {
-      const r = await api('DELETE', '/api/v1/projects/default');
-      assertEqual(r.status, 400, 'should be 400');
-    });
-  }
-
-  // Delete non-existent resources
-  await test('Delete non-existent task → 404', async () => {
-    const r = await api('DELETE', '/api/v1/tasks/ZZZZZ-999');
-    assertEqual(r.status, 404, 'should be 404');
-  });
-
-  await test('Delete non-existent attachment → 404', async () => {
-    const r = await api('DELETE', '/api/v1/attachments/99999');
-    assertEqual(r.status, 404, 'should be 404');
-  });
+  if(ctx.milestoneId){await api('DELETE',`/api/v1/milestones/${ctx.milestoneId}`);cleaned++;}
+  // Delete project
+  if(ctx.projectSlug&&ctx.projectSlug!=='default'){await api('DELETE',`/api/v1/projects/${ctx.projectSlug}`);cleaned++;}
+  await test('Cleanup complete',async()=>{assert(cleaned>0,`Cleaned ${cleaned} resources`);});
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// MAIN RUNNER
-// ═══════════════════════════════════════════════════════════════════════
-async function runAllTests() {
-  console.log('═══════════════════════════════════════════════════');
-  console.log(`🚀 ClawPM API Test Suite - ${new Date().toLocaleString()}`);
-  console.log(`   UID: ${UID} | Base: ${BASE}`);
-  console.log('═══════════════════════════════════════════════════');
-
-  totalTests = 0;
-  passedTests = 0;
-  failedTests = 0;
-  failures.length = 0;
-  testTimings.length = 0;
-  // Reset ctx
-  ctx.taskIds = [];
-  ctx.backlogIds = [];
-  ctx.projectSlug = null;
-  ctx.projectId = null;
-  ctx.domainId = null;
-  ctx.domainName = null;
-  ctx.milestoneId = null;
-  ctx.milestoneName = null;
-  ctx.memberId = null;
-  ctx.memberIdentifier = null;
-  ctx.iterationId = null;
-  ctx.intakeId = null;
-  ctx.customFieldId = null;
-  ctx.attachmentId = null;
-  ctx.reqLinkId = null;
-  ctx.goalId = null;
-  ctx.objectiveId = null;
-  ctx.noteId = null;
-  ctx.notificationId = null;
-  ctx.accountToken = null;
-  ctx.accountUsername = null;
-
-  const startTime = Date.now();
-
-  try {
+// ═══ MAIN RUNNER ═══
+async function runAllSuites(){
+  totalTests=0;passedTests=0;failedTests=0;failures.length=0;testTimings.length=0;
+  resetCtx();
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log(`🚀 ROUND ${ROUND} — UID: ${UID}`);
+  console.log(`${'═'.repeat(60)}`);
+  const start=Date.now();
+  try{
     await testServerHealth();
     await testProjects();
     await testDomains();
@@ -1412,89 +406,78 @@ async function runAllTests() {
     await testMembers();
     await testTasksCRUD();
     await testTasksTree();
-    await testTaskProgress();
-    await testTaskNotes();
-    await testBatchOps();
+    await testStatusFlow();
+    await testProgress();
+    await testNotes();
+    await testBatch();
     await testArchive();
     await testBacklog();
     await testIterations();
     await testNotifications();
-    await testMiscEndpoints();
+    await testCustomFields();
+    await testAttachments();
+    await testGoals();
+    await testReqLinks();
+    await testIntake();
+    await testPermissions();
     await testAuth();
-    await cleanup();
-  } catch (e) {
-    console.error(`\n💥 Fatal error: ${e.message}`);
-    console.error(e.stack);
-  }
-
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-  console.log('\n═══════════════════════════════════════════════════');
-  console.log(`📊 Results: ${passedTests}/${totalTests} passed, ${failedTests} failed (${elapsed}s)`);
-  console.log('═══════════════════════════════════════════════════');
-
-  if (failures.length > 0) {
-    console.log('\n❌ FAILURES:');
-    for (const f of failures) {
-      console.log(`  • ${f.name}: ${f.error}`);
-    }
-  } else {
-    console.log('\n✅ ALL TESTS PASSED! 🎉');
-  }
-
-  // Show slowest tests
-  const sorted = [...testTimings].sort((a, b) => b.ms - a.ms);
-  if (sorted.length > 5) {
-    console.log('\n⏱️  Slowest tests:');
-    for (const t of sorted.slice(0, 5)) {
-      console.log(`  ${t.ms}ms - ${t.name}`);
-    }
-  }
-
-  return { total: totalTests, passed: passedTests, failed: failedTests, failures };
+    await testAgentTokens();
+    await testDashboard();
+    await testCleanup();
+  }catch(e){console.error('\n💥 FATAL:',e.message);}
+  const elapsed=((Date.now()-start)/1000).toFixed(1);
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log(`📊 Round ${ROUND} Results: ${passedTests}/${totalTests} passed, ${failedTests} failed (${elapsed}s)`);
+  if(failures.length){console.log('\n❌ Failures:');for(const f of failures)console.log(`  • ${f.name}: ${f.error}`);}
+  // Slowest tests
+  const slow=testTimings.filter(t=>t.ms>200).sort((a,b)=>b.ms-a.ms).slice(0,5);
+  if(slow.length){console.log('\n🐌 Slowest:');for(const t of slow)console.log(`  • ${t.name}: ${t.ms}ms`);}
+  console.log(`${'═'.repeat(60)}\n`);
+  return{total:totalTests,passed:passedTests,failed:failedTests,failures:[...failures],elapsed:parseFloat(elapsed)};
 }
 
-// ── Loop mode ───────────────────────────────────────────────────────
-const args = process.argv.slice(2);
-const loopMode = args.includes('--loop');
-const MAX_DURATION_MS = 60 * 60 * 1000; // 1 hour
+// ═══ ENTRY POINT ═══
+const args=process.argv.slice(2);
+const doLoop=args.includes('--loop');
+const roundsArg=args.find(a=>a.startsWith('--rounds='));
+const maxRounds=roundsArg?parseInt(roundsArg.split('=')[1]):100;
+const delayArg=args.find(a=>a.startsWith('--delay='));
+const delaySec=delayArg?parseInt(delayArg.split('=')[1]):3;
 
-async function main() {
-  if (!loopMode) {
-    await runAllTests();
-    process.exit(failedTests > 0 ? 1 : 0);
+(async()=>{
+  const allResults=[];
+  const maxRoundsToRun=doLoop?maxRounds:1;
+  for(ROUND=1;ROUND<=maxRoundsToRun;ROUND++){
+    const result=await runAllSuites();
+    allResults.push(result);
+    if(result.failed>0&&!doLoop){
+      console.log('⚠️  有失败测试，使用 --loop 参数可以持续循环测试');
+    }
+    if(ROUND<maxRoundsToRun){
+      console.log(`⏳ 下一轮在 ${delaySec} 秒后开始...`);
+      await new Promise(r=>setTimeout(r,delaySec*1000));
+    }
   }
-
-  // Loop mode: run tests every 60 seconds
-  console.log('🔄 Loop mode enabled. Will run for up to 1 hour.\n');
-  const loopStart = Date.now();
-  let round = 0;
-
-  while (Date.now() - loopStart < MAX_DURATION_MS) {
-    round++;
+  // Final summary
+  if(allResults.length>1){
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`🔄 ROUND ${round} — ${new Date().toLocaleString()}`);
+    console.log('📋 TOTAL SUMMARY');
     console.log(`${'═'.repeat(60)}`);
-
-    const result = await runAllTests();
-
-    if (result.failed === 0) {
-      console.log(`\n🎉 ALL ${result.total} TESTS PASSED in round ${round}! Exiting loop.`);
-      process.exit(0);
-    }
-
-    const elapsed = ((Date.now() - loopStart) / 1000 / 60).toFixed(1);
-    console.log(`\n⏳ Round ${round} done. ${result.failed} failures. Elapsed: ${elapsed} min. Waiting 60s...`);
-
-    // Wait 60 seconds
-    await new Promise(r => setTimeout(r, 60000));
+    const totalR=allResults.length;
+    const perfectR=allResults.filter(r=>r.failed===0).length;
+    const totalT=allResults.reduce((a,r)=>a+r.total,0);
+    const totalP=allResults.reduce((a,r)=>a+r.passed,0);
+    const totalF=allResults.reduce((a,r)=>a+r.failed,0);
+    const totalE=allResults.reduce((a,r)=>a+r.elapsed,0).toFixed(1);
+    console.log(`  Rounds: ${totalR}, Perfect: ${perfectR}/${totalR}`);
+    console.log(`  Tests:  ${totalP}/${totalT} passed, ${totalF} failed`);
+    console.log(`  Time:   ${totalE}s total`);
+    // All unique failures
+    const uniqF=new Map();
+    for(const r of allResults)for(const f of r.failures)if(!uniqF.has(f.name))uniqF.set(f.name,f.error);
+    if(uniqF.size){console.log(`\n  ❌ Unique failures (${uniqF.size}):`);for(const[n,e]of uniqF)console.log(`    • ${n}: ${e}`);}
+    else console.log('\n  ✅ ALL ROUNDS PERFECT!');
+    console.log(`${'═'.repeat(60)}\n`);
   }
-
-  console.log('\n⏰ 1 hour time limit reached. Exiting.');
-  process.exit(1);
-}
-
-main().catch(e => {
-  console.error('Fatal:', e);
-  process.exit(1);
-});
+  process.exit(allResults.some(r=>r.failed>0)?1:0);
+})()

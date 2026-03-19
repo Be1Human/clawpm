@@ -395,14 +395,22 @@ export async function registerRoutes(app: FastifyInstance) {
     const db = getDb();
     const projectId = getProjectId(req);
     const { name, task_prefix, keywords, color } = req.body as any;
-    db.insert(domains).values({
-      name, taskPrefix: task_prefix,
-      keywords: JSON.stringify(keywords || []),
-      color: color || '#6366f1',
-      projectId,
-    } as any).run();
-    const d = db.select().from(domains).where(eq(domains.name, name)).get();
-    return reply.code(201).send(d);
+    try {
+      db.insert(domains).values({
+        name, taskPrefix: task_prefix,
+        keywords: JSON.stringify(keywords || []),
+        color: color || '#6366f1',
+        projectId,
+      } as any).run();
+      const d = db.select().from(domains).where(eq(domains.name, name)).get();
+      return reply.code(201).send(d);
+    } catch (e: any) {
+      const msg = e.message || '创建域名失败';
+      if (msg.includes('UNIQUE') || msg.includes('unique')) {
+        return reply.code(409).send({ error: `域名或前缀已存在: ${msg}` });
+      }
+      return reply.code(500).send({ error: msg });
+    }
   });
 
   app.patch('/api/v1/domains/:id', async (req, reply) => {

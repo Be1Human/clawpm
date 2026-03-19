@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Component, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import KanbanBoard from './pages/KanbanBoard';
@@ -23,7 +24,10 @@ import IntakeSubmit from './pages/IntakeSubmit';
 import IntakeList from './pages/IntakeList';
 import Onboarding from './pages/Onboarding';
 import { useCurrentUser } from './lib/useCurrentUser';
-import { useAuthSession } from './lib/useAuthSession';
+import { useAuthSession, clearAuthSession, updateAuthAccount } from './lib/useAuthSession';
+import { setCurrentMember, clearCurrentMember } from './lib/useCurrentMember';
+import { setOnboarded, clearOnboarded } from './lib/useCurrentUser';
+import { api } from './api/client';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -60,13 +64,79 @@ function LayoutWrapper() {
   return <Layout><Outlet /></Layout>;
 }
 
+/** 全局 loading 占位，防止闪屏 */
+function FullScreenLoading() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', background: '#f4f5f7',
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.4 }}>⏳</div>
+        <p style={{ color: '#999', fontSize: 14 }}>正在恢复会话…</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * OnboardingGuard — 防闪屏版本
+ *
+ * 逻辑：
+ * 1. 无 token → 直接跳 /onboarding（未登录）
+ * 2. 有 token + 有 currentUser → 直接放行（已完成 onboarding）
+ * 3. 有 token 但无 currentUser → 先查 /auth/me 恢复会话，查询期间显示 loading
+ *    - 如果 authMe 返回了 currentMember → 自动设置并放行
+ *    - 如果没有 currentMember → 跳到 /onboarding 完成绑定
+ *    - 如果查询出错（token 过期等）→ 清除 session 跳 /onboarding
+ */
 function OnboardingGuard() {
-  const { isAuthenticated } = useAuthSession();
+  const { isAuthenticated, token } = useAuthSession();
   const currentUser = useCurrentUser();
-  if (!isAuthenticated || !currentUser) {
+
+  // 有 token 但无 currentUser 时，尝试从后端恢复会话
+  const { data: authMe, isLoading, isError } = useQuery({
+    queryKey: ['auth-me-guard'],
+    queryFn: () => api.getAuthMe(),
+    enabled: !!token && !currentUser,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  // 无 token → 未登录，直接去 onboarding
+  if (!isAuthenticated) {
     return <Navigate to="/onboarding" replace />;
   }
-  return <LayoutWrapper />;
+
+  // 有 token + 有 currentUser → 已完成 onboarding，直接放行
+  if (currentUser) {
+    return <LayoutWrapper />;
+  }
+
+  // 有 token 但无 currentUser → 正在查询 authMe
+  if (isLoading) {
+    return <FullScreenLoading />;
+  }
+
+  // 查询出错（token 失效）→ 清除并跳转
+  if (isError) {
+    clearAuthSession();
+    clearCurrentMember();
+    clearOnboarded();
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  // authMe 返回了 currentMember → 自动恢复会话
+  if (authMe?.currentMember?.identifier) {
+    // 同步写入 localStorage，然后放行
+    if (authMe.account) updateAuthAccount(authMe.account);
+    setCurrentMember(authMe.currentMember.identifier);
+    setOnboarded();
+    return <LayoutWrapper />;
+  }
+
+  // authMe 没有 currentMember → 需要去 onboarding 绑定成员
+  return <Navigate to="/onboarding" replace />;
 }
 
 export default function App() {

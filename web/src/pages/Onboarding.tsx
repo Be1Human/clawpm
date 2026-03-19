@@ -27,7 +27,7 @@ export default function Onboarding() {
   const [createRole, setCreateRole] = useState('dev');
 
   const token = getAuthToken();
-  const { data: authMe, refetch: refetchAuthMe, isFetching: authFetching, error: authMeError } = useQuery({
+  const { data: authMe, refetch: refetchAuthMe, isFetching: authFetching, isLoading: authMeLoading, error: authMeError } = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => api.getAuthMe(),
     enabled: !!token,
@@ -143,6 +143,18 @@ export default function Onboarding() {
   }
 
   const needsBinding = !!token && !!authMe && !authMe.currentMember;
+
+  // 已有 token、authMe 首次加载中 → 显示加载占位，避免闪一下登录表单
+  if (token && authMeLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-3xl mb-3 opacity-40">⏳</div>
+          <p className="text-sm text-gray-400">正在恢复登录状态…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50 flex items-center justify-center px-4 py-10">

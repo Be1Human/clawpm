@@ -89,7 +89,6 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.labels.length) payload.labels = form.labels;
     if (form.priority !== 'P2') payload.priority = form.priority;
     if (form.owner) payload.owner = form.owner;
-    if (form.assignee) payload.assignee = form.assignee;
     if (form.due_date) payload.due_date = form.due_date;
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
