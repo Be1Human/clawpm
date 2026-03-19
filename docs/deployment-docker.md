@@ -14,9 +14,9 @@
 
 结论：
 
-- ClawPM 第一阶段先监听宿主机 `3210` 端口
-- 先直接通过 `http://49.234.185.193:3210` 验证服务
-- `80/443` 的 Nginx 反代作为第二阶段接入，不阻塞首版上线
+- ClawPM 容器仍监听宿主机 `3210` 端口
+- 当前公网入口已通过现有 `nginx` 暴露为 `http://49.234.185.193/clawpm/`
+- `http://49.234.185.193/` 根路径继续保留给现有站点
 
 ## 2. 生产部署形态
 
@@ -29,9 +29,9 @@
 
 访问入口：
 
-- Web：`http://49.234.185.193:3210`
-- Health：`http://49.234.185.193:3210/health`
-- MCP SSE：`http://49.234.185.193:3210/mcp/sse?token=<CLAWPM_API_TOKEN>`
+- Web：`http://49.234.185.193/clawpm/`
+- Health：`http://49.234.185.193/clawpm/health`
+- MCP SSE：`http://49.234.185.193/clawpm/mcp/sse?token=<CLAWPM_API_TOKEN>`
 
 ## 3. 认证模型说明
 
@@ -111,7 +111,7 @@ ssh petgo-old 'curl -fsS http://127.0.0.1:3210/health'
 
 - `docker compose ps` 中 `clawpm` 为 `running`
 - `/health` 返回 `{"status":"ok","version":"1.0.0"}`
-- 浏览器可打开 `http://49.234.185.193:3210`
+- 浏览器可打开 `http://49.234.185.193/clawpm/`
 
 ## 7. 回滚与排障
 
@@ -130,9 +130,13 @@ ssh petgo-old 'cd /opt/clawpm && docker compose up -d'
 ssh petgo-old 'cd /opt/clawpm && docker compose down && docker compose up -d --build'
 ```
 
-## 8. 可选第二阶段：接入现有 Nginx
+## 8. 当前 Nginx 接入方式
 
-当前服务器 `80` 端口已有现有 `nginx`。ClawPM 跑通后，再单独为某个域名或子路径添加反代到 `127.0.0.1:3210`。
+当前服务器 `80` 端口已有现有 `nginx`，ClawPM 已通过子路径接入：
+
+```text
+/clawpm/ -> http://127.0.0.1:3210
+```
 
 推荐方式：
 
@@ -140,7 +144,7 @@ ssh petgo-old 'cd /opt/clawpm && docker compose down && docker compose up -d --b
 - 在 Nginx 中反代到 `http://127.0.0.1:3210`
 - 反代完成后，再把 Cursor / 其他 MCP 客户端地址切到域名
 
-在未完成 Nginx 配置前，不建议直接复用现有 `80` 端口站点根路径。
+当前不建议直接复用 `80` 端口站点根路径 `/`，因为该路径仍由现有站点占用。
 
 ## 9. GitHub Actions 自动部署
 

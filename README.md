@@ -47,6 +47,12 @@ ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Mod
 - **风险分析** — 逾期检测、停滞预警、健康度评分
 - **轻量部署** — SQLite + Docker，单容器运行
 
+## 常用文档
+
+- [Mac 本地开发启动](./docs/local-development-macos.md)
+- [服务器运维与服务巡检](./docs/server-operations.md)
+- [Docker 部署方案](./docs/deployment-docker.md)
+
 ## 新电脑快速部署（3 步搞定）
 
 ### 前置要求
@@ -63,12 +69,33 @@ cd clawpm
 
 # 2. 安装依赖
 pnpm install
+```
 
-# 3. 启动（Windows 双击 start.bat 即可，或手动执行）
+**Mac / Linux：**
+
+```bash
+# 3. 给脚本添加执行权限并启动
+chmod +x start.sh
+./start.sh
+```
+
+`start.sh` 会自动：
+
+- 优先使用本机 `pnpm`，否则回退到 `corepack pnpm`
+- 如果存在 `.env`，自动加载本地环境变量
+- 首次运行时自动安装依赖
+- 同时启动后端和前端
+
+Mac 详细说明见 [docs/local-development-macos.md](./docs/local-development-macos.md)。
+
+**Windows：**
+
+```bat
+# 3. 双击 start.bat 即可，或在命令行执行
 start.bat
 ```
 
-启动后自动打开两个窗口：
+启动后两个服务同时运行：
 
 | 服务 | 地址 |
 |------|------|
@@ -81,6 +108,8 @@ start.bat
 
 - 人类用户：通过账号登录获取会话 token
 - Agent / OpenClaw：通过专属 Agent token 接入 MCP
+
+> **Mac 提示**：按 `Ctrl+C` 可同时停止后端和前端两个进程。
 
 ### Docker 部署（可选）
 
@@ -160,7 +189,7 @@ ClawPM 同时支持 **stdio** 和 **SSE** 两种 MCP 传输方式。
 }
 ```
 
-> SSE 模式需要先启动 ClawPM 服务（`start.bat` 或 `pnpm dev`）。
+> SSE 模式需要先启动 ClawPM 服务（Mac: `./start.sh`，Windows: `start.bat`，或直接 `pnpm dev`）。
 >
 > 推荐不要再把全局 `dev-token` 暴露给 MCP 客户端，而是为每个 Agent 单独生成 token。
 
@@ -380,7 +409,7 @@ review_intake(
 - **MCP**: @modelcontextprotocol/sdk（支持 stdio + SSE 双模式）
 - **Frontend**: React + Vite + Tailwind CSS + ReactFlow
 - **Charts**: Recharts
-- **Deploy**: Docker / start.bat 一键启动
+- **Deploy**: Docker / start.sh（Mac/Linux）/ start.bat（Windows）一键启动
 
 ## 项目结构
 
@@ -431,6 +460,7 @@ clawpm/
 │       ├── GanttChart.tsx        # 甘特图
 │       ├── Archive.tsx           # 归档箱
 │       └── ...
+├── start.sh                  # Mac/Linux 一键启动
 ├── start.bat                 # Windows 一键启动
 ├── docker-compose.yml        # Docker 部署
 └── docs/
