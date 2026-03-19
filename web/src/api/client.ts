@@ -1,8 +1,18 @@
 import { getCurrentMember } from '../lib/useCurrentMember';
 import { getAuthToken } from '../lib/useAuthSession';
 
-const BASE = '/api/v1';
-const LEGACY_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
+declare global {
+  interface Window {
+    __CLAWPM_RUNTIME_CONFIG__?: {
+      apiBase?: string;
+      apiToken?: string;
+    };
+  }
+}
+
+const runtimeConfig = typeof window !== 'undefined' ? window.__CLAWPM_RUNTIME_CONFIG__ : undefined;
+const BASE = runtimeConfig?.apiBase || '/api/v1';
+const LEGACY_TOKEN = runtimeConfig?.apiToken || import.meta.env.VITE_API_TOKEN || 'dev-token';
 
 /** 当前活跃项目 slug，全局状态（带订阅通知） */
 let _activeProjectSlug = localStorage.getItem('clawpm-activeProject') || 'default';

@@ -1,17 +1,25 @@
-version: '3.8'
-
 services:
   clawpm:
-    build: .
+    container_name: clawpm
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "${CLAWPM_PORT:-3210}:3210"
+      - "${CLAWPM_HOST_PORT:-3210}:3210"
     volumes:
       - clawpm-data:/app/data
     environment:
-      - CLAWPM_PORT=3210
-      - CLAWPM_API_TOKEN=${CLAWPM_API_TOKEN:?请设置 CLAWPM_API_TOKEN}
-      - CLAWPM_DB_PATH=/app/data/clawpm.db
-      - CLAWPM_LOG_LEVEL=${CLAWPM_LOG_LEVEL:-info}
+      NODE_ENV: production
+      CLAWPM_PORT: 3210
+      CLAWPM_API_TOKEN: ${CLAWPM_API_TOKEN:?请设置 CLAWPM_API_TOKEN}
+      CLAWPM_DB_PATH: /app/data/clawpm.db
+      CLAWPM_LOG_LEVEL: ${CLAWPM_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3210/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
