@@ -22,6 +22,8 @@ fi
 if [[ "$SKIP_GIT_PULL" != "1" ]]; then
   echo "[INFO] Syncing repository to origin/${BRANCH}..."
   git fetch origin "$BRANCH"
+  git reset --hard
+  git clean -fd -e .env -e data -e node_modules -e server/node_modules -e web/node_modules
   git checkout -B "$BRANCH" "origin/${BRANCH}"
   git reset --hard "origin/${BRANCH}"
   git clean -fd -e .env -e data -e node_modules -e server/node_modules -e web/node_modules
