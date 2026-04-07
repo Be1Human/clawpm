@@ -52,6 +52,7 @@ ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Mod
 - [Mac 本地开发启动](./docs/local-development-macos.md)
 - [服务器运维与服务巡检](./docs/server-operations.md)
 - [Docker 部署方案](./docs/deployment-docker.md)
+- [MCP Skills — AI Agent 任务拆解与管理指南](./docs/mcp-skills.md)
 
 ## 新电脑快速部署（3 步搞定）
 
