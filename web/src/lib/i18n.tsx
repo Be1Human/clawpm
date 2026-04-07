@@ -323,6 +323,25 @@ const en: Dict = {
   'members.taskCountLabel': 'Tasks {count}',
   'members.activeCountLabel': 'Active {count}',
   'members.deleteConfirmBody': 'Delete member {name}? Tasks assigned will not be affected, but the owner field keeps its original value.',
+  'members.addFromSystem': 'Add Member from System',
+  'members.addFromSystemHint': 'Search and add existing system members to this project',
+  'members.searchSystemMembers': 'Search by name or identifier...',
+  'members.noSystemMembersToAdd': 'No available system members to add',
+  'members.goToSystemMembersHint': 'Go to System Members page to create members first',
+  'members.addBtn': 'Add',
+  'members.removeFromProject': 'Remove from project',
+  'members.removeFromProjectTitle': 'Remove Project Member',
+  'members.removeFromProjectBody': 'Remove {name} from this project? The member will still exist in the system, tasks assigned will keep their owner.',
+  'members.removeBtn': 'Remove',
+
+  // ── System Members ─────────────────────────────────────────────
+  'sysMembers.title': 'System Members',
+  'sysMembers.subtitle': 'Global member directory, shared across all projects',
+  'sysMembers.addMember': '+ New Member',
+  'sysMembers.editMember': 'Edit Member',
+  'sysMembers.createMember': 'Create Member',
+  'sysMembers.noMembers': 'No system members yet, click top-right to create',
+  'sysMembers.deleteConfirmBody': 'Delete system member {name}? This will remove them from ALL projects.',
 
   // ── Domains ───────────────────────────────────────────────────
   'domains.title': 'Domains',
@@ -702,9 +721,8 @@ const zh: Dict = {
   'nav.domains': '业务板块',
   'nav.customFields': '自定义字段',
   'nav.members': '成员',
-  'nav.archive': '归档箱',
-
-  // ── Common ────────────────────────────────────────────────────
+  'nav.systemMembers': '系统成员',
+  'nav.archive': '归档箱',  // ── Common ────────────────────────────────────────────────────
   'common.cancel': '取消',
   'common.confirm': '确认',
   'common.save': '保存',
@@ -965,6 +983,25 @@ const zh: Dict = {
   'members.taskCountLabel': '任务 {count}',
   'members.activeCountLabel': '活跃 {count}',
   'members.deleteConfirmBody': '删除成员 {name}？该成员负责的任务不会受影响，但 owner 字段将保留原值。',
+  'members.addFromSystem': '从系统成员添加',
+  'members.addFromSystemHint': '搜索并添加已有的系统成员到当前项目',
+  'members.searchSystemMembers': '搜索名称或标识...',
+  'members.noSystemMembersToAdd': '没有可添加的系统成员',
+  'members.goToSystemMembersHint': '请先到"系统成员"页面创建成员',
+  'members.addBtn': '添加',
+  'members.removeFromProject': '从项目移除',
+  'members.removeFromProjectTitle': '移除项目成员',
+  'members.removeFromProjectBody': '从项目中移除 {name}？该成员仍保留在系统中，已关联的任务不受影响。',
+  'members.removeBtn': '移除',
+
+  // ── System Members ─────────────────────────────────────────────
+  'sysMembers.title': '系统成员',
+  'sysMembers.subtitle': '全局成员目录，跨项目共享',
+  'sysMembers.addMember': '+ 新建成员',
+  'sysMembers.editMember': '编辑成员',
+  'sysMembers.createMember': '新建成员',
+  'sysMembers.noMembers': '暂无系统成员，点击右上角新建',
+  'sysMembers.deleteConfirmBody': '删除系统成员 {name}？该成员将从所有项目中移除。',
 
   // ── Domains ───────────────────────────────────────────────────
   'domains.title': '业务板块',

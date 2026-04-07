@@ -175,9 +175,10 @@ export const taskPermissions = sqliteTable('task_permissions', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
 
+// 系统成员表（全局，与项目无关）
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  projectId: integer('project_id').notNull().default(1).references(() => projects.id),
+  projectId: integer('project_id').notNull().default(1).references(() => projects.id), // 保留兼容，新逻辑不再依赖
   name: text('name').notNull(),
   identifier: text('identifier').notNull(), // tasks.owner 存的值
   type: text('type').notNull().default('human'),      // 'human' | 'agent'
@@ -186,6 +187,15 @@ export const members = sqliteTable('members', {
   role: text('role'),            // 'dev' | 'pm' | 'design' | 'mgr' | 'other'
   onboardedAt: text('onboarded_at'), // ISO 8601 timestamp，完成 onboarding 的时间
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// v6.0: 项目成员关联表（多对多：系统成员 ↔ 项目）
+export const projectMembers = sqliteTable('project_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  memberIdentifier: text('member_identifier').notNull(),
+  role: text('role'),            // 'dev' | 'pm' | 'design' | 'mgr' | 'other'
+  joinedAt: text('joined_at').notNull().default(sql`(datetime('now'))`),
 });
 
 // v3.0: 迭代表

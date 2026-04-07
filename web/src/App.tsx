@@ -12,6 +12,7 @@ import Goals from './pages/Goals';
 import MindMap from './pages/MindMap';
 import GanttChart from './pages/GanttChart';
 import Members from './pages/Members';
+import SystemMembers from './pages/SystemMembers';
 import Domains from './pages/Domains';
 import CustomFields from './pages/CustomFields';
 import MyTasks from './pages/MyTasks';
@@ -179,6 +180,7 @@ export default function App() {
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/gantt" element={<GanttChart />} />
           <Route path="/members" element={<Members />} />
+          <Route path="/system-members" element={<SystemMembers />} />
           <Route path="/domains" element={<Domains />} />
           <Route path="/custom-fields" element={<CustomFields />} />
           <Route path="/iterations" element={<Iterations />} />

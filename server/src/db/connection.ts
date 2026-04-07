@@ -378,4 +378,29 @@ function runMigrations(sqlite: Database.Database) {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // v6.0 迁移：项目成员关联表（系统成员 ↔ 项目）
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      member_identifier  TEXT NOT NULL,
+      role               TEXT,
+      joined_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_members_unique ON project_members(project_id, member_identifier);
+  `);
+
+  // v6.0 数据迁移：将现有 members 中 project_id + identifier 的组合写入 project_members 关联表
+  try {
+    const existingMembers = sqlite.prepare('SELECT DISTINCT project_id, identifier, role FROM members WHERE project_id IS NOT NULL').all() as any[];
+    for (const row of existingMembers) {
+      try {
+        sqlite.prepare('INSERT OR IGNORE INTO project_members (project_id, member_identifier, role) VALUES (?, ?, ?)').run(row.project_id, row.identifier, row.role);
+      } catch {}
+    }
+  } catch {}
+
+  // v6.0：为 members 表添加全局唯一约束（identifier 全局唯一）
+  try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_members_identifier_global ON members(identifier)`); } catch {}
 }

@@ -73,10 +73,11 @@ const PROJECT_NAV_GROUPS = [
   {
     labelKey: 'nav.settings',
     items: [
-      { to: '/domains',       labelKey: 'nav.domains',      icon: DomainIcon },
-      { to: '/custom-fields', labelKey: 'nav.customFields', icon: FieldsIcon },
-      { to: '/members',       labelKey: 'nav.members',      icon: MembersIcon },
-      { to: '/archive',       labelKey: 'nav.archive',      icon: ArchiveIcon },
+      { to: '/domains',        labelKey: 'nav.domains',        icon: DomainIcon },
+      { to: '/custom-fields',  labelKey: 'nav.customFields',   icon: FieldsIcon },
+      { to: '/members',        labelKey: 'nav.members',        icon: MembersIcon },
+      { to: '/system-members', labelKey: 'nav.systemMembers',  icon: SystemMembersIcon },
+      { to: '/archive',        labelKey: 'nav.archive',        icon: ArchiveIcon },
     ],
   },
 ];
@@ -218,6 +219,15 @@ function IterationIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function SystemMembersIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6.5" />
+      <circle cx="8" cy="6" r="2" />
+      <path d="M4.5 12.5c0-2 1.6-3.5 3.5-3.5s3.5 1.5 3.5 3.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 function ArchiveIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -303,7 +313,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   });
 
   const { data: members = [] } = useQuery({
-    queryKey: ['members'],
+    queryKey: ['members', activeSlug],
     queryFn: () => api.getMembers(),
   });
 

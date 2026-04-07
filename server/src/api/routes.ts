@@ -16,7 +16,7 @@ import { ProjectService } from '../services/project-service.js';
 import { AuthService } from '../services/auth-service.js';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
-import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members } from '../db/schema.js';
+import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members, projectMembers } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
 
 /** 从请求中解析项目 slug → projectId */
@@ -577,11 +577,11 @@ export async function registerRoutes(app: FastifyInstance) {
     return { byOwner };
   });
 
-  // ── Members ────────────────────────────────────────────────────────
+  // ── Members（项目成员 — 兼容旧接口） ──────────────────────────────
   app.get('/api/v1/members', async (req) => {
     const q = req.query as any;
     const projectId = getProjectId(req);
-    return MemberService.list(q.type, projectId);
+    return MemberService.listByProject(projectId, q.type);
   });
 
   app.get('/api/v1/members/check-identifier', async (req) => {
@@ -592,15 +592,24 @@ export async function registerRoutes(app: FastifyInstance) {
     return existing ? { available: false, reason: 'already_taken' } : { available: true };
   });
 
+  // 创建成员（兼容旧接口 — 同时创建系统成员并关联到当前项目）
   app.post('/api/v1/members', async (req, reply) => {
     const projectId = getProjectId(req);
-    const m = MemberService.create({ ...(req.body as any), projectId });
+    const body = req.body as any;
+    // 先检查系统成员是否已存在
+    let m = MemberService.getByIdentifier(body.identifier);
+    if (!m) {
+      m = MemberService.create({ ...body, projectId });
+    }
+    // 确保关联到当前项目
+    try { MemberService.addToProject(projectId, m.identifier, body.role); } catch {}
     return reply.code(201).send(m);
   });
 
   app.get('/api/v1/members/:identifier', async (req, reply) => {
     const { identifier } = req.params as any;
-    const m = MemberService.getByIdentifier(identifier);
+    const projectId = getProjectId(req);
+    const m = MemberService.getByIdentifierWithStats(identifier, projectId);
     if (!m) return reply.code(404).send({ error: 'Not found' });
     return m;
   });
@@ -615,6 +624,65 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete('/api/v1/members/:identifier', async (req, reply) => {
     const { identifier } = req.params as any;
     return MemberService.delete(identifier);
+  });
+
+  // ── 系统成员管理（全局，与项目无关）v6.0 ────────────────────────
+  app.get('/api/v1/system-members', async (req) => {
+    const q = req.query as any;
+    if (q.search) {
+      return MemberService.search(q.search, q.type);
+    }
+    return MemberService.listAll(q.type);
+  });
+
+  app.post('/api/v1/system-members', async (req, reply) => {
+    const body = req.body as any;
+    const m = MemberService.create(body);
+    return reply.code(201).send(m);
+  });
+
+  app.get('/api/v1/system-members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const m = MemberService.getByIdentifier(identifier);
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    return { ...m, ...MemberService._globalStats(m.identifier) };
+  });
+
+  app.patch('/api/v1/system-members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    const m = MemberService.update(identifier, req.body as any);
+    if (!m) return reply.code(404).send({ error: 'Not found' });
+    return m;
+  });
+
+  app.delete('/api/v1/system-members/:identifier', async (req, reply) => {
+    const { identifier } = req.params as any;
+    return MemberService.delete(identifier);
+  });
+
+  // ── 项目成员关联接口（v6.0）──────────────────────────────────────
+  app.post('/api/v1/project-members', async (req, reply) => {
+    const projectId = getProjectId(req);
+    const body = req.body as any;
+    try {
+      const result = MemberService.addToProject(projectId, body.member_identifier, body.role);
+      return reply.code(201).send(result);
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  app.delete('/api/v1/project-members/:identifier', async (req, reply) => {
+    const projectId = getProjectId(req);
+    const { identifier } = req.params as any;
+    return MemberService.removeFromProject(projectId, identifier);
+  });
+
+  app.patch('/api/v1/project-members/:identifier/role', async (req, reply) => {
+    const projectId = getProjectId(req);
+    const { identifier } = req.params as any;
+    const { role } = req.body as any;
+    return MemberService.updateProjectRole(projectId, identifier, role);
   });
 
   // ── Agent Tokens / OpenClaw（v5.0）─────────────────────────────────
@@ -948,8 +1016,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     // 验证被授权人是项目成员
     const projectId = getProjectId(req);
-    const allMembers = db.select().from(members).where(eq(members.projectId, projectId)).all();
-    if (!allMembers.find(m => m.identifier === grantee)) {
+    if (!MemberService.isProjectMember(projectId, grantee)) {
       return reply.code(400).send({ error: `被授权人 "${grantee}" 不是项目成员` });
     }
 

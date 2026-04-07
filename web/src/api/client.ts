@@ -177,7 +177,7 @@ export const api = {
   getRisks: () => request<any>(withProject('/dashboard/risks')),
   getResources: () => request<any>(withProject('/dashboard/resources')),
 
-  // Members
+  // Members (项目成员 - 兼容旧接口)
   getMembers: (type?: string) => {
     const base = withProject('/members');
     return request<any[]>(type ? `${base}&type=${type}` : base);
@@ -188,6 +188,29 @@ export const api = {
   deleteMember: (identifier: string) => request<any>(`/members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
   checkIdentifierAvailable: (identifier: string) =>
     request<{ available: boolean; reason?: string }>(`/members/check-identifier?identifier=${encodeURIComponent(identifier)}`),
+
+  // System Members (系统成员 - 全局，与项目无关) v6.0
+  getSystemMembers: (type?: string) => {
+    const base = '/system-members';
+    return request<any[]>(type ? `${base}?type=${type}` : base);
+  },
+  searchSystemMembers: (query: string, type?: string) => {
+    const params = new URLSearchParams({ search: query });
+    if (type) params.set('type', type);
+    return request<any[]>(`/system-members?${params}`);
+  },
+  getSystemMember: (identifier: string) => request<any>(`/system-members/${encodeURIComponent(identifier)}`),
+  createSystemMember: (data: any) => request<any>('/system-members', { method: 'POST', body: JSON.stringify(data) }),
+  updateSystemMember: (identifier: string, data: any) => request<any>(`/system-members/${encodeURIComponent(identifier)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSystemMember: (identifier: string) => request<any>(`/system-members/${encodeURIComponent(identifier)}`, { method: 'DELETE' }),
+
+  // Project Members (项目成员关联) v6.0
+  addProjectMember: (memberIdentifier: string, role?: string) =>
+    request<any>(withProject('/project-members'), { method: 'POST', body: JSON.stringify({ member_identifier: memberIdentifier, role }) }),
+  removeProjectMember: (identifier: string) =>
+    request<any>(withProject(`/project-members/${encodeURIComponent(identifier)}`), { method: 'DELETE' }),
+  updateProjectMemberRole: (identifier: string, role: string) =>
+    request<any>(withProject(`/project-members/${encodeURIComponent(identifier)}/role`), { method: 'PATCH', body: JSON.stringify({ role }) }),
 
   // Agents
   createAgent: (data: any) => request<any>(withProject('/agents'), { method: 'POST', body: JSON.stringify(data) }),
