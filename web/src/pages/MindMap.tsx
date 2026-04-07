@@ -1186,10 +1186,7 @@ function MindMapCanvas() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-tree'] }); setDeleteConfirm(null); },
     onError: (e: any) => {
       const msg = e.message || '删除失败';
-      const reason = msg.includes('Owner') || msg.includes('权限')
-        ? '你不是该节点的 Owner，仅 Owner 可删除节点。如需删除，请联系节点 Owner 操作。'
-        : msg;
-      setDeleteConfirm(prev => prev ? { ...prev, error: reason } : null);
+      setDeleteConfirm(prev => prev ? { ...prev, error: msg } : null);
     },
   });
 

@@ -419,6 +419,56 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     return { content: [{ type: 'text' as const, text: JSON.stringify(tree, null, 2) }] };
   });
 
+  // ── Tree Navigation Tools（智能树导航）──────────────────────────────
+  mcp.tool('get_tree_outline', '获取轻量级树形大纲（仅 taskId/title/labels/status/depth，无重度enrichment），适合快速浏览树结构、定位父节点', {
+    project: z.string().optional().describe('项目 slug'),
+    domain: z.string().optional().describe('按业务板块筛选'),
+    owner: z.string().optional().describe('按负责人筛选'),
+    max_depth: z.number().optional().describe('最大深度限制（0=仅根节点，1=根+一级子节点，不填=不限制）'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const outline = TaskService.getTreeOutline({
+      projectId,
+      domain: p.domain,
+      owner: p.owner,
+      maxDepth: p.max_depth,
+    });
+    // 用缩进方式呈现，让 Agent 更容易理解层级
+    const lines = outline.map(n => {
+      const indent = '  '.repeat(n.depth);
+      const labelStr = n.labels.length ? ` [${n.labels.join(', ')}]` : '';
+      const childStr = n.childCount > 0 ? ` (${n.childCount} children)` : '';
+      return `${indent}${n.taskId} | ${n.title} | ${n.status}${labelStr}${childStr}`;
+    });
+    const summary = `共 ${outline.length} 个节点\n\n${lines.join('\n')}\n\n---\n完整 JSON:\n${JSON.stringify(outline, null, 2)}`;
+    return { content: [{ type: 'text' as const, text: summary }] };
+  });
+
+  mcp.tool('suggest_parent', '智能推荐父节点 —— 输入新任务的标题/描述/标签，返回最匹配的父节点候选列表（按匹配分数排序）', {
+    title: z.string().describe('新任务的标题'),
+    description: z.string().optional().describe('新任务的描述'),
+    labels: z.array(z.string()).optional().describe('新任务的标签，如 ["feature", "用户系统"]'),
+    project: z.string().optional().describe('项目 slug'),
+    limit: z.number().optional().describe('返回候选数量上限，默认 5'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const suggestions = TaskService.suggestParent({
+      title: p.title,
+      description: p.description,
+      labels: p.labels,
+      projectId,
+      limit: p.limit,
+    });
+    if (suggestions.length === 0) {
+      return { content: [{ type: 'text' as const, text: '未找到合适的父节点候选。建议创建为根节点，或使用 get_tree_outline 手动浏览树结构。' }] };
+    }
+    const lines = suggestions.map((s, i) => {
+      const pathStr = s.path.join(' → ');
+      return `${i + 1}. [${s.taskId}] ${s.title} (score: ${s.score}, depth: ${s.depth}, children: ${s.childCount})\n   路径: ${pathStr}`;
+    });
+    return { content: [{ type: 'text' as const, text: `推荐父节点（按匹配度排序）:\n\n${lines.join('\n\n')}\n\n---\n${JSON.stringify(suggestions, null, 2)}` }] };
+  });
+
   // ── Member Tools（v3.2 成员管理）──────────────────────────────────
   mcp.tool('list_members', '列出项目成员（含擅长领域、任务统计 taskCount/activeCount）', {
     type: z.enum(['human', 'agent']).optional().describe('按类型筛选：human=人类, agent=AI Agent'),

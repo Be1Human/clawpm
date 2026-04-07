@@ -713,6 +713,239 @@ export const TaskService = {
     return results.filter(Boolean);
   },
 
+  /**
+   * 轻量级树形大纲 —— 仅返回 taskId、title、labels、status、depth 等最小信息，
+   * 不执行 _enrichTask，避免 N+1 查询，适合 Agent 快速浏览树结构。
+   */
+  getTreeOutline(filters: { projectId?: number; domain?: string; owner?: string; maxDepth?: number } = {}) {
+    const db = getDb();
+    let allRows = db.select().from(tasks).all();
+
+    // 仅保留未归档任务
+    allRows = allRows.filter(t => !(t as any).archivedAt);
+
+    if (filters.projectId) {
+      allRows = allRows.filter(t => (t as any).projectId === filters.projectId);
+    }
+    if (filters.domain) {
+      const d = db.select().from(domains).where(eq(domains.name, filters.domain)).get();
+      if (d) allRows = allRows.filter(t => t.domainId === d.id);
+    }
+    if (filters.owner) {
+      allRows = allRows.filter(t => t.owner === filters.owner);
+    }
+
+    // 构建 id → row 索引
+    const idMap = new Map(allRows.map(t => [t.id, t]));
+
+    // 计算每个节点的深度和路径
+    const depthCache = new Map<number, number>();
+    const pathCache = new Map<number, string[]>();
+
+    function getDepth(id: number): number {
+      if (depthCache.has(id)) return depthCache.get(id)!;
+      const row = idMap.get(id);
+      if (!row || !row.parentTaskId || !idMap.has(row.parentTaskId)) {
+        depthCache.set(id, 0);
+        return 0;
+      }
+      const d = getDepth(row.parentTaskId) + 1;
+      depthCache.set(id, d);
+      return d;
+    }
+
+    function getPath(id: number): string[] {
+      if (pathCache.has(id)) return pathCache.get(id)!;
+      const row = idMap.get(id);
+      if (!row) { pathCache.set(id, []); return []; }
+      if (!row.parentTaskId || !idMap.has(row.parentTaskId)) {
+        const p = [row.taskId];
+        pathCache.set(id, p);
+        return p;
+      }
+      const p = [...getPath(row.parentTaskId), row.taskId];
+      pathCache.set(id, p);
+      return p;
+    }
+
+    // 计算每个节点的直接子节点数
+    const childCountMap = new Map<number, number>();
+    for (const t of allRows) {
+      if (t.parentTaskId && idMap.has(t.parentTaskId)) {
+        childCountMap.set(t.parentTaskId, (childCountMap.get(t.parentTaskId) || 0) + 1);
+      }
+    }
+
+    // 构建大纲数据
+    const outline = allRows.map(t => {
+      let labels: string[] = [];
+      try { labels = JSON.parse(t.labels || '[]'); } catch {}
+
+      const depth = getDepth(t.id);
+
+      return {
+        taskId: t.taskId,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        labels,
+        owner: t.owner,
+        depth,
+        childCount: childCountMap.get(t.id) || 0,
+        path: getPath(t.id),
+        parentTaskId: t.parentTaskId ? idMap.get(t.parentTaskId)?.taskId || null : null,
+      };
+    });
+
+    // 深度限制
+    const maxDepth = filters.maxDepth;
+    const filtered = maxDepth !== undefined ? outline.filter(n => n.depth <= maxDepth) : outline;
+
+    // 按深度 + sortOrder 排序，让输出呈现出树形缩进结构
+    return filtered.sort((a, b) => {
+      // 按路径字典序排，自然形成树的先序遍历
+      const pathA = a.path.join('/');
+      const pathB = b.path.join('/');
+      return pathA.localeCompare(pathB);
+    });
+  },
+
+  /**
+   * 智能推荐父节点 —— 根据输入的标题/描述/标签，在现有树结构中匹配最合适的父节点。
+   * 返回排名靠前的候选父节点列表（最多 limit 个），每个附带匹配分数和路径。
+   */
+  suggestParent(params: {
+    title: string;
+    description?: string;
+    labels?: string[];
+    projectId?: number;
+    limit?: number;
+  }) {
+    const db = getDb();
+    const { title, description, labels: inputLabels, projectId, limit: maxResults = 5 } = params;
+
+    let allRows = db.select().from(tasks).all();
+    allRows = allRows.filter(t => !(t as any).archivedAt);
+    if (projectId) allRows = allRows.filter(t => (t as any).projectId === projectId);
+
+    if (allRows.length === 0) return [];
+
+    // 构建索引
+    const idMap = new Map(allRows.map(t => [t.id, t]));
+
+    // 计算深度
+    const depthCache = new Map<number, number>();
+    function getDepth(id: number): number {
+      if (depthCache.has(id)) return depthCache.get(id)!;
+      const row = idMap.get(id);
+      if (!row || !row.parentTaskId || !idMap.has(row.parentTaskId)) {
+        depthCache.set(id, 0);
+        return 0;
+      }
+      const d = getDepth(row.parentTaskId) + 1;
+      depthCache.set(id, d);
+      return d;
+    }
+
+    // 构建祖先路径（taskId 字符串）
+    function getAncestorPath(id: number): string[] {
+      const path: string[] = [];
+      let cur = idMap.get(id);
+      while (cur) {
+        path.unshift(cur.taskId);
+        if (!cur.parentTaskId || !idMap.has(cur.parentTaskId)) break;
+        cur = idMap.get(cur.parentTaskId);
+      }
+      return path;
+    }
+
+    // 子节点数统计
+    const childCountMap = new Map<number, number>();
+    for (const t of allRows) {
+      if (t.parentTaskId && idMap.has(t.parentTaskId)) {
+        childCountMap.set(t.parentTaskId, (childCountMap.get(t.parentTaskId) || 0) + 1);
+      }
+    }
+
+    // 提取关键词（从标题和描述中拆分）
+    const extractKeywords = (text: string): string[] => {
+      return text.toLowerCase()
+        .replace(/[^\w\u4e00-\u9fff]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 1);
+    };
+
+    const inputKeywords = new Set([
+      ...extractKeywords(title),
+      ...(description ? extractKeywords(description) : []),
+    ]);
+    const inputLabelSet = new Set((inputLabels || []).map(l => l.toLowerCase()));
+
+    // 为每个现有节点计算匹配分数
+    const scored = allRows.map(t => {
+      let score = 0;
+
+      // 1. 关键词匹配（标题）
+      const taskKeywords = extractKeywords(t.title);
+      const descKeywords = t.description ? extractKeywords(t.description) : [];
+      const allTaskKw = new Set([...taskKeywords, ...descKeywords]);
+
+      let kwMatches = 0;
+      for (const kw of inputKeywords) {
+        for (const tkw of allTaskKw) {
+          if (tkw.includes(kw) || kw.includes(tkw)) {
+            kwMatches++;
+            break;
+          }
+        }
+      }
+      if (inputKeywords.size > 0) {
+        score += (kwMatches / inputKeywords.size) * 40; // 最多 40 分
+      }
+
+      // 2. 标签匹配
+      let taskLabels: string[] = [];
+      try { taskLabels = JSON.parse(t.labels || '[]'); } catch {}
+      const taskLabelSet = new Set(taskLabels.map(l => l.toLowerCase()));
+
+      if (inputLabelSet.size > 0) {
+        let labelMatches = 0;
+        for (const l of inputLabelSet) {
+          if (taskLabelSet.has(l)) labelMatches++;
+        }
+        score += (labelMatches / inputLabelSet.size) * 30; // 最多 30 分
+      }
+
+      // 3. 结构偏好：优先选择已有子节点的节点（说明它是分类/容器节点）
+      const childCount = childCountMap.get(t.id) || 0;
+      if (childCount > 0) score += Math.min(15, childCount * 3); // 最多 15 分
+
+      // 4. 深度惩罚：太深的节点不太适合作为父节点
+      const depth = getDepth(t.id);
+      score -= depth * 2; // 每深一层扣 2 分
+
+      // 5. 状态偏好：活跃/计划中的节点更适合作为父节点
+      if (t.status === 'done') score -= 10;
+      if (t.status === 'active' || t.status === 'planned') score += 5;
+
+      return {
+        taskId: t.taskId,
+        title: t.title,
+        status: t.status,
+        labels: taskLabels,
+        owner: t.owner,
+        depth,
+        childCount,
+        path: getAncestorPath(t.id),
+        score: Math.round(score * 100) / 100,
+      };
+    });
+
+    // 按分数降序排列，取前 N 个
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, maxResults).filter(s => s.score > 0);
+  },
+
   /** 删除任务及其所有子任务（级联删除备注/进度/字段值/附件） */
   deleteTask(taskId: string): boolean {
     const db = getDb();

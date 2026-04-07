@@ -238,7 +238,89 @@ list_tasks(
 )
 ```
 
-### 4.4 拆解模式参考
+### 4.4 智能树导航（高效定位父节点）
+
+当项目变大、树层级加深后，创建新任务时"应该放在哪个父节点下"会变得困难。ClawPM 提供两个轻量级导航工具，帮你快速定位：
+
+#### 方法 A：浏览树形大纲
+
+`get_tree_outline` 返回**极轻量**的树形概览（仅 taskId/title/status/labels/depth），不含完整任务详情，数据量远小于 `get_my_task_tree`：
+
+```
+get_tree_outline(project: "my-project")
+```
+
+返回带缩进的树形概览：
+```
+BLOG-001 | 文章管理 | active [epic] (3 children)
+  BLOG-004 | 文章 CRUD | active (2 children)
+    BLOG-007 | 创建文章 API | done
+    BLOG-008 | 文章列表 API | active
+  BLOG-005 | Markdown 编辑器 | planned (2 children)
+    BLOG-009 | 集成编辑器组件 | planned
+    BLOG-010 | 文章详情页 | planned
+  BLOG-006 | 文章列表与搜索 | backlog
+BLOG-002 | 用户与权限 | planned [epic]
+BLOG-003 | 评论系统 | backlog [epic]
+```
+
+支持按板块、负责人筛选，以及限制最大深度：
+
+```
+# 只看根节点和一级子节点
+get_tree_outline(project: "my-project", max_depth: 1)
+
+# 只看某个负责人的节点
+get_tree_outline(project: "my-project", owner: "backend-agent")
+```
+
+#### 方法 B：智能推荐父节点
+
+`suggest_parent` 根据你要创建的任务的标题/描述/标签，自动推荐最合适的父节点：
+
+```
+suggest_parent(
+  title: "评论点赞功能",
+  labels: ["feature", "社交"],
+  project: "my-project"
+)
+```
+
+返回按匹配度排序的候选列表：
+```
+1. [BLOG-003] 评论系统 (score: 45.5, depth: 0, children: 0)
+   路径: BLOG-003
+2. [BLOG-001] 文章管理 (score: 12.3, depth: 0, children: 3)
+   路径: BLOG-001
+```
+
+然后你就可以直接用推荐的 taskId 作为 `parent_task_id` 创建任务了。
+
+#### 推荐工作流
+
+```
+# 创建新任务时的推荐流程
+# 1. 先用 suggest_parent 获取推荐
+suggest_parent(title: "评论回复通知推送", labels: ["feature", "通知"], project: "my-project")
+
+# 2. 如果推荐结果明确，直接使用
+create_task(
+  title: "评论回复通知推送",
+  parent_task_id: "BLOG-003",    # 使用推荐的父节点
+  labels: ["feature", "通知"],
+  project: "my-project"
+)
+
+# 3. 如果推荐不确定，用 get_tree_outline 浏览确认
+get_tree_outline(project: "my-project", max_depth: 2)
+```
+
+> **对比**：
+> - `get_my_task_tree` — 返回完整的 enriched 数据（含 domain/milestone/customFields/attachments），数据量大但信息全面
+> - `get_tree_outline` — 仅返回结构骨架，数据量极小（约为前者的 1/10），适合快速浏览定位
+> - `suggest_parent` — 主动推荐，连浏览都不需要，直接告诉你"放哪里"
+
+### 4.5 拆解模式参考
 
 以下是几种常见的拆解模式：
 
@@ -739,15 +821,20 @@ get_risk_report(project: "team-blog")
   3. request_next_task()             → 看系统推荐
   4. get_unread_notification_count() → 看通知
 
+创建/拆解任务：
+  5. suggest_parent(title: "...")     → 智能推荐父节点
+  6. get_tree_outline(max_depth: 2)  → 浏览树结构确认
+  7. create_task(parent_task_id: ...) → 创建任务
+
 执行中：
-  5. update_task(status: "active")   → 开始
-  6. update_progress(...)            → 过程上报
-  7. add_task_note(...)              → 记录要点
-  8. complete_task(...)              → 收工
+  8. update_task(status: "active")   → 开始
+  9. update_progress(...)            → 过程上报
+  10. add_task_note(...)             → 记录要点
+  11. complete_task(...)             → 收工
 
 收尾：
-  9. get_risk_report()               → 查看风险
-  10. get_project_status()           → 全局概览
+  12. get_risk_report()              → 查看风险
+  13. get_project_status()           → 全局概览
 ```
 
 ---
@@ -776,6 +863,8 @@ get_risk_report(project: "team-blog")
 | `list_tasks` | 列表查询（支持状态/板块/里程碑/负责人筛选） |
 | `get_my_tasks` | 获取我的任务列表 |
 | `get_my_task_tree` | 获取我的需求子树（含祖先路径） |
+| `get_tree_outline` | 轻量级树形大纲（仅结构骨架，适合快速浏览定位父节点） |
+| `suggest_parent` | 智能推荐父节点（输入标题/描述/标签，返回最佳候选） |
 | `update_task` | 更新任务信息 |
 | `delete_task` | 删除任务（含所有子任务） |
 | `update_progress` | 上报进度百分比和说明 |

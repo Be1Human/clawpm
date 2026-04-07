@@ -53,7 +53,9 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!task) return; // 任务不存在由后续业务逻辑处理
     const perm = PermissionService.getEffectivePermission(task.id, task.owner, user);
     if (perm === 'none' || perm === 'view') {
-      const err: any = new Error('无编辑权限：你对此节点仅有查看权限或无权限');
+      const permText = perm === 'view' ? '仅有查看权限' : '无任何权限';
+      const ownerDisplay = task.owner || '未设置';
+      const err: any = new Error(`权限不足：你对节点「${taskId}」${permText}，需要编辑权限才能执行此操作。节点 Owner 为「${ownerDisplay}」，请联系 Owner 授权。`);
       err.statusCode = 403;
       throw err;
     }
@@ -67,7 +69,8 @@ export async function registerRoutes(app: FastifyInstance) {
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
     if (!task) return;
     if (task.owner !== user) {
-      const err: any = new Error('仅 Owner 可执行此操作');
+      const ownerDisplay = task.owner || '未设置';
+      const err: any = new Error(`权限不足：仅节点 Owner 可执行此操作。当前节点 Owner 为「${ownerDisplay}」，你的身份为「${user}」。如需操作，请联系节点 Owner。`);
       err.statusCode = 403;
       throw err;
     }
@@ -225,6 +228,32 @@ export async function registerRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const projectId = getProjectId(req);
     return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, label: q.label, projectId });
+  });
+
+  // 轻量级树形大纲（无 enrichment，适合 Agent 快速浏览）
+  app.get('/api/v1/tasks/tree/outline', async (req) => {
+    const q = req.query as any;
+    const projectId = getProjectId(req);
+    return TaskService.getTreeOutline({
+      projectId,
+      domain: q.domain,
+      owner: q.owner,
+      maxDepth: q.max_depth !== undefined ? parseInt(q.max_depth) : undefined,
+    });
+  });
+
+  // 智能推荐父节点
+  app.post('/api/v1/tasks/tree/suggest-parent', async (req, reply) => {
+    const body = req.body as any;
+    if (!body.title) return reply.code(400).send({ error: 'title is required' });
+    const projectId = getProjectId(req);
+    return TaskService.suggestParent({
+      title: body.title,
+      description: body.description,
+      labels: body.labels,
+      projectId,
+      limit: body.limit,
+    });
   });
 
   // 节点迁移（换父节点）
