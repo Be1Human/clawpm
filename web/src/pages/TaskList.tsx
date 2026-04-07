@@ -98,7 +98,7 @@ export default function TaskList() {
             </div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thId')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium flex-1">{t('taskList.thTitle')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-20">{t('taskList.thLabel')}</div>
+            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thLabel')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</div>
             <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</div>
@@ -207,14 +207,15 @@ function TaskTreeRow({
             </div>
           )}
         </div>
-        <div className="px-4 py-3 w-20">
+        <div className="px-4 py-3 w-24">
           {labels.slice(0, 1).map(label => {
             const c = LABEL_COLORS[label] || { bg: '#f1f5f9', text: '#475569' };
             return (
               <span
                 key={label}
-                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full whitespace-nowrap overflow-hidden text-ellipsis inline-block max-w-full"
                 style={{ backgroundColor: c.bg, color: c.text }}
+                title={label}
               >
                 {label}
               </span>

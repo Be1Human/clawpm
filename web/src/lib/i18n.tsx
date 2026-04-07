@@ -290,6 +290,9 @@ const en: Dict = {
   'gantt.ungrouped': 'Ungrouped',
   'gantt.today': 'Today',
   'gantt.tasks': 'Tasks',
+  'gantt.zoomIn': 'Zoom in',
+  'gantt.zoomOut': 'Zoom out',
+  'gantt.zoomReset': 'Reset zoom',
 
   // ── Members ───────────────────────────────────────────────────
   'members.title': 'Team Members',
@@ -950,6 +953,9 @@ const zh: Dict = {
   'gantt.ungrouped': '未分组',
   'gantt.today': '今天',
   'gantt.tasks': '任务',
+  'gantt.zoomIn': '放大',
+  'gantt.zoomOut': '缩小',
+  'gantt.zoomReset': '重置缩放',
 
   // ── Members ───────────────────────────────────────────────────
   'members.title': '团队成员',

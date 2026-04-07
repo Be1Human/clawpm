@@ -1525,7 +1525,7 @@ function MindMapCanvas() {
 
         {/* 右侧控制面板 */}
         <Panel position="top-right">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 w-[220px] max-h-[calc(100vh-180px)] overflow-y-auto">
             {/* 关联线可见性 */}
             <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
               <p className="text-xs font-semibold text-gray-500 mb-2">显示关联线</p>

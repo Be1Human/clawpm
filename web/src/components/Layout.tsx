@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
@@ -317,21 +317,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     queryFn: () => api.getMembers(),
   });
 
-  const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
-  const currentMember = (members as any[]).find((m: any) => m.identifier === currentUser);
+  // 用 auth/me 获取当前成员信息（全局维度，不依赖项目成员列表）
+  const { data: authMe } = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: () => api.getAuthMe(),
+  });
 
-  // Auto-show identity picker only for users who completed onboarding but want to switch identity.
-  // First-time setup is now handled by the /onboarding page.
-  // Only show if identifier becomes stale (member deleted from project).
-  useEffect(() => {
-    if ((members as any[]).length > 0 && currentUser && isOnboarded()) {
-      if (!(members as any[]).find((m: any) => m.identifier === currentUser)) {
-        // stored identifier not found in current project members — 弹出身份选择器
-        // 注意：不要清除 currentUser / onboarded，否则会和 OnboardingGuard 形成闪屏循环
-        setShowIdentityPicker(true);
-      }
-    }
-  }, [currentUser, members]);
+  const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
+  // 优先从项目成员列表中找，找不到则用 auth/me 返回的 currentMember
+  const currentMember = (members as any[]).find((m: any) => m.identifier === currentUser)
+    || (authMe?.currentMember?.identifier === currentUser ? authMe.currentMember : null);
 
   function handleSwitchProject(slug: string) {
     setActiveProject(slug);

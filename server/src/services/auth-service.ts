@@ -234,7 +234,8 @@ export const AuthService = {
 
   bindMember(accountId: number, projectId: number, memberIdentifier: string, makeDefault = true) {
     const db = getDb();
-    const member = db.select().from(members).where(and(eq(members.identifier, memberIdentifier), eq(members.projectId, projectId))).get() as any;
+    // 成员是全局的，不再按 projectId 过滤 members 表
+    const member = db.select().from(members).where(eq(members.identifier, memberIdentifier)).get() as any;
     if (!member) throw new Error('成员不存在');
     const existing = db.select().from(accountMemberBindings).where(and(
       eq(accountMemberBindings.accountId, accountId),

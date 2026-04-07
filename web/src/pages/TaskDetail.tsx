@@ -1007,7 +1007,7 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
     {/* ── 右侧文档预览浮窗（Portal + fixed，独立于详情页布局） ── */}
     {createPortal(
       <div className={cn(
-        'fixed top-[52px] right-0 bottom-0 w-[460px] bg-white z-40',
+        'fixed top-[52px] right-0 bottom-0 w-[460px] bg-white z-[60]',
         'flex flex-col',
         'transition-transform duration-300 ease-in-out',
         previewAttachId

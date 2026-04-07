@@ -146,6 +146,8 @@ export async function registerRoutes(app: FastifyInstance) {
         memberIdentifier = created.identifier;
       }
       if (!memberIdentifier) return reply.code(400).send({ error: 'member_identifier is required' });
+      // 确保成员被关联到当前项目（用户切换项目后可能不在新项目的成员列表中）
+      try { MemberService.addToProject(projectId, memberIdentifier); } catch {}
       const currentMember = AuthService.bindMember(principal.accountId, projectId, memberIdentifier, true);
       return {
         account: {

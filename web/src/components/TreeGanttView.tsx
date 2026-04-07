@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +63,65 @@ export default function TreeGanttView({
 }) {
   const [grain, setGrain] = useState<'day' | 'week'>('week');
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  // zoom: 1.0 = 默认，范围 [0.15, 6.0]
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.15;
+  const ZOOM_MAX = 6;
+  const ZOOM_STEP = 0.08;
+
+  const headerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const ganttWrapRef = useRef<HTMLDivElement>(null);
+
+  const handleBodyScroll = useCallback(() => {
+    if (headerRef.current && bodyRef.current) {
+      headerRef.current.scrollLeft = bodyRef.current.scrollLeft;
+    }
+  }, []);
+
+  useEffect(() => {
+    const bodyEl = bodyRef.current;
+    if (!bodyEl) return;
+    bodyEl.addEventListener('scroll', handleBodyScroll);
+    return () => bodyEl.removeEventListener('scroll', handleBodyScroll);
+  }, [handleBodyScroll]);
+
+  // ── 滚轮/触控板缩放（Ctrl+wheel 或 pinch） ──
+  useEffect(() => {
+    const wrap = ganttWrapRef.current;
+    const body = bodyRef.current;
+    if (!wrap || !body) return;
+
+    const onWheel = (e: WheelEvent) => {
+      // Ctrl+滚轮 或触控板 pinch（ctrlKey 为 true）
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+
+      // 鼠标在 body 区域内的 X 偏移（相对于容器左边界 + 已滚动距离 = 在总宽度中的位置）
+      const rect = body.getBoundingClientRect();
+      const pointerX = e.clientX - rect.left + body.scrollLeft;
+
+      setZoom(prev => {
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev + delta));
+        // 缩放后调整 scrollLeft，保持鼠标指向的时间位置不变
+        const scale = next / prev;
+        requestAnimationFrame(() => {
+          if (body) {
+            const newPointerX = pointerX * scale;
+            body.scrollLeft = newPointerX - (e.clientX - rect.left);
+            if (headerRef.current) {
+              headerRef.current.scrollLeft = body.scrollLeft;
+            }
+          }
+        });
+        return next;
+      });
+    };
+
+    wrap.addEventListener('wheel', onWheel, { passive: false });
+    return () => wrap.removeEventListener('wheel', onWheel);
+  }, []);
 
   const rows = useMemo(() => flattenVisibleRows(tree, collapsedIds), [tree, collapsedIds]);
 
@@ -84,18 +143,40 @@ export default function TreeGanttView({
     return { startDate: start, totalDays: diffDays(start, end) };
   }, [rows, milestones]);
 
-  const DAY_W = grain === 'day' ? 28 : 8;
-  const totalWidth = totalDays * DAY_W;
+  const BASE_DAY_W = grain === 'day' ? 36 : 16;
+  const DAY_W = BASE_DAY_W * zoom;
+  const totalWidth = Math.max(totalDays * DAY_W, 800);
 
   const ticks = useMemo(() => {
-    const result: { label: string; offset: number }[] = [];
-    const step = grain === 'day' ? 1 : 7;
-    for (let i = 0; i <= totalDays; i += step) {
-      const d = addDays(startDate, i);
-      result.push({
-        label: d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' }),
-        offset: i * DAY_W,
-      });
+    const result: { label: string; offset: number; isMonth?: boolean }[] = [];
+    if (grain === 'day') {
+      // 根据缩放级别动态调整 step：缩得太小时跳过一些天
+      const dayPx = DAY_W;
+      const step = dayPx >= 28 ? 1 : dayPx >= 14 ? 2 : dayPx >= 8 ? 7 : 14;
+      for (let i = 0; i <= totalDays; i += step) {
+        const d = addDays(startDate, i);
+        result.push({
+          label: d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' }),
+          offset: i * DAY_W,
+          isMonth: d.getDate() === 1 || (step > 1 && d.getDate() <= step),
+        });
+      }
+    } else {
+      // 根据缩放级别动态调整：缩得小时跳过一些周
+      const weekPx = 7 * DAY_W;
+      const weekStep = weekPx >= 60 ? 1 : weekPx >= 30 ? 2 : 4; // 每N周一个 tick
+      for (let i = 0; i <= totalDays; i += 7 * weekStep) {
+        const d = addDays(startDate, i);
+        const prevD = i >= 7 * weekStep ? addDays(startDate, i - 7 * weekStep) : null;
+        const isNewMonth = !prevD || prevD.getMonth() !== d.getMonth();
+        result.push({
+          label: isNewMonth
+            ? d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })
+            : d.toLocaleDateString(dateLocale, { day: 'numeric' }),
+          offset: i * DAY_W,
+          isMonth: isNewMonth,
+        });
+      }
     }
     return result;
   }, [dateLocale, grain, totalDays, startDate, DAY_W]);
@@ -143,6 +224,28 @@ export default function TreeGanttView({
                 {g === 'day' ? t('gantt.byDay') : t('gantt.byWeek')}
               </button>
             ))}
+            <span className="mx-1 w-px h-5 bg-gray-200" />
+            <button
+              onClick={() => setZoom(z => Math.max(ZOOM_MIN, z - ZOOM_STEP * 3))}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+              title={t('gantt.zoomOut') || 'Zoom out'}
+            >
+              −
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              className="px-2 h-7 rounded-md text-xs text-gray-500 hover:bg-gray-100 transition-colors font-mono tabular-nums min-w-[3.2rem] text-center"
+              title={t('gantt.zoomReset') || 'Reset zoom'}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={() => setZoom(z => Math.min(ZOOM_MAX, z + ZOOM_STEP * 3))}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+              title={t('gantt.zoomIn') || 'Zoom in'}
+            >
+              +
+            </button>
           </div>
           {extraControls}
         </div>
@@ -199,13 +302,25 @@ export default function TreeGanttView({
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto relative">
-          <div style={{ width: totalWidth, minWidth: '100%', position: 'relative' }}>
-            <div className="h-10 border-b border-gray-200 bg-white sticky top-0 z-20" style={{ width: totalWidth }}>
+        <div className="flex-1 min-w-0 flex flex-col" ref={ganttWrapRef}>
+          {/* ── 时间轴表头（固定在顶部，随横向滚动同步） ── */}
+          <div
+            className="h-10 border-b border-gray-200 bg-white flex-shrink-0 overflow-hidden relative"
+            ref={headerRef}
+          >
+            <div className="relative" style={{ width: totalWidth, height: '100%' }}>
               {ticks.map((tick, i) => (
                 <div key={i} className="absolute top-0 h-full flex flex-col justify-center" style={{ left: tick.offset }}>
-                  <span className="text-xs text-gray-400 px-1 whitespace-nowrap">{tick.label}</span>
-                  <div className="absolute bottom-0 left-0 h-2 w-px bg-gray-200" />
+                  <span className={cn(
+                    'px-1 whitespace-nowrap',
+                    tick.isMonth
+                      ? 'text-xs font-semibold text-gray-600'
+                      : 'text-[10px] text-gray-400'
+                  )}>{tick.label}</span>
+                  <div className={cn(
+                    'absolute bottom-0 left-0 w-px',
+                    tick.isMonth ? 'h-3 bg-gray-300' : 'h-2 bg-gray-200'
+                  )} />
                 </div>
               ))}
               {todayOffset > 0 && todayOffset < totalWidth && (
@@ -224,8 +339,11 @@ export default function TreeGanttView({
                 );
               })}
             </div>
+          </div>
 
-            <div style={{ width: totalWidth }}>
+          {/* ── 甘特图主体（可横向+纵向滚动） ── */}
+          <div className="flex-1 overflow-auto" ref={bodyRef}>
+            <div style={{ width: totalWidth, minWidth: '100%' }}>
               {rows.map(({ node }) => {
                 const { left, width } = calcBar(node);
                 return (
