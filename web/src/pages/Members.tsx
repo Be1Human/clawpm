@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
-import { api, withBasePath } from '@/api/client';
+import { api, withBasePath, getServerOrigin } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -143,7 +143,7 @@ function AgentAccessModal({ member, onClose }: { member: any; onClose: () => voi
   const activeTokens = (tokens as any[]).filter((t: any) => t.status === 'active');
 
   function buildBundle(token: string, tokenPrefix?: string) {
-    const origin = window.location.origin;
+    const origin = getServerOrigin();
     const sseUrl = `${origin}${withBasePath('/mcp/sse')}?token=${encodeURIComponent(token)}`;
     return {
       token, tokenPrefix, sseUrl,

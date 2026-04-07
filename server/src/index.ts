@@ -92,6 +92,7 @@ app.get('/runtime-config.js', async (_req, reply) => {
     apiBase: `${config.basePath}/api/v1`,
     apiToken: config.apiToken,
     basePath: config.basePath,
+    publicUrl: config.publicUrl || '',
   })};`;
 });
 

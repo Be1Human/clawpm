@@ -19,5 +19,6 @@ export const config = {
   logLevel: (process.env.CLAWPM_LOG_LEVEL || 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error',
   webDistPath: path.join(__dirname, '../../web/dist'),
   basePath: normalizeBasePath(process.env.CLAWPM_BASE_PATH),
+  publicUrl: process.env.CLAWPM_PUBLIC_URL || '',  // 外部可访问地址，如 https://clawpm.example.com
   isDev: process.env.NODE_ENV !== 'production',
 };

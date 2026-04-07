@@ -7,6 +7,7 @@ declare global {
       apiBase?: string;
       apiToken?: string;
       basePath?: string;
+      publicUrl?: string;
     };
   }
 }
@@ -23,6 +24,16 @@ const runtimeConfig = typeof window !== 'undefined' ? window.__CLAWPM_RUNTIME_CO
 export const BASE_PATH = normalizeBasePath(runtimeConfig?.basePath || import.meta.env.BASE_URL);
 const BASE = runtimeConfig?.apiBase || `${BASE_PATH}/api/v1`;
 const LEGACY_TOKEN = runtimeConfig?.apiToken || import.meta.env.VITE_API_TOKEN || 'dev-token';
+
+/** 获取服务器的外部可访问地址（优先用 CLAWPM_PUBLIC_URL 配置，回退到浏览器当前地址） */
+export function getServerOrigin(): string {
+  const publicUrl = runtimeConfig?.publicUrl;
+  if (publicUrl) {
+    // 去掉末尾的斜杠
+    return publicUrl.replace(/\/+$/, '');
+  }
+  return window.location.origin;
+}
 
 export function withBasePath(path: string) {
   const normalized = path.startsWith('/') ? path : `/${path}`;

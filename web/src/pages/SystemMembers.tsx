@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '@/api/client';
+import { api, withBasePath, getServerOrigin } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 
@@ -139,7 +139,175 @@ function SystemMemberModal({ member, onClose, t }: { member?: any; onClose: () =
   );
 }
 
-function MemberCard({ member, onEdit, onDelete, t }: { member: any; onEdit: () => void; onDelete: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
+// ── Token 配置弹窗（支持所有成员类型）──────────────────────────
+function TokenConfigModal({ member, onClose }: { member: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [bundle, setBundle] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState('');
+  const [showTokens, setShowTokens] = useState(false);
+
+  const { data: tokens = [], isLoading } = useQuery({
+    queryKey: ['agent-tokens', member.identifier],
+    queryFn: () => api.getAgentTokens(member.identifier),
+    enabled: !!member,
+  });
+
+  const activeTokens = (tokens as any[]).filter((t: any) => t.status === 'active');
+
+  function buildBundle(token: string, tokenPrefix?: string) {
+    const origin = getServerOrigin();
+    const sseUrl = `${origin}${withBasePath('/mcp/sse')}?token=${encodeURIComponent(token)}`;
+    return {
+      token, tokenPrefix, sseUrl,
+      configJson: { mcpServers: { clawpm: { type: 'sse', url: sseUrl } } },
+    };
+  }
+
+  async function handleGenerate() {
+    setCreating(true);
+    try {
+      const result = await api.getOpenClawConfig(member.identifier);
+      setBundle(buildBundle(result.token, result.tokenPrefix));
+      qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRotate(tokenId: number) {
+    const result = await api.rotateAgentToken(member.identifier, tokenId, { client_type: 'openclaw', name: `${member.identifier}-openclaw` });
+    setBundle(buildBundle(result.token, result.tokenPrefix));
+    qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+  }
+
+  async function handleRevoke(tokenId: number) {
+    await api.revokeAgentToken(member.identifier, tokenId);
+    qc.invalidateQueries({ queryKey: ['agent-tokens', member.identifier] });
+  }
+
+  async function copyText(text: string, label: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(label);
+    setTimeout(() => setCopied(''), 2000);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: member.color || '#6366f1' }}>
+              {(member.name || '?').slice(0, 1).toUpperCase()}
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Token 接入配置</h2>
+              <p className="text-xs text-gray-400">{member.name} · {member.type === 'agent' ? '🤖 Agent' : '👤 Human'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">✕</button>
+        </div>
+
+        <div className="p-6 space-y-5 overflow-y-auto max-h-[calc(85vh-72px)]">
+          {!bundle ? (
+            <div className="text-center py-6">
+              <div className="text-4xl mb-4">{'\u{1F511}'}</div>
+              <p className="text-sm text-gray-500 mb-5">
+                为 <span className="font-medium text-gray-700">{member.name}</span> 生成专属 Token，用于 MCP 接入
+              </p>
+              <button
+                onClick={handleGenerate}
+                disabled={creating}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {creating ? (<><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> 生成中...</>) : '生成 Token'}
+              </button>
+              {activeTokens.length > 0 && (
+                <p className="text-xs text-gray-400 mt-4">已有 {activeTokens.length} 个有效 Token</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">✓</span>
+                <span className="text-emerald-700 font-medium">Token 已生成</span>
+              </div>
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+                  <span className="text-xs font-semibold text-gray-600">MCP 配置（复制到 mcp.json）</span>
+                  <button
+                    onClick={() => copyText(JSON.stringify(bundle.configJson, null, 2), 'json')}
+                    className={cn('px-3 py-1 rounded-lg text-xs font-medium transition-all',
+                      copied === 'json' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-600 text-white hover:bg-indigo-700')}
+                  >
+                    {copied === 'json' ? '✓ 已复制' : '复制'}
+                  </button>
+                </div>
+                <pre className="px-4 py-3 text-xs text-gray-700 overflow-x-auto bg-white leading-relaxed">{JSON.stringify(bundle.configJson, null, 2)}</pre>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+                  <span className="text-xs text-gray-400 flex-shrink-0">SSE</span>
+                  <span className="text-xs text-gray-600 truncate flex-1 font-mono">{bundle.sseUrl}</span>
+                  <button onClick={() => copyText(bundle.sseUrl, 'sse')} className={cn('text-xs flex-shrink-0 px-2 py-0.5 rounded transition-colors', copied === 'sse' ? 'text-emerald-600' : 'text-indigo-600 hover:text-indigo-700')}>
+                    {copied === 'sse' ? '✓' : '复制'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+                  <span className="text-xs text-gray-400 flex-shrink-0">Token</span>
+                  <span className="text-xs text-gray-600 truncate flex-1 font-mono">{bundle.token}</span>
+                  <button onClick={() => copyText(bundle.token, 'token')} className={cn('text-xs flex-shrink-0 px-2 py-0.5 rounded transition-colors', copied === 'token' ? 'text-emerald-600' : 'text-indigo-600 hover:text-indigo-700')}>
+                    {copied === 'token' ? '✓' : '复制'}
+                  </button>
+                </div>
+              </div>
+              <button onClick={handleGenerate} disabled={creating} className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">
+                + 再生成一个新 Token
+              </button>
+            </div>
+          )}
+
+          {(tokens as any[]).length > 0 && (
+            <div className="border-t border-gray-100 pt-4">
+              <button onClick={() => setShowTokens(!showTokens)} className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full">
+                <span className={cn('transition-transform inline-block', showTokens && 'rotate-90')}>▸</span>
+                <span>已有 Token（{(tokens as any[]).length}）</span>
+              </button>
+              {showTokens && (
+                <div className="mt-3 space-y-1.5">
+                  {isLoading ? (
+                    <p className="text-xs text-gray-400">加载中...</p>
+                  ) : (
+                    (tokens as any[]).map((token: any) => (
+                      <div key={token.id} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+                        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', token.status === 'active' ? 'bg-emerald-400' : 'bg-gray-300')} />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs text-gray-700 font-mono truncate block">{token.tokenPrefix}…</span>
+                          <span className="text-[10px] text-gray-400">
+                            {token.status === 'active' ? '有效' : '已吊销'}
+                            {token.lastUsedAt ? ` · ${new Date(token.lastUsedAt).toLocaleDateString()}` : ''}
+                          </span>
+                        </div>
+                        {token.status === 'active' && (
+                          <>
+                            <button onClick={() => handleRotate(token.id)} className="text-[11px] text-indigo-500 hover:text-indigo-600">轮换</button>
+                            <button onClick={() => handleRevoke(token.id)} className="text-[11px] text-red-400 hover:text-red-500">吊销</button>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemberCard({ member, onEdit, onDelete, onConfigureToken, t }: { member: any; onEdit: () => void; onDelete: () => void; onConfigureToken: () => void; t: (key: string, vars?: Record<string, string | number>) => string }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 group hover:border-indigo-200 hover:shadow-sm transition-all">
       <div className="flex items-start gap-3">
@@ -161,6 +329,7 @@ function MemberCard({ member, onEdit, onDelete, t }: { member: any; onEdit: () =
           </div>
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onConfigureToken} className="w-7 h-7 rounded flex items-center justify-center text-gray-400 hover:text-amber-600 hover:bg-amber-50 text-xs transition-colors" title="Token 配置">🔑</button>
           <button onClick={onEdit} className="w-7 h-7 rounded flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 text-xs transition-colors" title={t('common.edit')}>✎</button>
           <button onClick={onDelete} className="w-7 h-7 rounded flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors" title={t('common.delete')}>✕</button>
         </div>
@@ -176,6 +345,7 @@ export default function SystemMembers() {
   const [showModal, setShowModal] = useState(false);
   const [editMember, setEditMember] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
+  const [tokenMember, setTokenMember] = useState<any>(null);
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ['system-members', typeFilter],
@@ -248,6 +418,7 @@ export default function SystemMembers() {
               t={t}
               onEdit={() => { setEditMember(m); setShowModal(true); }}
               onDelete={() => setDeleteConfirm(m)}
+              onConfigureToken={() => setTokenMember(m)}
             />
           ))}
         </div>
@@ -256,6 +427,11 @@ export default function SystemMembers() {
       {/* Modal */}
       {showModal && (
         <SystemMemberModal member={editMember} t={t} onClose={() => { setShowModal(false); setEditMember(null); }} />
+      )}
+
+      {/* Token Config Modal */}
+      {tokenMember && (
+        <TokenConfigModal member={tokenMember} onClose={() => setTokenMember(null)} />
       )}
 
       {/* Delete confirm */}

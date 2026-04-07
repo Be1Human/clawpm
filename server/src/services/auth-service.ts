@@ -317,9 +317,9 @@ export const AuthService = {
     expiresAt?: string | null;
   }) {
     const db = getDb();
-    const member = db.select().from(members).where(and(eq(members.identifier, params.memberIdentifier), eq(members.projectId, params.projectId))).get() as any;
-    if (!member) throw new Error('Agent 成员不存在');
-    if (member.type !== 'agent') throw new Error('仅 Agent 成员可创建 token');
+    // 先按 identifier 查系统成员（不限项目），兼容旧的按项目查找
+    let member = db.select().from(members).where(eq(members.identifier, params.memberIdentifier)).get() as any;
+    if (!member) throw new Error('成员不存在');
 
     const token = makeOpaqueToken('agent');
     db.insert(agentTokens).values({
