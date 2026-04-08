@@ -198,8 +198,10 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
   mcp.tool('request_next_task', '请求推荐下一个任务', {
     owner: z.string().optional(),
     domain: z.string().optional(),
+    project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
-    const task = TaskService.recommendNext(p.owner, p.domain);
+    const projectId = resolveProject(p.project);
+    const task = TaskService.recommendNext(p.owner, p.domain, projectId);
     if (!task) return { content: [{ type: 'text', text: '当前没有待领取的任务' }] };
     return { content: [{ type: 'text', text: `推荐任务：\n${JSON.stringify(task, null, 2)}` }] };
   });

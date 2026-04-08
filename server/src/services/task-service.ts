@@ -75,8 +75,14 @@ export const TaskService = {
     if (params.parent_task_id) {
       const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id)).get();
       if (parent) {
-        parentTaskId = parent.id;
-        if (!domainId && parent.domainId) domainId = parent.domainId;
+        // 修复：验证父任务与新任务在同一个项目中，防止跨项目父子关系
+        if (parent.projectId !== projectId) {
+          // 跨项目引用：忽略父任务设置，避免产生混乱的跨项目树结构
+          // 不抛错，仅静默跳过，任务仍会创建为根节点
+        } else {
+          parentTaskId = parent.id;
+          if (!domainId && parent.domainId) domainId = parent.domainId;
+        }
       }
     }
 
@@ -145,12 +151,18 @@ export const TaskService = {
     }
 
     if (filters.domain) {
-      const d = db.select().from(domains).where(eq(domains.name, filters.domain)).get();
+      // 修复：加 projectId 约束，避免跨项目匹配到同名 domain
+      const domainConditions = [eq(domains.name, filters.domain)];
+      if (filters.projectId) domainConditions.push(eq(domains.projectId, filters.projectId));
+      const d = db.select().from(domains).where(and(...domainConditions)).get();
       if (d) conditions.push(eq(tasks.domainId, d.id));
     }
 
     if (filters.milestone) {
-      const m = db.select().from(milestones).where(eq(milestones.name, filters.milestone)).get();
+      // 修复：加 projectId 约束，避免跨项目匹配到同名 milestone
+      const msConditions = [eq(milestones.name, filters.milestone)];
+      if (filters.projectId) msConditions.push(eq(milestones.projectId, filters.projectId));
+      const m = db.select().from(milestones).where(and(...msConditions)).get();
       if (m) conditions.push(eq(tasks.milestoneId, m.id));
     }
 
@@ -181,6 +193,9 @@ export const TaskService = {
     const task = db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
     if (!task) return null;
 
+    // 使用任务自身的 projectId 来约束 domain/milestone 查询，避免跨项目误匹配
+    const taskProjectId = task.projectId || 1;
+
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
 
     if (params.title !== undefined) updates.title = params.title;
@@ -202,15 +217,24 @@ export const TaskService = {
         updates.parentTaskId = null;
       } else {
         const parent = db.select().from(tasks).where(eq(tasks.taskId, params.parent_task_id as string)).get();
-        if (parent) updates.parentTaskId = parent.id;
+        if (parent) {
+          // 验证父任务与当前任务在同一项目中，防止跨项目引用
+          if (parent.projectId !== taskProjectId) {
+            // 跨项目引用：忽略此父任务设置（不静默失败，而是不更新）
+          } else {
+            updates.parentTaskId = parent.id;
+          }
+        }
       }
     }
     if (params.domain !== undefined) {
-      const d = db.select().from(domains).where(eq(domains.name, params.domain)).get();
+      // 修复：加 projectId 约束，避免匹配到其他项目的同名 domain
+      const d = db.select().from(domains).where(and(eq(domains.name, params.domain), eq(domains.projectId, taskProjectId))).get();
       if (d) updates.domainId = d.id;
     }
     if (params.milestone !== undefined) {
-      const m = db.select().from(milestones).where(eq(milestones.name, params.milestone)).get();
+      // 修复：加 projectId 约束，避免匹配到其他项目的同名 milestone
+      const m = db.select().from(milestones).where(and(eq(milestones.name, params.milestone), eq(milestones.projectId, taskProjectId))).get();
       if (m) updates.milestoneId = m.id;
     }
 
@@ -357,17 +381,21 @@ export const TaskService = {
       .orderBy(desc(taskNotes.createdAt)).all();
   },
 
-  recommendNext(owner?: string, domainName?: string) {
+  recommendNext(owner?: string, domainName?: string, projectId?: number) {
     const db = getDb();
     const conditions: any[] = [
       or(eq(tasks.status, 'backlog'), eq(tasks.status, 'planned'), eq(tasks.status, 'active')),
     ];
 
+    if (projectId) conditions.push(eq(tasks.projectId, projectId));
     if (owner) {
       conditions.push(or(eq(tasks.owner, owner), isNull(tasks.owner)));
     }
     if (domainName) {
-      const d = db.select().from(domains).where(eq(domains.name, domainName)).get();
+      // 修复：加 projectId 约束，避免跨项目匹配同名 domain
+      const domainConditions = [eq(domains.name, domainName)];
+      if (projectId) domainConditions.push(eq(domains.projectId, projectId));
+      const d = db.select().from(domains).where(and(...domainConditions)).get();
       if (d) conditions.push(eq(tasks.domainId, d.id));
     }
 
@@ -381,7 +409,7 @@ export const TaskService = {
     return candidates.length > 0 ? this._enrichTask(candidates[0]) : null;
   },
 
-  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; label?: string; projectId?: number; includeArchived?: boolean } = {}) {
+  getTree(domainName?: string, filters: { milestone?: string; status?: string; owner?: string; assignee?: string; label?: string; projectId?: number; includeArchived?: boolean } = {}) {
     const db = getDb();
     let allTasks = db.select().from(tasks).all();
 
@@ -396,18 +424,29 @@ export const TaskService = {
     }
 
     if (domainName) {
-      const d = db.select().from(domains).where(eq(domains.name, domainName)).get();
+      // 修复：加 projectId 约束
+      const domainConditions = [eq(domains.name, domainName)];
+      if (filters.projectId) domainConditions.push(eq(domains.projectId, filters.projectId));
+      const d = db.select().from(domains).where(and(...domainConditions)).get();
       if (d) allTasks = allTasks.filter(t => t.domainId === d.id);
     }
     if (filters.milestone) {
-      const m = db.select().from(milestones).where(eq(milestones.name, filters.milestone)).get();
+      // 修复：加 projectId 约束
+      const msConditions = [eq(milestones.name, filters.milestone)];
+      if (filters.projectId) msConditions.push(eq(milestones.projectId, filters.projectId));
+      const m = db.select().from(milestones).where(and(...msConditions)).get();
       if (m) allTasks = allTasks.filter(t => t.milestoneId === m.id);
     }
     if (filters.status) {
       allTasks = allTasks.filter(t => t.status === filters.status);
     }
-    if (filters.owner) {
+    if (filters.owner && filters.assignee) {
+      // OR 逻辑：owner 或 assignee 匹配即可（用于"我的任务"场景）
+      allTasks = allTasks.filter(t => t.owner === filters.owner || (t as any).assignee === filters.assignee);
+    } else if (filters.owner) {
       allTasks = allTasks.filter(t => t.owner === filters.owner);
+    } else if (filters.assignee) {
+      allTasks = allTasks.filter(t => (t as any).assignee === filters.assignee);
     }
     if (filters.label) {
       const label = filters.label;
@@ -421,7 +460,7 @@ export const TaskService = {
 
     // 过滤后保留命中节点的祖先（保持树路径完整）
     const hitIds = new Set(allTasks.map(t => t.id));
-    if (filters.milestone || filters.status || filters.owner || filters.label) {
+    if (filters.milestone || filters.status || filters.owner || filters.assignee || filters.label) {
       const allTasksFull = db.select().from(tasks).all();
       const idMap = new Map(allTasksFull.map(t => [t.id, t]));
       // 向上补全祖先
@@ -521,6 +560,10 @@ export const TaskService = {
     if (newParentTaskId) {
       const parent = db.select().from(tasks).where(eq(tasks.taskId, newParentTaskId)).get();
       if (!parent) return null;
+      // 修复：验证父任务与当前任务在同一项目中，防止跨项目移动
+      if (parent.projectId !== task.projectId) {
+        throw new Error('跨项目引用：不能将节点移动到其他项目的任务下');
+      }
       // 检测是否会形成循环（新父节点不能是当前节点的子孙）
       // _isDescendant(startId, targetId) 从 startId 的子树中查找 targetId
       // 所以要从 task.id 的子树中找 parent.id
@@ -728,7 +771,10 @@ export const TaskService = {
       allRows = allRows.filter(t => (t as any).projectId === filters.projectId);
     }
     if (filters.domain) {
-      const d = db.select().from(domains).where(eq(domains.name, filters.domain)).get();
+      // 修复：加 projectId 约束
+      const domainConditions = [eq(domains.name, filters.domain)];
+      if (filters.projectId) domainConditions.push(eq(domains.projectId, filters.projectId));
+      const d = db.select().from(domains).where(and(...domainConditions)).get();
       if (d) allRows = allRows.filter(t => t.domainId === d.id);
     }
     if (filters.owner) {

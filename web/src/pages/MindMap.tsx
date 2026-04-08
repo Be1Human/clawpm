@@ -23,6 +23,7 @@ import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
+import { useUndoRedo, type UndoCommand } from '@/lib/useUndoRedo';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import TaskDetail from '@/pages/TaskDetail';
 
@@ -798,7 +799,7 @@ function TaskNode({ data, selected }: NodeProps) {
   function commitEdit() {
     setEditing(false);
     const v = editVal.trim();
-    if (v && v !== task.title) (data as any).onRename(task.taskId, v);
+    if (v && v !== task.title) (data as any).onRename(task.taskId, v, task.title);
   }
 
   function handleContextMenu(e: React.MouseEvent) {
@@ -989,18 +990,30 @@ function TaskNode({ data, selected }: NodeProps) {
 // ── 项目虚拟根节点 ──────────────────────────────────────────────────
 function ProjectRootNode({ data }: NodeProps) {
   const projectName = (data as any).projectName || '项目';
+  const isDropTarget: boolean = (data as any).isDropTarget ?? false;
   return (
     <div
       className="relative flex items-center justify-center rounded-2xl select-none"
       style={{
         width: PROJECT_NODE_W,
         height: PROJECT_NODE_H,
-        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-        boxShadow: '0 4px 16px rgba(99,102,241,0.3), 0 0 0 3px rgba(99,102,241,0.1)',
+        background: isDropTarget
+          ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)'
+          : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+        boxShadow: isDropTarget
+          ? '0 0 0 4px rgba(99,102,241,0.4), 0 8px 24px rgba(99,102,241,0.35)'
+          : '0 4px 16px rgba(99,102,241,0.3), 0 0 0 3px rgba(99,102,241,0.1)',
+        transition: 'box-shadow 0.3s, background 0.3s',
       }}
     >
+      {/* 放置目标提示 */}
+      {isDropTarget && (
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
+          放置为根节点
+        </div>
+      )}
       <div className="flex items-center gap-2">
-        <span className="text-white/90 text-lg">🏠</span>
+        <span className="text-white/90 text-lg">{isDropTarget ? '📥' : '🏠'}</span>
         <span className="text-white text-sm font-bold truncate max-w-[90px]">{projectName}</span>
       </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
@@ -1147,6 +1160,19 @@ function MindMapCanvas() {
   const [reparentModal, setReparentModal] = useState<{ taskId: string } | null>(null);
   const draggingNodeId = useRef<string | null>(null);
 
+  // ── Undo/Redo ────────────────────────────────────────────────────
+  const { pushCommand, undo, redo, canUndo, canRedo, undoLabel, redoLabel, isProcessing: undoRedoProcessing } = useUndoRedo({
+    maxStackSize: 50,
+    onInvalidate: () => {
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      qc.invalidateQueries({ queryKey: ['req-links'] });
+    },
+    onError: (action, error) => {
+      console.error(`[UndoRedo] ${action} failed:`, error);
+      alert(`${action === 'undo' ? '撤销' : '重做'}失败: ${error.message}`);
+    },
+  });
+
   useEffect(() => { edgesRef.current = edges; }, [edges]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
 
@@ -1157,7 +1183,7 @@ function MindMapCanvas() {
       const parentEdge = curEdges.find(ed => ed.target === task.taskId && ed.type === 'treeEdge');
       setCreateModal(parentEdge ? { parentId: parentEdge.source, domain: activeDomain } : { domain: activeDomain });
     },
-    onRename: (taskId: string, title: string) => renameMut.mutate({ taskId, title }),
+    onRename: (taskId: string, title: string, oldTitle?: string) => renameMut.mutate({ taskId, title, oldTitle }),
     onDelete: (taskId: string, title: string) => setDeleteConfirm({ taskId, title }),
     onOpenDetail: (taskId: string) => setDetailTaskId(taskId),
     onStartRename: (taskId: string) => setRenamingId(taskId),
@@ -1177,43 +1203,177 @@ function MindMapCanvas() {
   }), []);
 
   const renameMut = useMutation({
-    mutationFn: ({ taskId, title }: { taskId: string; title: string }) => api.updateTask(taskId, { title }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
+    mutationFn: ({ taskId, title, oldTitle }: { taskId: string; title: string; oldTitle?: string }) => api.updateTask(taskId, { title }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      if (vars.oldTitle && vars.oldTitle !== vars.title) {
+        pushCommand({
+          label: `重命名「${vars.oldTitle}」→「${vars.title}」`,
+          undo: async () => { await api.updateTask(vars.taskId, { title: vars.oldTitle! }); },
+          redo: async () => { await api.updateTask(vars.taskId, { title: vars.title }); },
+        });
+      }
+    },
   });
+
+  // 保存删除前的节点数据（用于 undo）
+  const deleteContextRef = useRef<{ task: any; hasChildren: boolean } | null>(null);
 
   const deleteMut = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(taskId),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-tree'] }); setDeleteConfirm(null); },
+    onSuccess: (_data, taskId) => {
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      setDeleteConfirm(null);
+      // 如果是叶子节点，推入 undo command
+      const ctx = deleteContextRef.current;
+      if (ctx && !ctx.hasChildren) {
+        const savedTask = ctx.task;
+        const payload: Record<string, any> = { title: savedTask.title };
+        if (savedTask.description) payload.description = savedTask.description;
+        if (savedTask.labels?.length) payload.labels = savedTask.labels;
+        if (savedTask.priority && savedTask.priority !== 'P2') payload.priority = savedTask.priority;
+        if (savedTask.owner) payload.owner = savedTask.owner;
+        if (savedTask.dueDate) payload.due_date = savedTask.dueDate;
+        if (savedTask.domain?.name) payload.domain = savedTask.domain.name;
+        if (savedTask.milestone?.name) payload.milestone = savedTask.milestone.name;
+        if (savedTask.parentTaskIdStr) payload.parent_task_id = savedTask.parentTaskIdStr;
+        if (savedTask.status && savedTask.status !== 'backlog') payload.status = savedTask.status;
+
+        // 需要用 let 因为 redo 创建后 taskId 会变
+        let currentTaskId = taskId;
+        pushCommand({
+          label: `删除节点「${savedTask.title}」`,
+          undo: async () => {
+            const recreated = await api.createTask(payload);
+            currentTaskId = recreated.taskId;
+          },
+          redo: async () => { await api.deleteTask(currentTaskId); },
+        });
+      }
+      deleteContextRef.current = null;
+    },
     onError: (e: any) => {
       const msg = e.message || '删除失败';
       setDeleteConfirm(prev => prev ? { ...prev, error: msg } : null);
+      deleteContextRef.current = null;
     },
   });
 
   const addLinkMut = useMutation({
     mutationFn: ({ source, target, type }: { source: string; target: string; type: string }) =>
       api.createReqLink(source, target, type),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['req-links'] }); setAddLinkModal(null); },
+    onSuccess: (createdLink: any, vars) => {
+      qc.invalidateQueries({ queryKey: ['req-links'] });
+      setAddLinkModal(null);
+      let linkId = createdLink.id;
+      pushCommand({
+        label: `创建关联线 ${vars.source}→${vars.target}`,
+        undo: async () => { await api.deleteReqLink(linkId); },
+        redo: async () => {
+          const newLink = await api.createReqLink(vars.source, vars.target, vars.type);
+          linkId = newLink.id;
+        },
+      });
+    },
     onError: (e: any) => alert(e.message || '创建关联失败'),
   });
 
+  // 保存待删除的 link 信息（用于 undo）
+  const deleteLinkContextRef = useRef<{ sourceTaskStrId: string; targetTaskStrId: string; linkType: string } | null>(null);
+
   const deleteLinkMut = useMutation({
-    mutationFn: (linkId: number) => api.deleteReqLink(linkId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['req-links'] }),
+    mutationFn: (linkId: number) => {
+      // 在删除前从当前 reqLinks 数据中找到该 link 的信息
+      const link = (reqLinks as any[]).find((l: any) => l.id === linkId);
+      if (link) {
+        deleteLinkContextRef.current = {
+          sourceTaskStrId: link.sourceTaskStrId,
+          targetTaskStrId: link.targetTaskStrId,
+          linkType: link.linkType,
+        };
+      }
+      return api.deleteReqLink(linkId);
+    },
+    onSuccess: (_data, linkId) => {
+      qc.invalidateQueries({ queryKey: ['req-links'] });
+      const ctx = deleteLinkContextRef.current;
+      if (ctx) {
+        let currentLinkId = linkId;
+        pushCommand({
+          label: `删除关联线 ${ctx.sourceTaskStrId}→${ctx.targetTaskStrId}`,
+          undo: async () => {
+            const newLink = await api.createReqLink(ctx.sourceTaskStrId, ctx.targetTaskStrId, ctx.linkType);
+            currentLinkId = newLink.id;
+          },
+          redo: async () => { await api.deleteReqLink(currentLinkId); },
+        });
+      }
+      deleteLinkContextRef.current = null;
+    },
   });
+
+  // 保存 reparent 前的父节点信息
+  const reparentContextRef = useRef<{ oldParentId: string | null } | null>(null);
 
   const reparentMut = useMutation({
-    mutationFn: ({ taskId, newParentId }: { taskId: string; newParentId: string | null }) =>
-      api.reparentTask(taskId, newParentId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
-    onError: (e: any) => alert(e.message || '移动节点失败（可能会形成循环引用）'),
+    mutationFn: ({ taskId, newParentId }: { taskId: string; newParentId: string | null }) => {
+      // 在执行 reparent 前，查找当前父节点
+      const found = findNodeInTree(treeDataRef.current, taskId);
+      reparentContextRef.current = {
+        oldParentId: found?.parent?.taskId ?? null,
+      };
+      return api.reparentTask(taskId, newParentId);
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      const ctx = reparentContextRef.current;
+      if (ctx && ctx.oldParentId !== vars.newParentId) {
+        const oldParentId = ctx.oldParentId;
+        pushCommand({
+          label: `移动节点 ${vars.taskId}`,
+          undo: async () => { await api.reparentTask(vars.taskId, oldParentId); },
+          redo: async () => { await api.reparentTask(vars.taskId, vars.newParentId); },
+        });
+      }
+      reparentContextRef.current = null;
+    },
+    onError: (e: any) => {
+      alert(e.message || '移动节点失败（可能会形成循环引用）');
+      reparentContextRef.current = null;
+    },
   });
 
+  // 保存排序前的旧顺序
+  const reorderContextRef = useRef<{ parentTaskId: string | null; oldOrder: string[] } | null>(null);
+
   const reorderMut = useMutation({
-    mutationFn: ({ parentTaskId, orderedChildIds }: { parentTaskId: string | null; orderedChildIds: string[] }) =>
-      api.reorderChildren(parentTaskId, orderedChildIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
-    onError: (e: any) => alert(e.message || '排序失败'),
+    mutationFn: ({ parentTaskId, orderedChildIds }: { parentTaskId: string | null; orderedChildIds: string[] }) => {
+      // 在排序前保存旧顺序
+      const sibInfo = getSiblingIds(treeDataRef.current, orderedChildIds[0]);
+      if (sibInfo) {
+        reorderContextRef.current = {
+          parentTaskId,
+          oldOrder: sibInfo.siblingIds,
+        };
+      }
+      return api.reorderChildren(parentTaskId, orderedChildIds);
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['task-tree'] });
+      const ctx = reorderContextRef.current;
+      if (ctx) {
+        pushCommand({
+          label: `重新排序子节点`,
+          undo: async () => { await api.reorderChildren(ctx.parentTaskId, ctx.oldOrder); },
+          redo: async () => { await api.reorderChildren(vars.parentTaskId, vars.orderedChildIds); },
+        });
+      }
+      reorderContextRef.current = null;
+    },
+    onError: (e: any) => {
+      alert(e.message || '排序失败');
+      reorderContextRef.current = null;
+    },
   });
 
   // 重建图
@@ -1398,7 +1558,23 @@ function MindMapCanvas() {
       }));
     };
 
-    // 情况 1：放在目标节点上 → reparent（变为子节点）
+    // 情况 1a：放在虚拟根节点上 → reparent 到 null（变为根节点）
+    if (targetId === PROJECT_NODE_ID) {
+      // 检查是否已经是根节点（没有父边）
+      const currentParentEdge = edgesRef.current.find(
+        ed => ed.target === dragId && ed.type === 'treeEdge' && ed.source !== PROJECT_NODE_ID
+      );
+      if (currentParentEdge) {
+        restorePositions();
+        reparentMut.mutate({ taskId: dragId, newParentId: null });
+        return;
+      }
+      // 已经是根节点，恢复原位
+      restorePositions();
+      return;
+    }
+
+    // 情况 1b：放在目标节点上 → reparent（变为子节点）
     if (targetId && targetId !== dragId) {
       const currentParentEdge = edgesRef.current.find(
         ed => ed.target === dragId && ed.type === 'treeEdge'
@@ -1468,8 +1644,23 @@ function MindMapCanvas() {
   // 键盘快捷键
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      if (!selectedId) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Undo: Ctrl+Z / Cmd+Z
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      // Redo: Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y
+      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') ||
+          ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      if (!selectedId) return;
       if (e.key === 'Tab') {
         e.preventDefault();
         setCreateModal({ parentId: selectedId, domain: activeDomain });
@@ -1486,7 +1677,7 @@ function MindMapCanvas() {
     }
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedId]);
+  }, [selectedId, undo, redo]);
 
   return (
     <div className="w-full h-full relative" onClick={() => setContextMenu(null)}>
@@ -1827,6 +2018,40 @@ function MindMapCanvas() {
             >
               + 新建根节点
             </button>
+
+            {/* 撤销/重做按钮 */}
+            <div className="flex items-center bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm p-1 gap-0.5">
+              <button
+                onClick={() => undo()}
+                disabled={!canUndo || undoRedoProcessing}
+                title={undoLabel ? `撤销: ${undoLabel}` : '撤销 (Ctrl+Z)'}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  canUndo && !undoRedoProcessing
+                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    : 'text-gray-300 cursor-not-allowed'
+                )}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4" />
+                </svg>
+              </button>
+              <button
+                onClick={() => redo()}
+                disabled={!canRedo || undoRedoProcessing}
+                title={redoLabel ? `重做: ${redoLabel}` : '重做 (Ctrl+Shift+Z)'}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  canRedo && !undoRedoProcessing
+                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    : 'text-gray-300 cursor-not-allowed'
+                )}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a5 5 0 00-5 5v2M21 10l-4-4M21 10l-4 4" />
+                </svg>
+              </button>
+            </div>
           </div>
         </Panel>
 
@@ -1837,6 +2062,8 @@ function MindMapCanvas() {
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Tab</kbd> 添加子节点</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Enter</kbd> 添加同级</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Del</kbd> 删除</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Ctrl+Z</kbd> 撤销</span>
+            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Ctrl+Shift+Z</kbd> 重做</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">双击</kbd> 打开详情</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">右键</kbd> 更多操作</span>
           </div>
@@ -1871,6 +2098,18 @@ function MindMapCanvas() {
         <CreateTaskModal
           defaultParentId={createModal.parentId}
           defaultDomain={createModal.domain}
+          onCreated={(createdTask: any, payload: Record<string, any>) => {
+            // 创建成功后推入 undo command
+            let currentTaskId = createdTask.taskId;
+            pushCommand({
+              label: `创建节点「${createdTask.title}」`,
+              undo: async () => { await api.deleteTask(currentTaskId); },
+              redo: async () => {
+                const newTask = await api.createTask(payload);
+                currentTaskId = newTask.taskId;
+              },
+            });
+          }}
           onClose={() => {
             setCreateModal(null);
             qc.invalidateQueries({ queryKey: ['task-tree'] });
@@ -1931,7 +2170,14 @@ function MindMapCanvas() {
       )}
 
       {/* 删除确认 */}
-      {deleteConfirm && (
+      {deleteConfirm && (() => {
+        const taskData = nodeDataMap.current.get(deleteConfirm.taskId);
+        const hasChildren = taskData?.children?.length > 0 ||
+          (treeDataRef.current && (() => {
+            const found = findNodeInTree(treeDataRef.current, deleteConfirm.taskId);
+            return found?.node?.children?.length > 0;
+          })());
+        return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
             {deleteConfirm.error ? (
@@ -1956,13 +2202,31 @@ function MindMapCanvas() {
             ) : (
               <>
                 <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
-                <p className="text-sm text-gray-500 mb-4">
+                <p className="text-sm text-gray-500 mb-2">
                   将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
                 </p>
+                {hasChildren ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">
+                    ⚠️ 该节点含有子节点，删除后<strong>不可撤销</strong>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mb-4">
+                    💡 删除后可通过 Ctrl+Z 撤销
+                  </p>
+                )}
                 <div className="flex gap-3 justify-end">
                   <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
                   <button
-                    onClick={() => deleteMut.mutate(deleteConfirm.taskId)}
+                    onClick={() => {
+                      // 保存删除前的节点数据到 ref（供 undo 使用）
+                      const task = nodeDataMap.current.get(deleteConfirm.taskId);
+                      const found = findNodeInTree(treeDataRef.current, deleteConfirm.taskId);
+                      deleteContextRef.current = {
+                        task: task || found?.node,
+                        hasChildren: !!hasChildren,
+                      };
+                      deleteMut.mutate(deleteConfirm.taskId);
+                    }}
                     className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg"
                     disabled={deleteMut.isPending}
                   >
@@ -1973,7 +2237,8 @@ function MindMapCanvas() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

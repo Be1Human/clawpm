@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
@@ -16,9 +16,11 @@ interface Props {
   onClose: () => void;
   defaultParentId?: string;
   defaultDomain?: string;
+  /** 创建成功后回调，传回创建的任务数据（含 taskId）和创建时的 payload，用于 undo/redo */
+  onCreated?: (task: any, payload: Record<string, any>) => void;
 }
 
-export default function CreateTaskModal({ onClose, defaultParentId, defaultDomain }: Props) {
+export default function CreateTaskModal({ onClose, defaultParentId, defaultDomain, onCreated }: Props) {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
 
@@ -63,15 +65,20 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
 
   const [errorMsg, setErrorMsg] = useState('');
 
+  // 保存最近一次提交的 payload，供 onSuccess 回调使用
+  const lastPayloadRef = useRef<Record<string, any>>({});
+
   const mut = useMutation({
     mutationFn: (data: any) => api.createTask(data),
-    onSuccess: () => {
+    onSuccess: (createdTask: any) => {
       setErrorMsg('');
       // invalidate 所有与任务相关的查询（task-tree、task-tree-kanban、task-tree-req、tasks 等）
       qc.invalidateQueries({ predicate: (q) => {
         const key = q.queryKey[0];
         return typeof key === 'string' && (key.startsWith('task') || key === 'backlog');
       }});
+      // 通知父组件创建成功（用于 undo/redo）
+      onCreated?.(createdTask, lastPayloadRef.current);
       onClose();
     },
     onError: (err: any) => {
@@ -92,6 +99,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.due_date) payload.due_date = form.due_date;
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
+    lastPayloadRef.current = payload;
     mut.mutate(payload);
   }
 

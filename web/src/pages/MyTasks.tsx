@@ -82,7 +82,7 @@ function countMyNodes(nodes: any[], owner: string): Record<string, number> {
   const now = new Date().toISOString().slice(0, 10);
   function walk(list: any[]) {
     for (const n of list) {
-      if (n.owner === owner) {
+      if (n.owner === owner || n.assignee === owner) {
         counts.total++;
         if (n.status === 'active') counts.active++;
         if (n.status === 'review') counts.review++;
@@ -100,7 +100,7 @@ function flattenMyNodes(nodes: any[], owner: string): any[] {
   const result: any[] = [];
   function walk(list: any[]) {
     for (const n of list) {
-      if (n.owner === owner) result.push(n);
+      if (n.owner === owner || n.assignee === owner) result.push(n);
       if (n.children?.length) walk(n.children);
     }
   }
@@ -228,7 +228,7 @@ function MyTreeNode({
   const [expanded, setExpanded] = useState(true);
   const children: any[] = node.children || [];
   const hasChildren = children.length > 0;
-  const isMine = node.owner === currentUser;
+  const isMine = node.owner === currentUser || node.assignee === currentUser;
   const breadcrumb = isMine ? buildBreadcrumb(node, allNodesMap) : [];
 
   return (
@@ -731,7 +731,7 @@ function buildMyMindMapFlow(
       position: pos,
       data: {
         task: node,
-        isMine: node.owner === currentUser,
+        isMine: node.owner === currentUser || node.assignee === currentUser,
         isCollapsed: collapsed.has(id),
         isFocused: focusNodeId === id,
         onToggleCollapse,
@@ -1146,7 +1146,7 @@ export default function MyTasks({ defaultView = 'tree' }: { defaultView?: ViewMo
 
   const { data: tree = [], isLoading } = useQuery({
     queryKey: ['my-task-tree', activeProject, currentUser],
-    queryFn: () => api.getTaskTree(currentUser ? { owner: currentUser } : undefined),
+    queryFn: () => api.getTaskTree(currentUser ? { owner: currentUser, assignee: currentUser } : undefined),
     enabled: !!currentUser,
   });
 

@@ -222,14 +222,14 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/v1/tasks', async (req) => {
     const q = req.query as any;
     const projectId = getProjectId(req);
-    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, priority: q.priority, label: q.label, projectId });
+    return TaskService.list({ status: q.status, domain: q.domain, milestone: q.milestone, owner: q.owner, assignee: q.assignee, priority: q.priority, label: q.label, projectId });
   });
 
   // 树形接口（必须在 /:taskId 之前注册，避免路由冲突）
   app.get('/api/v1/tasks/tree', async (req) => {
     const q = req.query as any;
     const projectId = getProjectId(req);
-    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, label: q.label, projectId });
+    return TaskService.getTree(q.domain, { milestone: q.milestone, status: q.status, owner: q.owner, assignee: q.assignee, label: q.label, projectId });
   });
 
   // 轻量级树形大纲（无 enrichment，适合 Agent 快速浏览）
