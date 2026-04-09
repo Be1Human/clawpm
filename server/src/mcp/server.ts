@@ -86,6 +86,9 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     due_date: z.string().optional().describe('截止日期 YYYY-MM-DD'),
     status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional().describe('状态，默认 backlog'),
     tags: z.array(z.string()).optional(),
+    schedule_mode: z.enum(['once', 'recurring', 'scheduled', 'milestone_driven', 'on_demand']).optional().describe('调度类型：once=一次性(默认), recurring=周期循环, scheduled=定时触发, milestone_driven=里程碑驱动, on_demand=按需触发'),
+    schedule_cron: z.string().optional().describe('cron 表达式（recurring 时使用）'),
+    schedule_config: z.record(z.string(), z.unknown()).optional().describe('调度附加配置 JSON'),
     project: z.string().optional().describe('项目 slug，不填则使用默认项目'),
   }, async (p) => {
     const { project, ...rest } = p;
@@ -740,6 +743,9 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     priority: z.string().optional(),
     owner: z.string().optional(),
     labels: z.array(z.string()).optional(),
+    schedule_mode: z.enum(['once', 'recurring', 'scheduled', 'milestone_driven', 'on_demand']).optional().describe('调度类型'),
+    schedule_cron: z.string().optional().describe('cron 表达式（recurring 时使用）'),
+    schedule_config: z.record(z.string(), z.unknown()).optional().describe('调度附加配置 JSON'),
   }, async (p) => {
     const { task_ids, ...updates } = p;
     const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
