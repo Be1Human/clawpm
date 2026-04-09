@@ -23,18 +23,17 @@ import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useActiveProject } from '@/lib/useActiveProject';
-import { useUndoRedo, type UndoCommand } from '@/lib/useUndoRedo';
 import CreateTaskModal from '@/components/CreateTaskModal';
 import TaskDetail from '@/pages/TaskDetail';
 
 // ── 布局常量 ──────────────────────────────────────────────────────
-const NODE_W  = 260;
-const NODE_H  = 44;
+const NODE_W  = 280;
+const NODE_H  = 48;
 const H_GAP   = 60;
-const V_GAP   = 8;
-const ROOT_GAP = 24;
-const PROJECT_NODE_W = 130;
-const PROJECT_NODE_H = 38;
+const V_GAP   = 10;
+const ROOT_GAP = 28;
+const PROJECT_NODE_W = 140;
+const PROJECT_NODE_H = 48;
 const PROJECT_NODE_ID = '__project_root__';
 
 // ── 标签色系 ──────────────────────────────────────────────────────
@@ -54,7 +53,6 @@ interface NodeStyle {
   textColor?: string;
   borderWidth?: number;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
-  borderMode?: 'bar' | 'half' | 'full'; // v3.4: bar=左色条(默认), half=半包围, full=全包围
   emoji?: string;
 }
 
@@ -549,8 +547,7 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
   const [style, setStyle] = useState<NodeStyle>({ ...current });
 
   const hasCustom = !!(style.bgColor || style.borderColor || style.textColor || style.emoji
-    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid')
-    || (style.borderMode && style.borderMode !== 'bar'));
+    || (style.borderWidth && style.borderWidth !== 2) || (style.borderStyle && style.borderStyle !== 'solid'));
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
@@ -562,66 +559,19 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
 
         {/* 预览 */}
         <div className="mb-5 flex justify-center">
-          {(() => {
-            const mode = style.borderMode ?? 'bar';
-            const bColor = style.borderColor || '#6366f1';
-            const bWidth = style.borderWidth || 2;
-            const bStyle = style.borderStyle || 'solid';
-
-            if (mode === 'full') {
-              return (
-                <div
-                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                  style={{
-                    backgroundColor: style.bgColor || '#fff',
-                    border: `${bWidth}px ${bStyle} ${bColor}`,
-                    color: style.textColor || '#1f2937',
-                  }}
-                >
-                  <span className="text-sm font-semibold">
-                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                    {taskTitle}
-                  </span>
-                </div>
-              );
-            }
-            if (mode === 'half') {
-              return (
-                <div
-                  className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                  style={{
-                    backgroundColor: style.bgColor || '#fff',
-                    borderLeft: `${bWidth + 1}px ${bStyle} ${bColor}`,
-                    borderTop: `${bWidth}px ${bStyle} ${bColor}`,
-                    borderBottom: `${bWidth}px ${bStyle} ${bColor}`,
-                    borderRight: `1px solid #e2e8f0`,
-                    color: style.textColor || '#1f2937',
-                  }}
-                >
-                  <span className="text-sm font-semibold">
-                    {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                    {taskTitle}
-                  </span>
-                </div>
-              );
-            }
-            // bar mode (default)
-            return (
-              <div className="relative rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
-                style={{
-                  backgroundColor: style.bgColor || '#fff',
-                  border: `${bWidth}px ${bStyle} ${style.borderColor || '#e2e8f0'}`,
-                  color: style.textColor || '#1f2937',
-                }}
-              >
-                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: bColor }} />
-                <span className="text-sm font-semibold">
-                  {style.emoji && <span className="mr-1">{style.emoji}</span>}
-                  {taskTitle}
-                </span>
-              </div>
-            );
-          })()}
+          <div
+            className="rounded-xl px-5 py-3 min-w-[180px] text-center transition-all"
+            style={{
+              backgroundColor: style.bgColor || '#fff',
+              border: `${style.borderWidth || 2}px ${style.borderStyle || 'solid'} ${style.borderColor || '#e2e8f0'}`,
+              color: style.textColor || '#1f2937',
+            }}
+          >
+            <span className="text-sm font-semibold">
+              {style.emoji && <span className="mr-1">{style.emoji}</span>}
+              {taskTitle}
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -669,29 +619,6 @@ function NodeStyleModal({ taskId, taskTitle, current, onSave, onClose }: {
                   title={c || '默认'}
                 >
                   {!c && <span className="text-[8px] text-gray-400 block">默认</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 包围模式 (v3.4) */}
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1.5 block">包围模式</label>
-            <div className="flex gap-2">
-              {([
-                { mode: 'bar' as const, label: '左色条', desc: '仅左侧色条' },
-                { mode: 'half' as const, label: '半包围', desc: '左+上+下三边' },
-                { mode: 'full' as const, label: '全包围', desc: '四边全色边框' },
-              ]).map(({ mode, label, desc }) => (
-                <button key={mode}
-                  onClick={() => setStyle(s => ({ ...s, borderMode: mode === 'bar' ? undefined : mode }))}
-                  className={cn('flex-1 py-2 rounded-lg border text-center transition-all',
-                    (style.borderMode ?? 'bar') === mode
-                      ? 'border-indigo-400 bg-indigo-50 text-indigo-600'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300')}
-                >
-                  <div className="text-[11px] font-medium">{label}</div>
-                  <div className="text-[9px] text-gray-400 mt-0.5">{desc}</div>
                 </button>
               ))}
             </div>
@@ -799,7 +726,7 @@ function TaskNode({ data, selected }: NodeProps) {
   function commitEdit() {
     setEditing(false);
     const v = editVal.trim();
-    if (v && v !== task.title) (data as any).onRename(task.taskId, v, task.title);
+    if (v && v !== task.title) (data as any).onRename(task.taskId, v);
   }
 
   function handleContextMenu(e: React.MouseEvent) {
@@ -808,10 +735,7 @@ function TaskNode({ data, selected }: NodeProps) {
   }
 
   // 样式优先级：放置目标 > 用户自定义 > domain高亮 > label色系 > 默认
-  const borderMode = nodeStyle.borderMode ?? 'bar';
-  const accentColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
   const resolvedBorder = isDropTarget ? '#6366f1'
-    : borderMode === 'full' ? accentColor
     : nodeStyle.borderColor
     || (selected ? colors.border : isHighlighted ? `${hlColor}90` : '#e2e8f0');
   const resolvedBg = isDropTarget ? '#eef2ff'
@@ -820,7 +744,7 @@ function TaskNode({ data, selected }: NodeProps) {
   const resolvedTextColor = nodeStyle.textColor || '#1f2937';
   const resolvedBorderWidth = isDropTarget ? 3 : (nodeStyle.borderWidth ?? 2);
   const resolvedBorderStyle = isDropTarget ? 'dashed' as const : (nodeStyle.borderStyle ?? 'solid');
-  const barColor = accentColor;
+  const barColor = nodeStyle.borderColor || (isHighlighted ? hlColor! : colors.border);
 
   const boxShadow = (() => {
     if (isDropTarget) return '0 0 0 4px rgba(99,102,241,0.2), 0 8px 24px rgba(99,102,241,0.15)';
@@ -829,94 +753,71 @@ function TaskNode({ data, selected }: NodeProps) {
     return base;
   })();
 
-  // 根据 borderMode 计算边框样式
-  const borderStyles: React.CSSProperties = (() => {
-    if (isDropTarget) {
-      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
-    }
-    if (borderMode === 'full') {
-      return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}` };
-    }
-    if (borderMode === 'half') {
-      return {
-        borderLeft: `${resolvedBorderWidth + 1}px ${resolvedBorderStyle} ${accentColor}`,
-        borderTop: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
-        borderBottom: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${accentColor}`,
-        borderRight: `1px solid #e2e8f0`,
-      };
-    }
-    // bar mode
-    return { border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}` };
-  })();
-  const showBar = borderMode === 'bar' && !isDropTarget;
-
   return (
     <div
       className="relative rounded-xl select-none"
       style={{
         width: NODE_W,
         minHeight: NODE_H,
-        ...borderStyles,
+        border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
         boxShadow,
         backgroundColor: resolvedBg,
         transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
-        overflow: 'visible',
       }}
       onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
       onContextMenu={handleContextMenu}
     >
-      {/* 左侧色条（仅 bar 模式显示） */}
-      {showBar && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
-      )}
+      {/* 左侧色条 */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
 
       {/* 拖拽把手 */}
-      <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-px cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
+      <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
         {[0, 1].map(i => <div key={i} className="w-0.5 h-0.5 bg-gray-400 rounded-full" />)}
       </div>
 
       {/* 放置目标提示 */}
       {isDropTarget && (
-        <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
           放置为子节点
         </div>
       )}
 
-      <div className="pl-5 pr-7 py-1.5 flex items-center gap-1.5 min-h-[40px]">
-        {/* 左侧：标签 pill */}
-        {firstLabel && (
-          <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-            style={{ backgroundColor: colors.pill, color: colors.text }}>
-            {firstLabel}{labels.length > 1 ? `+${labels.length - 1}` : ''}
-          </span>
-        )}
-
-        {/* 中间：标题（单行截断） */}
-        <div className="flex-1 min-w-0">
-          {editing ? (
-            <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
-              onBlur={commitEdit}
-              onKeyDown={e => {
-                e.stopPropagation();
-                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-                if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
-              }}
-              className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
-          ) : (
-            <p className="text-[12px] font-semibold leading-tight truncate" style={{ color: resolvedTextColor }} title={task.title}>
-              {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
-              {task.title}
-            </p>
+      <div className="pl-5 pr-8 py-1.5">
+        {/* 上行：标签 + 标题 */}
+        <div className="flex items-center gap-1.5">
+          {firstLabel && (
+            <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+              style={{ backgroundColor: colors.pill, color: colors.text }}>
+              {firstLabel}{labels.length > 1 ? `+${labels.length - 1}` : ''}
+            </span>
           )}
-          {/* 底部 meta 行 */}
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
-            {task.owner && <span className="text-[9px] text-gray-400 truncate max-w-[50px]">{task.owner}</span>}
-            {(task.attachmentCount ?? 0) > 0 && (
-              <span className="text-[9px] text-gray-400">📎{task.attachmentCount}</span>
+          <div className="flex-1 min-w-0">
+            {editing ? (
+              <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+                  if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
+                }}
+                className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
+            ) : (
+              <p className="text-[12px] font-semibold leading-tight truncate" style={{ color: resolvedTextColor }} title={task.title}>
+                {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
+                {task.title}
+              </p>
             )}
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={STATUS_LABEL_CN[task.status] ?? task.status} />
           </div>
+        </div>
+
+        {/* 下行：meta 信息 */}
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
+          {(task.attachmentCount ?? 0) > 0 && (
+            <span className="text-[9px] text-gray-400" title={`${task.attachmentCount} 个附件`}>📎{task.attachmentCount}</span>
+          )}
+          {task.owner && <span className="text-[9px] text-gray-400 truncate max-w-[60px]">{task.owner}</span>}
+          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={task.status} />
         </div>
       </div>
 
@@ -925,10 +826,10 @@ function TaskNode({ data, selected }: NodeProps) {
         <ProgressRing progress={progress} size={18} />
       </div>
 
-      {/* 右侧：有子节点时显示展开/收缩 */}
+      {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
       {hasChildren && (
         <button
-          className="nopan nodrag nowheel absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[9px] shadow-sm z-10 transition-colors"
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
           title={isCollapsed ? '展开' : '折叠'}
@@ -942,7 +843,7 @@ function TaskNode({ data, selected }: NodeProps) {
         <>
           {/* 右侧添加子节点 */}
           <button
-            className="nopan nodrag nowheel absolute -right-3 -bottom-3 w-5 h-5 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-xs shadow-md z-20 transition-colors"
+            className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
             title="添加子节点 (Tab)"
@@ -952,7 +853,7 @@ function TaskNode({ data, selected }: NodeProps) {
           {/* 下方添加同级 */}
           {!isRoot && (
             <button
-              className="nopan nodrag nowheel absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-xs shadow-md z-20 transition-colors"
+              className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
               onMouseDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
               title="添加同级 (Enter)"
@@ -966,7 +867,7 @@ function TaskNode({ data, selected }: NodeProps) {
       {/* 子节点计数气泡（折叠时显示） */}
       {isCollapsed && hasChildren && (
         <div
-          className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 text-[8px] font-bold px-1 rounded-full text-white"
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 rounded-full text-white"
           style={{ backgroundColor: colors.border }}
         >
           {task.children.length}
@@ -982,31 +883,19 @@ function TaskNode({ data, selected }: NodeProps) {
 // ── 项目虚拟根节点 ──────────────────────────────────────────────────
 function ProjectRootNode({ data }: NodeProps) {
   const projectName = (data as any).projectName || '项目';
-  const isDropTarget: boolean = (data as any).isDropTarget ?? false;
   return (
     <div
       className="relative flex items-center justify-center rounded-2xl select-none"
       style={{
         width: PROJECT_NODE_W,
         height: PROJECT_NODE_H,
-        background: isDropTarget
-          ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)'
-          : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-        boxShadow: isDropTarget
-          ? '0 0 0 4px rgba(99,102,241,0.4), 0 8px 24px rgba(99,102,241,0.35)'
-          : '0 4px 16px rgba(99,102,241,0.3), 0 0 0 3px rgba(99,102,241,0.1)',
-        transition: 'box-shadow 0.3s, background 0.3s',
+        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+        boxShadow: '0 4px 16px rgba(99,102,241,0.3), 0 0 0 3px rgba(99,102,241,0.1)',
       }}
     >
-      {/* 放置目标提示 */}
-      {isDropTarget && (
-        <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
-          放置为根节点
-        </div>
-      )}
-      <div className="flex items-center gap-1.5">
-        <span className="text-white/90 text-base">{isDropTarget ? '📥' : '🏠'}</span>
-        <span className="text-white text-xs font-bold truncate max-w-[80px]">{projectName}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-white/90 text-lg">🏠</span>
+        <span className="text-white text-sm font-bold truncate max-w-[90px]">{projectName}</span>
       </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
     </div>
@@ -1062,7 +951,7 @@ function MindMapCanvas() {
   const [selectedId, setSelectedId] = useState<string | null>(() => loadState('selectedId', null));
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadState<string[]>('collapsed', [])));
   const [createModal, setCreateModal] = useState<{ parentId?: string; domain?: string } | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string; error?: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; title: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: any } | null>(null);
   const [addLinkModal, setAddLinkModal] = useState<{ sourceId: string } | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -1152,19 +1041,6 @@ function MindMapCanvas() {
   const [reparentModal, setReparentModal] = useState<{ taskId: string } | null>(null);
   const draggingNodeId = useRef<string | null>(null);
 
-  // ── Undo/Redo ────────────────────────────────────────────────────
-  const { pushCommand, undo, redo, canUndo, canRedo, undoLabel, redoLabel, isProcessing: undoRedoProcessing } = useUndoRedo({
-    maxStackSize: 50,
-    onInvalidate: () => {
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
-      qc.invalidateQueries({ queryKey: ['req-links'] });
-    },
-    onError: (action, error) => {
-      console.error(`[UndoRedo] ${action} failed:`, error);
-      alert(`${action === 'undo' ? '撤销' : '重做'}失败: ${error.message}`);
-    },
-  });
-
   useEffect(() => { edgesRef.current = edges; }, [edges]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
 
@@ -1175,197 +1051,54 @@ function MindMapCanvas() {
       const parentEdge = curEdges.find(ed => ed.target === task.taskId && ed.type === 'treeEdge');
       setCreateModal(parentEdge ? { parentId: parentEdge.source, domain: activeDomain } : { domain: activeDomain });
     },
-    onRename: (taskId: string, title: string, oldTitle?: string) => renameMut.mutate({ taskId, title, oldTitle }),
+    onRename: (taskId: string, title: string) => renameMut.mutate({ taskId, title }),
     onDelete: (taskId: string, title: string) => setDeleteConfirm({ taskId, title }),
     onOpenDetail: (taskId: string) => setDetailTaskId(taskId),
     onStartRename: (taskId: string) => setRenamingId(taskId),
     onClearRenaming: () => setRenamingId(null),
-    onToggleCollapse: (taskId: string) => {
-      console.log('[DEBUG] onToggleCollapse called:', taskId);
-      setCollapsed(prev => {
-        const next = new Set(prev);
-        const wasCollapsed = next.has(taskId);
-        wasCollapsed ? next.delete(taskId) : next.add(taskId);
-        console.log('[DEBUG] collapsed state:', taskId, wasCollapsed ? 'expanding' : 'collapsing', 'set size:', next.size);
-        return next;
-      });
-    },
+    onToggleCollapse: (taskId: string) => setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
+    }),
     onContextMenu: (x: number, y: number, task: any) => setContextMenu({ x, y, task }),
     onDeleteLink: (linkId: number) => deleteLinkMut.mutate(linkId),
   }), []);
 
   const renameMut = useMutation({
-    mutationFn: ({ taskId, title, oldTitle }: { taskId: string; title: string; oldTitle?: string }) => api.updateTask(taskId, { title }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
-      if (vars.oldTitle && vars.oldTitle !== vars.title) {
-        pushCommand({
-          label: `重命名「${vars.oldTitle}」→「${vars.title}」`,
-          undo: async () => { await api.updateTask(vars.taskId, { title: vars.oldTitle! }); },
-          redo: async () => { await api.updateTask(vars.taskId, { title: vars.title }); },
-        });
-      }
-    },
+    mutationFn: ({ taskId, title }: { taskId: string; title: string }) => api.updateTask(taskId, { title }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
   });
-
-  // 保存删除前的节点数据（用于 undo）
-  const deleteContextRef = useRef<{ task: any; hasChildren: boolean } | null>(null);
 
   const deleteMut = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(taskId),
-    onSuccess: (_data, taskId) => {
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
-      setDeleteConfirm(null);
-      // 如果是叶子节点，推入 undo command
-      const ctx = deleteContextRef.current;
-      if (ctx && !ctx.hasChildren) {
-        const savedTask = ctx.task;
-        const payload: Record<string, any> = { title: savedTask.title };
-        if (savedTask.description) payload.description = savedTask.description;
-        if (savedTask.labels?.length) payload.labels = savedTask.labels;
-        if (savedTask.priority && savedTask.priority !== 'P2') payload.priority = savedTask.priority;
-        if (savedTask.owner) payload.owner = savedTask.owner;
-        if (savedTask.dueDate) payload.due_date = savedTask.dueDate;
-        if (savedTask.domain?.name) payload.domain = savedTask.domain.name;
-        if (savedTask.milestone?.name) payload.milestone = savedTask.milestone.name;
-        if (savedTask.parentTaskIdStr) payload.parent_task_id = savedTask.parentTaskIdStr;
-        if (savedTask.status && savedTask.status !== 'backlog') payload.status = savedTask.status;
-
-        // 需要用 let 因为 redo 创建后 taskId 会变
-        let currentTaskId = taskId;
-        pushCommand({
-          label: `删除节点「${savedTask.title}」`,
-          undo: async () => {
-            const recreated = await api.createTask(payload);
-            currentTaskId = recreated.taskId;
-          },
-          redo: async () => { await api.deleteTask(currentTaskId); },
-        });
-      }
-      deleteContextRef.current = null;
-    },
-    onError: (e: any) => {
-      const msg = e.message || '删除失败';
-      setDeleteConfirm(prev => prev ? { ...prev, error: msg } : null);
-      deleteContextRef.current = null;
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-tree'] }); setDeleteConfirm(null); },
   });
 
   const addLinkMut = useMutation({
     mutationFn: ({ source, target, type }: { source: string; target: string; type: string }) =>
       api.createReqLink(source, target, type),
-    onSuccess: (createdLink: any, vars) => {
-      qc.invalidateQueries({ queryKey: ['req-links'] });
-      setAddLinkModal(null);
-      let linkId = createdLink.id;
-      pushCommand({
-        label: `创建关联线 ${vars.source}→${vars.target}`,
-        undo: async () => { await api.deleteReqLink(linkId); },
-        redo: async () => {
-          const newLink = await api.createReqLink(vars.source, vars.target, vars.type);
-          linkId = newLink.id;
-        },
-      });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['req-links'] }); setAddLinkModal(null); },
     onError: (e: any) => alert(e.message || '创建关联失败'),
   });
 
-  // 保存待删除的 link 信息（用于 undo）
-  const deleteLinkContextRef = useRef<{ sourceTaskStrId: string; targetTaskStrId: string; linkType: string } | null>(null);
-
   const deleteLinkMut = useMutation({
-    mutationFn: (linkId: number) => {
-      // 在删除前从当前 reqLinks 数据中找到该 link 的信息
-      const link = (reqLinks as any[]).find((l: any) => l.id === linkId);
-      if (link) {
-        deleteLinkContextRef.current = {
-          sourceTaskStrId: link.sourceTaskStrId,
-          targetTaskStrId: link.targetTaskStrId,
-          linkType: link.linkType,
-        };
-      }
-      return api.deleteReqLink(linkId);
-    },
-    onSuccess: (_data, linkId) => {
-      qc.invalidateQueries({ queryKey: ['req-links'] });
-      const ctx = deleteLinkContextRef.current;
-      if (ctx) {
-        let currentLinkId = linkId;
-        pushCommand({
-          label: `删除关联线 ${ctx.sourceTaskStrId}→${ctx.targetTaskStrId}`,
-          undo: async () => {
-            const newLink = await api.createReqLink(ctx.sourceTaskStrId, ctx.targetTaskStrId, ctx.linkType);
-            currentLinkId = newLink.id;
-          },
-          redo: async () => { await api.deleteReqLink(currentLinkId); },
-        });
-      }
-      deleteLinkContextRef.current = null;
-    },
+    mutationFn: (linkId: number) => api.deleteReqLink(linkId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['req-links'] }),
   });
-
-  // 保存 reparent 前的父节点信息
-  const reparentContextRef = useRef<{ oldParentId: string | null } | null>(null);
 
   const reparentMut = useMutation({
-    mutationFn: ({ taskId, newParentId }: { taskId: string; newParentId: string | null }) => {
-      // 在执行 reparent 前，查找当前父节点
-      const found = findNodeInTree(treeDataRef.current, taskId);
-      reparentContextRef.current = {
-        oldParentId: found?.parent?.taskId ?? null,
-      };
-      return api.reparentTask(taskId, newParentId);
-    },
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
-      const ctx = reparentContextRef.current;
-      if (ctx && ctx.oldParentId !== vars.newParentId) {
-        const oldParentId = ctx.oldParentId;
-        pushCommand({
-          label: `移动节点 ${vars.taskId}`,
-          undo: async () => { await api.reparentTask(vars.taskId, oldParentId); },
-          redo: async () => { await api.reparentTask(vars.taskId, vars.newParentId); },
-        });
-      }
-      reparentContextRef.current = null;
-    },
-    onError: (e: any) => {
-      alert(e.message || '移动节点失败（可能会形成循环引用）');
-      reparentContextRef.current = null;
-    },
+    mutationFn: ({ taskId, newParentId }: { taskId: string; newParentId: string | null }) =>
+      api.reparentTask(taskId, newParentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
+    onError: (e: any) => alert(e.message || '移动节点失败（可能会形成循环引用）'),
   });
 
-  // 保存排序前的旧顺序
-  const reorderContextRef = useRef<{ parentTaskId: string | null; oldOrder: string[] } | null>(null);
-
   const reorderMut = useMutation({
-    mutationFn: ({ parentTaskId, orderedChildIds }: { parentTaskId: string | null; orderedChildIds: string[] }) => {
-      // 在排序前保存旧顺序
-      const sibInfo = getSiblingIds(treeDataRef.current, orderedChildIds[0]);
-      if (sibInfo) {
-        reorderContextRef.current = {
-          parentTaskId,
-          oldOrder: sibInfo.siblingIds,
-        };
-      }
-      return api.reorderChildren(parentTaskId, orderedChildIds);
-    },
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['task-tree'] });
-      const ctx = reorderContextRef.current;
-      if (ctx) {
-        pushCommand({
-          label: `重新排序子节点`,
-          undo: async () => { await api.reorderChildren(ctx.parentTaskId, ctx.oldOrder); },
-          redo: async () => { await api.reorderChildren(vars.parentTaskId, vars.orderedChildIds); },
-        });
-      }
-      reorderContextRef.current = null;
-    },
-    onError: (e: any) => {
-      alert(e.message || '排序失败');
-      reorderContextRef.current = null;
-    },
+    mutationFn: ({ parentTaskId, orderedChildIds }: { parentTaskId: string | null; orderedChildIds: string[] }) =>
+      api.reorderChildren(parentTaskId, orderedChildIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-tree'] }),
+    onError: (e: any) => alert(e.message || '排序失败'),
   });
 
   // 重建图
@@ -1550,23 +1283,7 @@ function MindMapCanvas() {
       }));
     };
 
-    // 情况 1a：放在虚拟根节点上 → reparent 到 null（变为根节点）
-    if (targetId === PROJECT_NODE_ID) {
-      // 检查是否已经是根节点（没有父边）
-      const currentParentEdge = edgesRef.current.find(
-        ed => ed.target === dragId && ed.type === 'treeEdge' && ed.source !== PROJECT_NODE_ID
-      );
-      if (currentParentEdge) {
-        restorePositions();
-        reparentMut.mutate({ taskId: dragId, newParentId: null });
-        return;
-      }
-      // 已经是根节点，恢复原位
-      restorePositions();
-      return;
-    }
-
-    // 情况 1b：放在目标节点上 → reparent（变为子节点）
+    // 情况 1：放在目标节点上 → reparent（变为子节点）
     if (targetId && targetId !== dragId) {
       const currentParentEdge = edgesRef.current.find(
         ed => ed.target === dragId && ed.type === 'treeEdge'
@@ -1636,23 +1353,8 @@ function MindMapCanvas() {
   // 键盘快捷键
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      // Undo: Ctrl+Z / Cmd+Z
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
-        e.preventDefault();
-        undo();
-        return;
-      }
-      // Redo: Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y
-      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') ||
-          ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
-        e.preventDefault();
-        redo();
-        return;
-      }
-
       if (!selectedId) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'Tab') {
         e.preventDefault();
         setCreateModal({ parentId: selectedId, domain: activeDomain });
@@ -1669,7 +1371,7 @@ function MindMapCanvas() {
     }
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedId, undo, redo]);
+  }, [selectedId]);
 
   return (
     <div className="w-full h-full relative" onClick={() => setContextMenu(null)}>
@@ -1708,7 +1410,7 @@ function MindMapCanvas() {
 
         {/* 右侧控制面板 */}
         <Panel position="top-right">
-          <div className="flex flex-col gap-2 w-[220px] max-h-[calc(100vh-180px)] overflow-y-auto">
+          <div className="flex flex-col gap-2">
             {/* 关联线可见性 */}
             <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
               <p className="text-xs font-semibold text-gray-500 mb-2">显示关联线</p>
@@ -2010,40 +1712,6 @@ function MindMapCanvas() {
             >
               + 新建根节点
             </button>
-
-            {/* 撤销/重做按钮 */}
-            <div className="flex items-center bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm p-1 gap-0.5">
-              <button
-                onClick={() => undo()}
-                disabled={!canUndo || undoRedoProcessing}
-                title={undoLabel ? `撤销: ${undoLabel}` : '撤销 (Ctrl+Z)'}
-                className={cn(
-                  'p-1.5 rounded-lg transition-colors',
-                  canUndo && !undoRedoProcessing
-                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                    : 'text-gray-300 cursor-not-allowed'
-                )}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4" />
-                </svg>
-              </button>
-              <button
-                onClick={() => redo()}
-                disabled={!canRedo || undoRedoProcessing}
-                title={redoLabel ? `重做: ${redoLabel}` : '重做 (Ctrl+Shift+Z)'}
-                className={cn(
-                  'p-1.5 rounded-lg transition-colors',
-                  canRedo && !undoRedoProcessing
-                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                    : 'text-gray-300 cursor-not-allowed'
-                )}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a5 5 0 00-5 5v2M21 10l-4-4M21 10l-4 4" />
-                </svg>
-              </button>
-            </div>
           </div>
         </Panel>
 
@@ -2054,8 +1722,6 @@ function MindMapCanvas() {
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Tab</kbd> 添加子节点</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Enter</kbd> 添加同级</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Del</kbd> 删除</span>
-            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Ctrl+Z</kbd> 撤销</span>
-            <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">Ctrl+Shift+Z</kbd> 重做</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">双击</kbd> 打开详情</span>
             <span><kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">右键</kbd> 更多操作</span>
           </div>
@@ -2090,18 +1756,6 @@ function MindMapCanvas() {
         <CreateTaskModal
           defaultParentId={createModal.parentId}
           defaultDomain={createModal.domain}
-          onCreated={(createdTask: any, payload: Record<string, any>) => {
-            // 创建成功后推入 undo command
-            let currentTaskId = createdTask.taskId;
-            pushCommand({
-              label: `创建节点「${createdTask.title}」`,
-              undo: async () => { await api.deleteTask(currentTaskId); },
-              redo: async () => {
-                const newTask = await api.createTask(payload);
-                currentTaskId = newTask.taskId;
-              },
-            });
-          }}
           onClose={() => {
             setCreateModal(null);
             qc.invalidateQueries({ queryKey: ['task-tree'] });
@@ -2123,7 +1777,7 @@ function MindMapCanvas() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDetailTaskId(null)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div
-            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[92vw] max-w-6xl h-[88vh] flex flex-col overflow-hidden"
+            className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-[90vw] max-w-4xl max-h-[85vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <TaskDetail taskId={detailTaskId} onClose={() => setDetailTaskId(null)} />
@@ -2162,75 +1816,26 @@ function MindMapCanvas() {
       )}
 
       {/* 删除确认 */}
-      {deleteConfirm && (() => {
-        const taskData = nodeDataMap.current.get(deleteConfirm.taskId);
-        const hasChildren = taskData?.children?.length > 0 ||
-          (treeDataRef.current && (() => {
-            const found = findNodeInTree(treeDataRef.current, deleteConfirm.taskId);
-            return found?.node?.children?.length > 0;
-          })());
-        return (
+      {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4">
-            {deleteConfirm.error ? (
-              <>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728" />
-                    </svg>
-                  </div>
-                  <h3 className="text-base font-semibold text-gray-900">删除失败</h3>
-                </div>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                  <p className="text-sm text-red-700">{deleteConfirm.error}</p>
-                </div>
-                <div className="flex justify-end">
-                  <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg">
-                    知道了
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
-                <p className="text-sm text-gray-500 mb-2">
-                  将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
-                </p>
-                {hasChildren ? (
-                  <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">
-                    ⚠️ 该节点含有子节点，删除后<strong>不可撤销</strong>
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-400 mb-4">
-                    💡 删除后可通过 Ctrl+Z 撤销
-                  </p>
-                )}
-                <div className="flex gap-3 justify-end">
-                  <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
-                  <button
-                    onClick={() => {
-                      // 保存删除前的节点数据到 ref（供 undo 使用）
-                      const task = nodeDataMap.current.get(deleteConfirm.taskId);
-                      const found = findNodeInTree(treeDataRef.current, deleteConfirm.taskId);
-                      deleteContextRef.current = {
-                        task: task || found?.node,
-                        hasChildren: !!hasChildren,
-                      };
-                      deleteMut.mutate(deleteConfirm.taskId);
-                    }}
-                    className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                    disabled={deleteMut.isPending}
-                  >
-                    {deleteMut.isPending ? '处理中...' : '确认删除'}
-                  </button>
-                </div>
-              </>
-            )}
+            <h3 className="text-base font-semibold text-gray-900 mb-2">确认删除</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              将删除 <span className="font-medium text-gray-800">「{deleteConfirm.title}」</span> 及其所有子节点。
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+              <button
+                onClick={() => deleteMut.mutate(deleteConfirm.taskId)}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg"
+                disabled={deleteMut.isPending}
+              >
+                {deleteMut.isPending ? '处理中...' : '确认删除'}
+              </button>
+            </div>
           </div>
         </div>
-        );
-      })()}
+      )}
     </div>
   );
 }

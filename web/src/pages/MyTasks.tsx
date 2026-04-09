@@ -418,11 +418,11 @@ function FlatTaskCard({ node, onAdvanceStatus, t }: { node: any; onAdvanceStatus
 // MindMap View (ReactFlow mind map — tree layout)
 // ═══════════════════════════════════════════════════════════════════
 
-const MM_NODE_W = 200;
-const MM_NODE_H = 64;
-const MM_H_GAP = 72;
-const MM_V_GAP = 16;
-const MM_ROOT_GAP = 40;
+const MM_NODE_W = 280;
+const MM_NODE_H = 48;
+const MM_H_GAP = 60;
+const MM_V_GAP = 10;
+const MM_ROOT_GAP = 28;
 
 // ── Layout algorithm (supports collapse) ────────────────────────────
 
@@ -640,44 +640,38 @@ function MmTaskNode({ data, selected }: NodeProps) {
       {/* Left color bar */}
       <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: sc.border }} />
 
-      <div className="pl-4 pr-8 py-2">
-        {/* Labels */}
-        {labels.length > 0 && (
-          <div className="flex items-center gap-1 mb-1">
-            {labels.slice(0, 2).map((l: string) => {
-              const lc = LABEL_COLORS[l] || { bg: '#f1f5f9', text: '#475569' };
-              return (
-                <span key={l} className="text-[8px] font-bold uppercase tracking-wide px-1 py-0.5 rounded-full"
-                  style={{ backgroundColor: lc.bg, color: lc.text }}>
-                  {l}
-                </span>
-              );
-            })}
-          </div>
-        )}
+      <div className="pl-4 pr-8 py-1.5">
+        {/* 上行：标签 + 标题 */}
+        <div className="flex items-center gap-1.5">
+          {labels.length > 0 && labels.slice(0, 2).map((l: string) => {
+            const lc = LABEL_COLORS[l] || { bg: '#f1f5f9', text: '#475569' };
+            return (
+              <span key={l} className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1 py-0.5 rounded-full"
+                style={{ backgroundColor: lc.bg, color: lc.text }}>
+                {l}
+              </span>
+            );
+          })}
+          <p className="flex-1 min-w-0 text-[12px] font-semibold text-gray-800 leading-tight truncate" title={task.title}>{task.title}</p>
+        </div>
 
-        {/* Title */}
-        <p className="text-[12px] font-semibold text-gray-800 leading-snug line-clamp-2">{task.title}</p>
-
-        {/* Bottom meta */}
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-[10px] font-mono text-indigo-400">{task.taskId}</span>
-          <div className="flex items-center gap-1.5">
-            {(task.assignee || task.owner) && <span className="text-[10px] text-gray-400 truncate max-w-[50px]" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>{task.assignee || task.owner}</span>}
-            <div className={cn('w-2 h-2 rounded-full', sc.dot)} />
-          </div>
+        {/* 下行：meta 信息 */}
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
+          {(task.assignee || task.owner) && <span className="text-[9px] text-gray-400 truncate max-w-[60px]" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>{task.assignee || task.owner}</span>}
+          <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', sc.dot)} />
         </div>
       </div>
 
       {/* Progress ring */}
-      <div className="absolute right-1.5 bottom-1.5">
-        <MmProgressRing progress={progress} size={20} />
+      <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+        <MmProgressRing progress={progress} size={18} />
       </div>
 
       {/* Right: collapse/expand button */}
       {hasChildren && (
         <button
-          className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-300 text-gray-500 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[11px] shadow-sm z-10 transition-colors cursor-pointer"
+          className="nopan nodrag nowheel absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors cursor-pointer"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onToggleCollapse?.(task.taskId); }}
           title={isCollapsed ? `${(data as any).expandLabel} (${task.children.length})` : (data as any).collapseLabel}
