@@ -58,6 +58,7 @@ export interface TaskFilters {
   label?: string;
   projectId?: number;
   includeArchived?: boolean;
+  schedule_mode?: string;
 }
 
 export const TaskService = {
@@ -863,6 +864,8 @@ export const TaskService = {
         priority: t.priority,
         labels,
         owner: t.owner,
+        scheduleMode: t.scheduleMode || 'once',
+        scheduleNextRunAt: (t as any).scheduleNextRunAt || null,
         depth,
         childCount: childCountMap.get(t.id) || 0,
         path: getPath(t.id),

@@ -56,6 +56,10 @@ export const tasks = sqliteTable('tasks', {
   scheduleMode: text('schedule_mode').notNull().default('once'), // 'once' | 'recurring' | 'scheduled' | 'milestone_driven' | 'on_demand'
   scheduleCron: text('schedule_cron'),     // cron 表达式（recurring 时使用，如 '0 9 * * 1' 表示每周一9点）
   scheduleConfig: text('schedule_config').notNull().default('{}'), // JSON：调度附加配置
+  scheduleNextRunAt: text('schedule_next_run_at'),  // 下一次计划触发时间（ISO）
+  scheduleLastTriggeredAt: text('schedule_last_triggered_at'), // 最近一次成功触发时间
+  schedulePaused: integer('schedule_paused').notNull().default(0), // 是否暂停调度 0/1
+  scheduleLastError: text('schedule_last_error'), // 最近一次调度错误信息
   sortOrder: integer('sort_order').notNull().default(0),
   posX: real('pos_x'),
   posY: real('pos_y'),
@@ -306,5 +310,22 @@ export const authAuditLogs = sqliteTable('auth_audit_logs', {
   targetType: text('target_type'),
   targetId: text('target_id'),
   metadata: text('metadata').notNull().default('{}'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+// v7.1: 调度运行历史表
+export const taskScheduleRuns = sqliteTable('task_schedule_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull(),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  taskStrId: text('task_str_id').notNull(), // 业务 ID 如 U-042
+  runKey: text('run_key').notNull().unique(), // 幂等键
+  triggerType: text('trigger_type').notNull(), // 'recurring' | 'scheduled' | 'milestone' | 'manual'
+  triggerSource: text('trigger_source').notNull(), // 'scheduler_poller' | 'milestone_event' | 'manual_api' | 'mcp:xxx'
+  scheduledAt: text('scheduled_at'), // 计划触发时间（recurring/scheduled 有值）
+  triggeredAt: text('triggered_at').notNull(), // 实际触发时间
+  status: text('status').notNull(), // 'triggered' | 'skipped' | 'failed'
+  payload: text('payload').notNull().default('{}'), // 触发附加参数 JSON
+  errorMessage: text('error_message'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });

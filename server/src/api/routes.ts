@@ -14,6 +14,7 @@ import { IntakeService } from '../services/intake-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { ProjectService } from '../services/project-service.js';
 import { AuthService } from '../services/auth-service.js';
+import { ScheduleService } from '../services/schedule-service.js';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members, projectMembers } from '../db/schema.js';
@@ -520,9 +521,27 @@ export async function registerRoutes(app: FastifyInstance) {
     if (body.target_date !== undefined) updates.targetDate = body.target_date;
     if (body.status !== undefined) updates.status = body.status;
     if (body.description !== undefined) updates.description = body.description;
+
+    // 检查是否从非 completed → completed（触发 milestone_driven 任务）
+    const oldMs = db.select().from(milestones).where(eq(milestones.id, parseInt(id))).get();
+    const statusChangedToCompleted = body.status === 'completed' && oldMs && oldMs.status !== 'completed';
+
     db.update(milestones).set(updates).where(eq(milestones.id, parseInt(id))).run();
     const m = db.select().from(milestones).where(eq(milestones.id, parseInt(id))).get();
     if (!m) return reply.code(404).send({ error: 'Not found' });
+
+    // 里程碑完成时触发 milestone_driven 任务
+    if (statusChangedToCompleted) {
+      try {
+        const triggered = ScheduleService.handleMilestoneCompleted(parseInt(id));
+        if (triggered > 0) {
+          (m as any)._schedulerTriggered = triggered;
+        }
+      } catch (e: any) {
+        console.error('[MilestoneHook] handleMilestoneCompleted error:', e.message);
+      }
+    }
+
     return m;
   });
 

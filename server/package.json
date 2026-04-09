@@ -10,16 +10,17 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
-    "better-sqlite3": "latest",
-    "drizzle-orm": "latest",
-    "fastify": "latest",
     "@fastify/cors": "latest",
-    "@fastify/static": "latest",
     "@fastify/multipart": "latest",
     "@fastify/rate-limit": "latest",
-    "zod": "latest",
-    "nanoid": "latest"
+    "@fastify/static": "latest",
+    "@modelcontextprotocol/sdk": "latest",
+    "better-sqlite3": "latest",
+    "cron-parser": "4.9.0",
+    "drizzle-orm": "latest",
+    "fastify": "latest",
+    "nanoid": "latest",
+    "zod": "latest"
   },
   "devDependencies": {
     "@types/better-sqlite3": "latest",

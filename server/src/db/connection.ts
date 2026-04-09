@@ -408,4 +408,30 @@ function runMigrations(sqlite: Database.Database) {
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_mode TEXT NOT NULL DEFAULT 'once'`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_cron TEXT`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_config TEXT NOT NULL DEFAULT '{}'`); } catch {}
+
+  // v7.1 迁移：tasks 新增调度运行态字段 + task_schedule_runs 表
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_next_run_at TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_last_triggered_at TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_paused INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_last_error TEXT`); } catch {}
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS task_schedule_runs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id      INTEGER NOT NULL,
+      task_id         INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      task_str_id     TEXT NOT NULL,
+      run_key         TEXT NOT NULL UNIQUE,
+      trigger_type    TEXT NOT NULL,
+      trigger_source  TEXT NOT NULL,
+      scheduled_at    TEXT,
+      triggered_at    TEXT NOT NULL,
+      status          TEXT NOT NULL,
+      payload         TEXT NOT NULL DEFAULT '{}',
+      error_message   TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_schedule_runs_task ON task_schedule_runs(task_id);
+    CREATE INDEX IF NOT EXISTS idx_schedule_runs_key ON task_schedule_runs(run_key);
+  `);
 }

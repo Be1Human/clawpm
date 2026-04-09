@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
 import { getDb } from './db/connection.js';
+import { SchedulerWorker } from './scheduler/worker.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { AuthService, type AuthPrincipal } from './services/auth-service.js';
 import fs from 'fs';
@@ -146,6 +147,14 @@ try {
   await app.listen({ port: config.port, host: '0.0.0.0' });
   console.log(`🚀 ClawPM running at http://0.0.0.0:${config.port}`);
   console.log(`📡 MCP SSE endpoint: http://0.0.0.0:${config.port}/mcp/sse`);
+
+  // 启动调度器轮询（可通过环境变量关闭）
+  const schedulerEnabled = process.env.CLAWPM_SCHEDULER_ENABLED !== 'false';
+  if (schedulerEnabled) {
+    SchedulerWorker.start();
+  } else {
+    console.log('⏸️  SchedulerWorker 已禁用 (CLAWPM_SCHEDULER_ENABLED=false)');
+  }
 } catch (err) {
   app.log.error(err);
   process.exit(1);

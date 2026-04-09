@@ -10,6 +10,7 @@ import { ProjectService } from '../services/project-service.js';
 import { MemberService } from '../services/member-service.js';
 import { IterationService } from '../services/iteration-service.js';
 import { NotificationService } from '../services/notification-service.js';
+import { ScheduleService } from '../services/schedule-service.js';
 import type { AuthPrincipal } from '../services/auth-service.js';
 import { getDb } from '../db/connection.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks } from '../db/schema.js';
@@ -108,12 +109,13 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
   mcp.tool('get_my_tasks', '获取我的任务列表', {
     owner: z.string().optional().describe('负责人标识（不传时使用 Agent 绑定身份）'),
     status: z.enum(['backlog', 'planned', 'active', 'review', 'done']).optional(),
+    schedule_mode: z.enum(['once', 'recurring', 'scheduled', 'milestone_driven', 'on_demand']).optional().describe('按调度类型筛选'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
     const effectiveOwner = p.owner || currentMember;
     if (!effectiveOwner) return { content: [{ type: 'text' as const, text: 'owner 参数必填（当前无 Agent 身份绑定）' }] };
     const projectId = resolveProject(p.project);
-    const tasks = TaskService.list({ owner: effectiveOwner, status: p.status, projectId });
+    const tasks = TaskService.list({ owner: effectiveOwner, status: p.status, schedule_mode: p.schedule_mode, projectId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(tasks, null, 2) }] };
   });
 
@@ -124,6 +126,7 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     owner: z.string().optional(),
     priority: z.string().optional(),
     label: z.string().optional().describe('按标签筛选，如 epic/bug/feature'),
+    schedule_mode: z.enum(['once', 'recurring', 'scheduled', 'milestone_driven', 'on_demand']).optional().describe('按调度类型筛选'),
     project: z.string().optional().describe('项目 slug'),
   }, async (p) => {
     const { project, ...rest } = p;
@@ -446,7 +449,8 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
       const indent = '  '.repeat(n.depth);
       const labelStr = n.labels.length ? ` [${n.labels.join(', ')}]` : '';
       const childStr = n.childCount > 0 ? ` (${n.childCount} children)` : '';
-      return `${indent}${n.taskId} | ${n.title} | ${n.status}${labelStr}${childStr}`;
+      const schedStr = (n as any).scheduleMode && (n as any).scheduleMode !== 'once' ? ` ⏰${(n as any).scheduleMode}` : '';
+      return `${indent}${n.taskId} | ${n.title} | ${n.status}${labelStr}${childStr}${schedStr}`;
     });
     const summary = `共 ${outline.length} 个节点\n\n${lines.join('\n')}\n\n---\n完整 JSON:\n${JSON.stringify(outline, null, 2)}`;
     return { content: [{ type: 'text' as const, text: summary }] };
@@ -817,6 +821,71 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     } catch (e: any) {
       return { content: [{ type: 'text' as const, text: `审核失败：${e.message}` }] };
     }
+  });
+
+  // ── Schedule Tools（v7.1 任务调度）─────────────────────────────────
+  mcp.tool('trigger_task', '手动触发任务调度（适用于所有调度类型，执行一次触发操作）', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+    run_key: z.string().optional().describe('幂等键（不传则自动生成）'),
+    payload: z.record(z.string(), z.unknown()).optional().describe('触发时携带的附加参数 JSON'),
+  }, async (p) => {
+    const caller = currentMember || 'mcp-user';
+    const runKey = p.run_key || `${p.task_id}:manual:${new Date().toISOString()}`;
+    const result = ScheduleService.triggerTask(p.task_id, {
+      triggerType: 'manual',
+      triggerSource: `mcp:${caller}`,
+      runKey,
+      payload: p.payload as Record<string, unknown>,
+    });
+    if (!result.ok) return { content: [{ type: 'text' as const, text: `触发失败: ${result.error}` }] };
+    if (result.skipped) return { content: [{ type: 'text' as const, text: `[SKIPPED] ${p.task_id}: ${result.skipReason}` }] };
+    return { content: [{ type: 'text' as const, text: `[TRIGGERED] ${p.task_id} 已触发\n状态: ${result.statusBefore} → ${result.statusAfter}\n运行记录 ID: ${result.runId}\n触发时间: ${result.triggeredAt}` }] };
+  });
+
+  mcp.tool('list_task_schedule_runs', '查询任务的调度运行历史（Agent 可据此了解任务被触发了多少次、最近触发时间和状态）', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+    limit: z.number().optional().describe('返回条数上限，默认 20'),
+  }, async (p) => {
+    const runs = ScheduleService.listRuns(p.task_id, p.limit || 20);
+    if (runs.length === 0) {
+      return { content: [{ type: 'text' as const, text: `${p.task_id} 暂无调度运行记录` }] };
+    }
+    return { content: [{ type: 'text' as const, text: `${p.task_id} 的调度运行历史（最近 ${runs.length} 条）:\n\n${JSON.stringify(runs, null, 2)}` }] };
+  });
+
+  mcp.tool('list_due_tasks', '查询即将触发或刚触发的任务（Agent 可主动轮询此工具了解哪些任务需要关注）', {
+    within_minutes: z.number().optional().describe('时间窗口（分钟），默认 60，查询前后该窗口内的到期任务'),
+    include_just_triggered: z.boolean().optional().describe('是否包含刚刚触发的任务，默认 true'),
+    project: z.string().optional().describe('项目 slug'),
+  }, async (p) => {
+    const projectId = resolveProject(p.project);
+    const results = ScheduleService.listDueTasks({
+      withinMinutes: p.within_minutes || 60,
+      projectId,
+      includeJustTriggered: p.include_just_triggered !== false,
+    });
+    if (results.length === 0) {
+      return { content: [{ type: 'text' as const, text: '当前没有即将触发或刚触发的任务' }] };
+    }
+    return { content: [{ type: 'text' as const, text: `即将触发/刚触发的任务（${results.length} 个）:\n\n${JSON.stringify(results, null, 2)}` }] };
+  });
+
+  mcp.tool('pause_task_schedule', '暂停任务调度（暂停后不再自动触发，但可手动触发）', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    const ok = ScheduleService.setPaused(p.task_id, true);
+    if (!ok) return { content: [{ type: 'text' as const, text: '任务不存在' }] };
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 调度已暂停` }] };
+  });
+
+  mcp.tool('resume_task_schedule', '恢复任务调度（恢复后将按原有规则自动触发）', {
+    task_id: z.string().describe('任务 ID，如 U-001'),
+  }, async (p) => {
+    const ok = ScheduleService.setPaused(p.task_id, false);
+    if (!ok) return { content: [{ type: 'text' as const, text: '任务不存在' }] };
+    // 恢复后刷新 next_run_at
+    ScheduleService.refreshNextRun(p.task_id);
+    return { content: [{ type: 'text' as const, text: `[OK] ${p.task_id} 调度已恢复` }] };
   });
 
   return mcp;
