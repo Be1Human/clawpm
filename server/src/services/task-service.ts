@@ -20,6 +20,9 @@ export interface CreateTaskParams {
   source?: string;
   status?: string;
   projectId?: number;
+  schedule_mode?: string;   // 'once' | 'recurring' | 'scheduled' | 'milestone_driven' | 'on_demand'
+  schedule_cron?: string;   // cron 表达式（recurring 时使用）
+  schedule_config?: Record<string, any>; // 调度附加配置
 }
 
 export interface UpdateTaskParams {
@@ -39,6 +42,9 @@ export interface UpdateTaskParams {
   blocker?: string;
   pos_x?: number;
   pos_y?: number;
+  schedule_mode?: string;   // 'once' | 'recurring' | 'scheduled' | 'milestone_driven' | 'on_demand'
+  schedule_cron?: string;   // cron 表达式
+  schedule_config?: Record<string, any>; // 调度附加配置
 }
 
 export interface TaskFilters {
@@ -107,6 +113,9 @@ export const TaskService = {
       labels: JSON.stringify(params.labels || []),
       status: params.status || 'backlog',
       type: 'task',
+      scheduleMode: params.schedule_mode || 'once',
+      scheduleCron: params.schedule_cron || null,
+      scheduleConfig: JSON.stringify(params.schedule_config || {}),
     } as any).run();
 
     return this.getByTaskId(taskId)!;
@@ -212,6 +221,9 @@ export const TaskService = {
     if (params.labels !== undefined) updates.labels = JSON.stringify(params.labels);
     if (params.pos_x !== undefined) updates.posX = params.pos_x;
     if (params.pos_y !== undefined) updates.posY = params.pos_y;
+    if (params.schedule_mode !== undefined) updates.scheduleMode = params.schedule_mode;
+    if (params.schedule_cron !== undefined) updates.scheduleCron = params.schedule_cron || null;
+    if (params.schedule_config !== undefined) updates.scheduleConfig = JSON.stringify(params.schedule_config);
     if (params.parent_task_id !== undefined) {
       if (params.parent_task_id === null || params.parent_task_id === '') {
         updates.parentTaskId = null;
@@ -674,6 +686,9 @@ export const TaskService = {
       customFields: customFieldsMap,
       customFieldValues: customFieldValuesList,
       attachmentCount,
+      scheduleMode: task.scheduleMode || 'once',
+      scheduleCron: task.scheduleCron || null,
+      scheduleConfig: (() => { try { return JSON.parse(task.scheduleConfig || '{}'); } catch { return {}; } })(),
     };
   },
 

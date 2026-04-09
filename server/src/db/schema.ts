@@ -53,6 +53,9 @@ export const tasks = sqliteTable('tasks', {
   healthScore: integer('health_score').notNull().default(100),
   tags: text('tags').notNull().default('[]'),
   labels: text('labels').notNull().default('[]'),
+  scheduleMode: text('schedule_mode').notNull().default('once'), // 'once' | 'recurring' | 'scheduled' | 'milestone_driven' | 'on_demand'
+  scheduleCron: text('schedule_cron'),     // cron 表达式（recurring 时使用，如 '0 9 * * 1' 表示每周一9点）
+  scheduleConfig: text('schedule_config').notNull().default('{}'), // JSON：调度附加配置
   sortOrder: integer('sort_order').notNull().default(0),
   posX: real('pos_x'),
   posY: real('pos_y'),

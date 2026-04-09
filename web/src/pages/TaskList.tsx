@@ -222,6 +222,15 @@ function TaskTreeRow({
             );
           })}
           {labels.length === 0 && <span className="text-slate-700">-</span>}
+          {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
+            const icons: Record<string, string> = { recurring: '🔄', scheduled: '⏰', milestone_driven: '🏁', on_demand: '⚡' };
+            const names: Record<string, string> = { recurring: '周期循环', scheduled: '定时触发', milestone_driven: '里程碑驱动', on_demand: '按需触发' };
+            return (
+              <span className="text-[9px] ml-1" title={names[task.scheduleMode] || task.scheduleMode}>
+                {icons[task.scheduleMode] || ''}
+              </span>
+            );
+          })()}
         </div>
         <div className="px-4 py-3 w-24"><StatusBadge status={task.status} /></div>
         <div className="px-4 py-3 w-16"><PriorityBadge priority={task.priority} /></div>

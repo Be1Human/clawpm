@@ -28,7 +28,7 @@ import TaskDetail from '@/pages/TaskDetail';
 
 // ── 布局常量 ──────────────────────────────────────────────────────
 const NODE_W  = 280;
-const NODE_H  = 48;
+const NODE_H  = 64;
 const H_GAP   = 60;
 const V_GAP   = 10;
 const ROOT_GAP = 28;
@@ -770,6 +770,27 @@ function TaskNode({ data, selected }: NodeProps) {
       {/* 左侧色条 */}
       <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
 
+      {/* 调度类型小耳朵徽标（右上角） */}
+      {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
+        const badgeCfg: Record<string, { icon: string; bg: string; border: string; title: string }> = {
+          recurring:        { icon: '🔄', bg: '#ede9fe', border: '#8b5cf6', title: '周期循环' },
+          scheduled:        { icon: '⏰', bg: '#fef3c7', border: '#f59e0b', title: '定时触发' },
+          milestone_driven: { icon: '🏁', bg: '#dcfce7', border: '#22c55e', title: '里程碑驱动' },
+          on_demand:        { icon: '⚡', bg: '#ffedd5', border: '#f97316', title: '按需触发' },
+        };
+        const cfg = badgeCfg[task.scheduleMode];
+        if (!cfg) return null;
+        return (
+          <div
+            className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] z-20 shadow-sm"
+            style={{ backgroundColor: cfg.bg, border: `2px solid ${cfg.border}` }}
+            title={cfg.title}
+          >
+            {cfg.icon}
+          </div>
+        );
+      })()}
+
       {/* 拖拽把手 */}
       <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
         {[0, 1].map(i => <div key={i} className="w-0.5 h-0.5 bg-gray-400 rounded-full" />)}
@@ -802,7 +823,7 @@ function TaskNode({ data, selected }: NodeProps) {
                 }}
                 className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
             ) : (
-              <p className="text-[12px] font-semibold leading-tight truncate" style={{ color: resolvedTextColor }} title={task.title}>
+              <p className="text-[12px] font-semibold leading-tight line-clamp-2" style={{ color: resolvedTextColor }} title={task.title}>
                 {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
                 {task.title}
               </p>
@@ -1410,7 +1431,7 @@ function MindMapCanvas() {
 
         {/* 右侧控制面板 */}
         <Panel position="top-right">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 w-[240px] max-h-[calc(100vh-120px)] overflow-y-auto">
             {/* 关联线可见性 */}
             <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
               <p className="text-xs font-semibold text-gray-500 mb-2">显示关联线</p>

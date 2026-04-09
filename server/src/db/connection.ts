@@ -403,4 +403,9 @@ function runMigrations(sqlite: Database.Database) {
 
   // v6.0：为 members 表添加全局唯一约束（identifier 全局唯一）
   try { sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_members_identifier_global ON members(identifier)`); } catch {}
+
+  // v7.0 迁移：tasks 新增 schedule_mode / schedule_cron / schedule_config 字段
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_mode TEXT NOT NULL DEFAULT 'once'`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_cron TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN schedule_config TEXT NOT NULL DEFAULT '{}'`); } catch {}
 }

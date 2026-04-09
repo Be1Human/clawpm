@@ -158,7 +158,7 @@ export default function App() {
           <Route path="/my/dashboard" element={<MyDashboard />} />
           <Route path="/my/tasks/list" element={<MyTasks defaultView="tree" />} />
           <Route path="/my/tasks/tree" element={<Navigate to="/my/tasks/list" replace />} />
-          <Route path="/my/tasks/mindmap" element={<MyTasks defaultView="mindmap" />} />
+          <Route path="/my/tasks/mindmap" element={<MindMap />} />
           <Route path="/my/gantt" element={<MyGantt />} />
 
           {/* 向后兼容：旧路由重定向 */}

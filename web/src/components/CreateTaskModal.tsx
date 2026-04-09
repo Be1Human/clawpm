@@ -44,6 +44,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     domain: defaultDomain || '',
     milestone: '',
     customLabel: '',
+    schedule_mode: 'once',
   });
 
   const { data: domains = [] } = useQuery({ queryKey: ['domains', activeProject], queryFn: api.getDomains });
@@ -99,6 +100,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.due_date) payload.due_date = form.due_date;
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
+    if (form.schedule_mode && form.schedule_mode !== 'once') payload.schedule_mode = form.schedule_mode;
     lastPayloadRef.current = payload;
     mut.mutate(payload);
   }
@@ -228,10 +230,25 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1.5 block">截止日期</label>
-                <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                  value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">调度类型</label>
+                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    value={form.schedule_mode} onChange={e => setForm(f => ({ ...f, schedule_mode: e.target.value }))}>
+                    {[
+                      { value: 'once', label: '🎯 一次性' },
+                      { value: 'recurring', label: '🔄 周期循环' },
+                      { value: 'scheduled', label: '⏰ 定时触发' },
+                      { value: 'milestone_driven', label: '🏁 里程碑驱动' },
+                      { value: 'on_demand', label: '⚡ 按需触发' },
+                    ].map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">截止日期</label>
+                  <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+                </div>
               </div>
             </div>
           )}

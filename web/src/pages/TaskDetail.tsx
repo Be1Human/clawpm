@@ -841,6 +841,32 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
                 />
               </MetaRow>
 
+              <MetaRow label="调度类型">
+                <SelectField
+                  value={task.scheduleMode || 'once'}
+                  options={[
+                    { value: 'once', label: '🎯 一次性' },
+                    { value: 'recurring', label: '🔄 周期循环' },
+                    { value: 'scheduled', label: '⏰ 定时触发' },
+                    { value: 'milestone_driven', label: '🏁 里程碑驱动' },
+                    { value: 'on_demand', label: '⚡ 按需触发' },
+                  ]}
+                  onSave={v => updateMut.mutate({ schedule_mode: v })}
+                  renderValue={(v) => {
+                    const icons: Record<string, string> = { once: '🎯', recurring: '🔄', scheduled: '⏰', milestone_driven: '🏁', on_demand: '⚡' };
+                    const names: Record<string, string> = { once: '一次性', recurring: '周期循环', scheduled: '定时触发', milestone_driven: '里程碑驱动', on_demand: '按需触发' };
+                    return <span className="text-sm text-gray-700">{icons[v] || ''} {names[v] || v}</span>;
+                  }}
+                  disabled={!canEdit}
+                />
+              </MetaRow>
+
+              {task.scheduleCron && (
+                <MetaRow label="Cron 表达式">
+                  <span className="text-xs font-mono text-gray-500 bg-gray-50 px-2 py-0.5 rounded">{task.scheduleCron}</span>
+                </MetaRow>
+              )}
+
               <MetaRow label="健康度">
                 <span className={cn('text-sm font-medium',
                   task.healthScore >= 80 ? 'text-green-600' : task.healthScore >= 60 ? 'text-amber-500' : 'text-red-500')}>

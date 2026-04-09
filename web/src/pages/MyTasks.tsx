@@ -379,6 +379,16 @@ function FlatTaskCard({ node, onAdvanceStatus, t }: { node: any; onAdvanceStatus
         );
       })}
 
+      {node.scheduleMode && node.scheduleMode !== 'once' && (() => {
+        const icons: Record<string, string> = { recurring: '🔄', scheduled: '⏰', milestone_driven: '🏁', on_demand: '⚡' };
+        const names: Record<string, string> = { recurring: '周期循环', scheduled: '定时触发', milestone_driven: '里程碑驱动', on_demand: '按需触发' };
+        return (
+          <span className="text-[10px] flex-shrink-0" title={names[node.scheduleMode] || node.scheduleMode}>
+            {icons[node.scheduleMode] || ''}
+          </span>
+        );
+      })()}
+
       <span className="flex-1 text-sm text-gray-800 truncate min-w-0 group-hover:text-indigo-600 transition-colors">
         {node.title}
       </span>
@@ -639,6 +649,27 @@ function MmTaskNode({ data, selected }: NodeProps) {
     >
       {/* Left color bar */}
       <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: sc.border }} />
+
+      {/* 调度类型小耳朵徽标（右上角） */}
+      {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
+        const badgeCfg: Record<string, { icon: string; bg: string; border: string; title: string }> = {
+          recurring:        { icon: '🔄', bg: '#ede9fe', border: '#8b5cf6', title: '周期循环' },
+          scheduled:        { icon: '⏰', bg: '#fef3c7', border: '#f59e0b', title: '定时触发' },
+          milestone_driven: { icon: '🏁', bg: '#dcfce7', border: '#22c55e', title: '里程碑驱动' },
+          on_demand:        { icon: '⚡', bg: '#ffedd5', border: '#f97316', title: '按需触发' },
+        };
+        const cfg = badgeCfg[task.scheduleMode];
+        if (!cfg) return null;
+        return (
+          <div
+            className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] z-20 shadow-sm"
+            style={{ backgroundColor: cfg.bg, border: `2px solid ${cfg.border}` }}
+            title={cfg.title}
+          >
+            {cfg.icon}
+          </div>
+        );
+      })()}
 
       <div className="pl-4 pr-8 py-1.5">
         {/* 上行：标签 + 标题 */}
