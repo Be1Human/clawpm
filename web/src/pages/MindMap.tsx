@@ -28,13 +28,13 @@ import CreateTaskModal from '@/components/CreateTaskModal';
 import TaskDetail from '@/pages/TaskDetail';
 
 // ── 布局常量 ──────────────────────────────────────────────────────
-const NODE_W  = 190;
-const NODE_H  = 68;
-const H_GAP   = 76;
-const V_GAP   = 18;
-const ROOT_GAP = 52;
-const PROJECT_NODE_W = 140;
-const PROJECT_NODE_H = 48;
+const NODE_W  = 260;
+const NODE_H  = 44;
+const H_GAP   = 60;
+const V_GAP   = 8;
+const ROOT_GAP = 24;
+const PROJECT_NODE_W = 130;
+const PROJECT_NODE_H = 38;
 const PROJECT_NODE_ID = '__project_root__';
 
 // ── 标签色系 ──────────────────────────────────────────────────────
@@ -871,72 +871,64 @@ function TaskNode({ data, selected }: NodeProps) {
       )}
 
       {/* 拖拽把手 */}
-      <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-30 hover:opacity-70" title="拖拽移动">
-        {[0, 1, 2].map(i => <div key={i} className="w-1 h-1 bg-gray-400 rounded-full" />)}
+      <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-px cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
+        {[0, 1].map(i => <div key={i} className="w-0.5 h-0.5 bg-gray-400 rounded-full" />)}
       </div>
 
       {/* 放置目标提示 */}
       {isDropTarget && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
+        <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
           放置为子节点
         </div>
       )}
 
-      <div className="pl-5 pr-8 pt-2.5 pb-2.5">
-        {/* 标签 */}
+      <div className="pl-5 pr-7 py-1.5 flex items-center gap-1.5 min-h-[40px]">
+        {/* 左侧：标签 pill */}
         {firstLabel && (
-          <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full mb-1.5"
+          <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
             style={{ backgroundColor: colors.pill, color: colors.text }}>
-            {firstLabel}{labels.length > 1 ? ` +${labels.length - 1}` : ''}
+            {firstLabel}{labels.length > 1 ? `+${labels.length - 1}` : ''}
           </span>
         )}
 
-        {/* 标题 */}
-        {editing ? (
-          <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={e => {
-              e.stopPropagation();
-              if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-              if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
-            }}
-            className="w-full text-[13px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none pb-0.5" />
-        ) : (
-          <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: resolvedTextColor }}>
-            {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
-            {task.title}
-          </p>
-        )}
-
-        {/* 底部 meta */}
-        <div className="flex items-center justify-between mt-1.5">
-          <span
-            className="text-[10px] font-mono text-indigo-400 hover:text-indigo-600 transition-colors cursor-default select-none"
-            title={task.taskId}
-          >
-            {task.taskId}
-          </span>
-          <div className="flex items-center gap-1.5">
+        {/* 中间：标题（单行截断） */}
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={e => {
+                e.stopPropagation();
+                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+                if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
+              }}
+              className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
+          ) : (
+            <p className="text-[12px] font-semibold leading-tight truncate" style={{ color: resolvedTextColor }} title={task.title}>
+              {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
+              {task.title}
+            </p>
+          )}
+          {/* 底部 meta 行 */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
+            {task.owner && <span className="text-[9px] text-gray-400 truncate max-w-[50px]">{task.owner}</span>}
             {(task.attachmentCount ?? 0) > 0 && (
-              <span className="text-[10px] text-gray-400 flex items-center gap-0.5" title={`${task.attachmentCount} 个附件`}>
-                📎{task.attachmentCount}
-              </span>
+              <span className="text-[9px] text-gray-400">📎{task.attachmentCount}</span>
             )}
-            {task.owner && <span className="text-[10px] text-gray-400 truncate max-w-[60px]">{task.owner}</span>}
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={task.status} />
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={STATUS_LABEL_CN[task.status] ?? task.status} />
           </div>
         </div>
       </div>
 
-      {/* 进度圆环（右下角） */}
-      <div className="absolute right-1.5 bottom-1.5">
-        <ProgressRing progress={progress} size={20} />
+      {/* 进度圆环（右侧居中） */}
+      <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+        <ProgressRing progress={progress} size={18} />
       </div>
 
       {/* 右侧：有子节点时显示展开/收缩 */}
       {hasChildren && (
         <button
-          className="nopan nodrag nowheel absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
+          className="nopan nodrag nowheel absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[9px] shadow-sm z-10 transition-colors"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
           title={isCollapsed ? '展开' : '折叠'}
@@ -950,7 +942,7 @@ function TaskNode({ data, selected }: NodeProps) {
         <>
           {/* 右侧添加子节点 */}
           <button
-            className="nopan nodrag nowheel absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+            className="nopan nodrag nowheel absolute -right-3 -bottom-3 w-5 h-5 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-xs shadow-md z-20 transition-colors"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
             title="添加子节点 (Tab)"
@@ -960,7 +952,7 @@ function TaskNode({ data, selected }: NodeProps) {
           {/* 下方添加同级 */}
           {!isRoot && (
             <button
-              className="nopan nodrag nowheel absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+              className="nopan nodrag nowheel absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-xs shadow-md z-20 transition-colors"
               onMouseDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
               title="添加同级 (Enter)"
@@ -974,7 +966,7 @@ function TaskNode({ data, selected }: NodeProps) {
       {/* 子节点计数气泡（折叠时显示） */}
       {isCollapsed && hasChildren && (
         <div
-          className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 rounded-full text-white"
+          className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 text-[8px] font-bold px-1 rounded-full text-white"
           style={{ backgroundColor: colors.border }}
         >
           {task.children.length}
@@ -1008,13 +1000,13 @@ function ProjectRootNode({ data }: NodeProps) {
     >
       {/* 放置目标提示 */}
       {isDropTarget && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
+        <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
           放置为根节点
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <span className="text-white/90 text-lg">{isDropTarget ? '📥' : '🏠'}</span>
-        <span className="text-white text-sm font-bold truncate max-w-[90px]">{projectName}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-white/90 text-base">{isDropTarget ? '📥' : '🏠'}</span>
+        <span className="text-white text-xs font-bold truncate max-w-[80px]">{projectName}</span>
       </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
     </div>
