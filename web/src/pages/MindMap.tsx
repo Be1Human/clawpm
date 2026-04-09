@@ -92,7 +92,7 @@ function calcProgress(node: any): number {
 }
 
 // ── SVG 进度圆环 ─────────────────────────────────────────────────
-function ProgressRing({ progress, size = 20 }: { progress: number; size?: number }) {
+function ProgressRing({ progress, size = 24 }: { progress: number; size?: number }) {
   const r = (size - 3) / 2;
   const c = Math.PI * 2 * r;
   const filled = (progress / 100) * c;
@@ -110,7 +110,7 @@ function ProgressRing({ progress, size = 20 }: { progress: number; size?: number
         />
       )}
       <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central"
-        fontSize={size <= 20 ? 6 : 7} fontWeight="700" fill="#6b7280">
+        fontSize={size <= 20 ? 6 : 8.5} fontWeight="700" fill="#6b7280">
         {progress}
       </text>
     </svg>
@@ -844,7 +844,7 @@ function TaskNode({ data, selected }: NodeProps) {
 
       {/* 进度圆环（右侧居中） */}
       <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
-        <ProgressRing progress={progress} size={18} />
+        <ProgressRing progress={progress} size={24} />
       </div>
 
       {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
