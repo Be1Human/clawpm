@@ -45,6 +45,9 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     milestone: '',
     customLabel: '',
     schedule_mode: 'once',
+    schedule_cron: '',
+    schedule_trigger_at: '',
+    schedule_milestone_trigger: '',
   });
 
   const { data: domains = [] } = useQuery({ queryKey: ['domains', activeProject], queryFn: api.getDomains });
@@ -101,6 +104,15 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
     if (form.schedule_mode && form.schedule_mode !== 'once') payload.schedule_mode = form.schedule_mode;
+    if (form.schedule_mode === 'recurring' && form.schedule_cron) {
+      payload.schedule_cron = form.schedule_cron;
+    }
+    if (form.schedule_mode === 'scheduled' && form.schedule_trigger_at) {
+      payload.schedule_config = { trigger_at: form.schedule_trigger_at };
+    }
+    if (form.schedule_mode === 'milestone_driven' && form.schedule_milestone_trigger) {
+      payload.schedule_config = { trigger_on: form.schedule_milestone_trigger };
+    }
     lastPayloadRef.current = payload;
     mut.mutate(payload);
   }
@@ -250,6 +262,54 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
                     value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
                 </div>
               </div>
+
+              {/* 调度配置 — 根据调度类型显示 */}
+              {form.schedule_mode === 'recurring' && (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">
+                    Cron 表达式 <span className="text-gray-400 font-normal">（如 0 9 * * 1-5 表示工作日 9:00）</span>
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    placeholder="0 9 * * 1-5"
+                    value={form.schedule_cron}
+                    onChange={e => setForm(f => ({ ...f, schedule_cron: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              {form.schedule_mode === 'scheduled' && (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">
+                    定时触发时间
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    value={form.schedule_trigger_at}
+                    onChange={e => setForm(f => ({ ...f, schedule_trigger_at: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              {form.schedule_mode === 'milestone_driven' && (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">
+                    触发条件
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    value={form.schedule_milestone_trigger}
+                    onChange={e => setForm(f => ({ ...f, schedule_milestone_trigger: e.target.value }))}
+                  >
+                    <option value="">里程碑完成时自动触发（默认）</option>
+                    <option value="completed">当关联里程碑完成</option>
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    需在上方「里程碑」字段选择关联的里程碑
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

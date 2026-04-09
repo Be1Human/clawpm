@@ -863,8 +863,69 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
 
               {task.scheduleCron && (
                 <MetaRow label="Cron 表达式">
-                  <span className="text-xs font-mono text-gray-500 bg-gray-50 px-2 py-0.5 rounded">{task.scheduleCron}</span>
+                  <EditableField
+                    value={task.scheduleCron || ''}
+                    onSave={v => updateMut.mutate({ schedule_cron: v || undefined })}
+                    className="text-xs font-mono text-gray-600 bg-gray-50 px-2 py-0.5 rounded"
+                    placeholder="0 9 * * 1-5"
+                    disabled={!canEdit}
+                  />
                 </MetaRow>
+              )}
+
+              {/* 周期循环模式 — 无 cron 时允许设置 */}
+              {(task.scheduleMode === 'recurring') && !task.scheduleCron && (
+                <MetaRow label="Cron 表达式">
+                  <EditableField
+                    value=""
+                    onSave={v => updateMut.mutate({ schedule_cron: v || undefined })}
+                    className="text-xs font-mono text-gray-600"
+                    placeholder="点击设置 cron"
+                    disabled={!canEdit}
+                  />
+                </MetaRow>
+              )}
+
+              {/* 定时触发模式 — 显示/编辑 trigger_at */}
+              {task.scheduleMode === 'scheduled' && (
+                <MetaRow label="触发时间">
+                  <EditableField
+                    value={task.scheduleConfig?.trigger_at || ''}
+                    onSave={v => updateMut.mutate({ schedule_config: { ...task.scheduleConfig, trigger_at: v || undefined } })}
+                    type="datetime-local"
+                    className="text-xs text-gray-600"
+                    placeholder="点击设置"
+                    disabled={!canEdit}
+                  />
+                </MetaRow>
+              )}
+
+              {/* 运行时调度状态 — 仅非 once 模式 */}
+              {task.scheduleMode && task.scheduleMode !== 'once' && (
+                <>
+                  {task.scheduleNextRunAt && (
+                    <MetaRow label="下次运行">
+                      <span className="text-xs text-indigo-600">{formatDate(task.scheduleNextRunAt)}</span>
+                    </MetaRow>
+                  )}
+                  {task.scheduleLastTriggeredAt && (
+                    <MetaRow label="上次触发">
+                      <span className="text-xs text-gray-500">{formatRelative(task.scheduleLastTriggeredAt)}</span>
+                    </MetaRow>
+                  )}
+                  {task.schedulePaused === 1 && (
+                    <MetaRow label="调度状态">
+                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">⏸ 已暂停</span>
+                    </MetaRow>
+                  )}
+                  {task.scheduleLastError && (
+                    <MetaRow label="最近错误">
+                      <span className="text-xs text-red-500 truncate max-w-[160px]" title={task.scheduleLastError}>
+                        {task.scheduleLastError}
+                      </span>
+                    </MetaRow>
+                  )}
+                </>
               )}
 
               <MetaRow label="健康度">
@@ -1025,6 +1086,11 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
 
           {/* 权限管理（v2.5） */}
           <PermissionPanel taskId={task.taskId} owner={task.owner} />
+
+          {/* 调度操作（v7.1）— 仅非 once 模式 */}
+          {task.scheduleMode && task.scheduleMode !== 'once' && (
+            <ScheduleActionsPanel taskId={task.taskId} task={task} canEdit={canEdit} onUpdate={invalidate} />
+          )}
         </div>
       </div>
     </div>
@@ -1310,6 +1376,160 @@ function CtxSiblings({ siblings, depth, onNavigate }: {
           ... 还有 {siblings.length - 2} 个
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 调度操作面板 ──────────────────────────────────────────────────
+
+const RUN_STATUS_STYLE: Record<string, string> = {
+  triggered: 'text-emerald-600 bg-emerald-50',
+  skipped: 'text-amber-600 bg-amber-50',
+  error: 'text-red-600 bg-red-50',
+};
+
+function ScheduleActionsPanel({ taskId, task, canEdit, onUpdate }: {
+  taskId: string; task: any; canEdit: boolean; onUpdate: () => void;
+}) {
+  const qc = useQueryClient();
+  const [showHistory, setShowHistory] = useState(false);
+  const [triggerReason, setTriggerReason] = useState('');
+  const [showTriggerInput, setShowTriggerInput] = useState(false);
+
+  const { data: runs = [], isLoading: runsLoading } = useQuery({
+    queryKey: ['schedule-runs', taskId],
+    queryFn: () => api.getScheduleRuns(taskId, { limit: 10 }),
+    enabled: showHistory,
+  });
+
+  const triggerMut = useMutation({
+    mutationFn: () => api.triggerTask(taskId, triggerReason ? { reason: triggerReason } : undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', taskId] });
+      qc.invalidateQueries({ queryKey: ['schedule-runs', taskId] });
+      onUpdate();
+      setShowTriggerInput(false);
+      setTriggerReason('');
+    },
+  });
+
+  const pauseMut = useMutation({
+    mutationFn: () => api.pauseSchedule(taskId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', taskId] });
+      onUpdate();
+    },
+  });
+
+  const resumeMut = useMutation({
+    mutationFn: () => api.resumeSchedule(taskId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', taskId] });
+      onUpdate();
+    },
+  });
+
+  const isPaused = task.schedulePaused === 1;
+  const modeIcons: Record<string, string> = { recurring: '🔄', scheduled: '⏰', milestone_driven: '🏁', on_demand: '⚡' };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-4">
+        {modeIcons[task.scheduleMode] || '📋'} 调度操作
+      </h3>
+
+      <div className="space-y-2.5">
+        {/* 手动触发 */}
+        {canEdit && (
+          <div>
+            {!showTriggerInput ? (
+              <button
+                onClick={() => setShowTriggerInput(true)}
+                className="w-full px-3 py-2 text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg transition-colors font-medium"
+              >
+                ▶ 手动触发
+              </button>
+            ) : (
+              <div className="space-y-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                <input
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-300"
+                  placeholder="触发原因（可选）"
+                  value={triggerReason}
+                  onChange={e => setTriggerReason(e.target.value)}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => triggerMut.mutate()}
+                    disabled={triggerMut.isPending}
+                    className="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {triggerMut.isPending ? '触发中...' : '确认触发'}
+                  </button>
+                  <button
+                    onClick={() => { setShowTriggerInput(false); setTriggerReason(''); }}
+                    className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 暂停 / 恢复 */}
+        {canEdit && (
+          <button
+            onClick={() => isPaused ? resumeMut.mutate() : pauseMut.mutate()}
+            disabled={pauseMut.isPending || resumeMut.isPending}
+            className={cn('w-full px-3 py-2 text-xs rounded-lg font-medium transition-colors',
+              isPaused
+                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+            )}
+          >
+            {isPaused ? '▶ 恢复调度' : '⏸ 暂停调度'}
+          </button>
+        )}
+
+        {/* 调度历史 */}
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          className="w-full px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-left"
+        >
+          {showHistory ? '▼ 收起历史' : '▶ 调度运行历史'}
+        </button>
+
+        {showHistory && (
+          <div className="space-y-1.5 max-h-[240px] overflow-y-auto">
+            {runsLoading && <p className="text-xs text-gray-400 py-2">加载中...</p>}
+            {!runsLoading && (runs as any[]).length === 0 && (
+              <p className="text-xs text-gray-400 py-2">暂无运行记录</p>
+            )}
+            {(runs as any[]).map((run: any) => (
+              <div key={run.id} className="p-2 rounded-lg bg-gray-50 border border-gray-100">
+                <div className="flex items-center justify-between mb-1">
+                  <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded',
+                    RUN_STATUS_STYLE[run.status] || 'text-gray-500 bg-gray-100')}>
+                    {run.status === 'triggered' ? '✓ 已触发' : run.status === 'skipped' ? '⊘ 已跳过' : run.status === 'error' ? '✕ 错误' : run.status}
+                  </span>
+                  <span className="text-[10px] text-gray-400">{formatRelative(run.triggeredAt || run.createdAt)}</span>
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  <span className="font-mono">{run.triggerType}</span>
+                  {run.triggerSource && <span className="ml-1">· {run.triggerSource}</span>}
+                </div>
+                {run.errorMessage && (
+                  <div className="text-[10px] text-red-500 mt-0.5 truncate" title={run.errorMessage}>
+                    {run.errorMessage}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

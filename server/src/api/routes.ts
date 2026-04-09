@@ -1095,6 +1095,65 @@ export async function registerRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
+  // ── Schedule（调度 v7.1）─────────────────────────────────────────────
+
+  // 手动触发任务
+  app.post('/api/v1/tasks/:taskId/trigger', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const body = req.body as any;
+    const user = (req as any).clawpmUser as string | null;
+
+    try {
+      const result = ScheduleService.triggerTask(taskId, {
+        triggerType: 'manual',
+        triggerSource: user ? `manual_api:${user}` : 'manual_api',
+        runKey: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        payload: body.reason ? { reason: body.reason } : undefined,
+      });
+      return result;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  // 获取任务调度运行历史
+  app.get('/api/v1/tasks/:taskId/schedule-runs', async (req, reply) => {
+    const { taskId } = req.params as any;
+    const q = req.query as any;
+    const limit = q.limit ? parseInt(q.limit) : 20;
+
+    try {
+      const runs = ScheduleService.listRuns(taskId, limit);
+      return runs;
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  // 暂停任务调度
+  app.post('/api/v1/tasks/:taskId/schedule/pause', async (req, reply) => {
+    const { taskId } = req.params as any;
+    try {
+      const ok = ScheduleService.setPaused(taskId, true);
+      if (!ok) return reply.code(404).send({ error: 'Task not found' });
+      return { ok: true, schedulePaused: true };
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
+  // 恢复任务调度
+  app.post('/api/v1/tasks/:taskId/schedule/resume', async (req, reply) => {
+    const { taskId } = req.params as any;
+    try {
+      const ok = ScheduleService.setPaused(taskId, false);
+      if (!ok) return reply.code(404).send({ error: 'Task not found' });
+      return { ok: true, schedulePaused: false };
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message });
+    }
+  });
+
   // ── Archive（归档 v3.0）────────────────────────────────────────────
   app.post('/api/v1/tasks/:taskId/archive', async (req, reply) => {
     const { taskId } = req.params as any;

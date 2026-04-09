@@ -354,6 +354,18 @@ export const api = {
   reopenIntake: (intakeId: string) =>
     request<any>(withProject(`/intake/${intakeId}/reopen`), { method: 'POST' }),
 
+  // Schedule (v7.1)
+  triggerTask: (taskId: string, data?: { reason?: string }) =>
+    request<any>(`/tasks/${taskId}/trigger`, { method: 'POST', body: JSON.stringify(data || {}) }),
+  getScheduleRuns: (taskId: string, params?: { limit?: number }) => {
+    const qs = params ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])) : '';
+    return request<any[]>(`/tasks/${taskId}/schedule-runs${qs}`);
+  },
+  pauseSchedule: (taskId: string) =>
+    request<any>(`/tasks/${taskId}/schedule/pause`, { method: 'POST' }),
+  resumeSchedule: (taskId: string) =>
+    request<any>(`/tasks/${taskId}/schedule/resume`, { method: 'POST' }),
+
   // Image Upload (v3.4)
   uploadImage: async (file: File): Promise<{ url: string; filename: string }> => {
     const formData = new FormData();
