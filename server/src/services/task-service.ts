@@ -727,7 +727,16 @@ export const TaskService = {
   },
 
   /** 批量更新任务 */
-  batchUpdate(taskIds: string[], updates: { status?: string; owner?: string; assignee?: string; priority?: string; labels?: string[] }) {
+  batchUpdate(taskIds: string[], updates: {
+    status?: string;
+    owner?: string;
+    assignee?: string;
+    priority?: string;
+    labels?: string[];
+    schedule_mode?: string;
+    schedule_cron?: string;
+    schedule_config?: Record<string, any>;
+  }) {
     const db = getDb();
     const results: any[] = [];
     for (const tid of taskIds) {
@@ -739,6 +748,9 @@ export const TaskService = {
       if (updates.assignee !== undefined) setObj.assignee = updates.assignee;
       if (updates.priority !== undefined) setObj.priority = updates.priority;
       if (updates.labels !== undefined) setObj.labels = JSON.stringify(updates.labels);
+      if (updates.schedule_mode !== undefined) setObj.scheduleMode = updates.schedule_mode;
+      if (updates.schedule_cron !== undefined) setObj.scheduleCron = updates.schedule_cron || null;
+      if (updates.schedule_config !== undefined) setObj.scheduleConfig = JSON.stringify(updates.schedule_config);
       db.update(tasks).set(setObj as any).where(eq(tasks.taskId, tid)).run();
 
       // 通知触发

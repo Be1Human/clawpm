@@ -183,6 +183,9 @@ export function createMcpServer(options?: { agentId?: string; memberIdentifier?:
     due_date: z.string().optional(),
     milestone: z.string().optional(),
     domain: z.string().optional(),
+    schedule_mode: z.enum(['once', 'recurring', 'scheduled', 'milestone_driven', 'on_demand']).optional().describe('调度类型'),
+    schedule_cron: z.string().optional().describe('cron 表达式（recurring 时使用）'),
+    schedule_config: z.record(z.string(), z.unknown()).optional().describe('调度附加配置 JSON'),
   }, async (p) => {
     const { task_id, ...rest } = p;
     const task = TaskService.update(task_id, rest);
