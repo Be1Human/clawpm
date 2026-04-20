@@ -265,9 +265,22 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
     },
   });
 
+  const [progressToast, setProgressToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
   const progressMut = useMutation({
     mutationFn: () => api.updateProgress(taskId!, parseInt(progressVal), progressSummary || undefined),
-    onSuccess: () => { invalidate(); setProgressVal(''); setProgressSummary(''); },
+    onSuccess: (data: any) => {
+      invalidate();
+      const newProgress = data?.progress ?? parseInt(progressVal);
+      setProgressToast({ type: 'success', msg: `进度已更新至 ${newProgress}%` });
+      setProgressVal('');
+      setProgressSummary('');
+      setTimeout(() => setProgressToast(null), 3000);
+    },
+    onError: (err: any) => {
+      setProgressToast({ type: 'error', msg: `更新失败：${err.message || '未知错误'}` });
+      setTimeout(() => setProgressToast(null), 5000);
+    },
   });
 
 
@@ -673,41 +686,115 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
             </div>
           )}
 
-          {task.status !== 'done' && canEdit && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">更新进度</h3>
-              <div className="flex gap-3 mb-3">
-                <input type="number" min="0" max="100"
-                  className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
-                  placeholder="0-100"
-                  value={progressVal} onChange={e => setProgressVal(e.target.value)} />
-                <input
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
-                  placeholder="本次进展摘要（可选）"
-                  value={progressSummary} onChange={e => setProgressSummary(e.target.value)} />
-                <button onClick={() => progressMut.mutate()} disabled={!progressVal || progressMut.isPending}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors">更新</button>
-              </div>
-              {!showBlocker ? (
-                <button onClick={() => setShowBlocker(true)} className="text-xs text-red-500 hover:text-red-600">
-                  + 报告阻塞
-                </button>
-              ) : (
-                <div className="flex gap-2 mt-2">
-                  <input className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" placeholder="阻塞原因..."
-                    value={blockerText} onChange={e => setBlockerText(e.target.value)} />
-                  <button onClick={() => blockerMut.mutate()} disabled={!blockerText}
-                    className="px-3 py-2 rounded-lg bg-red-500 text-white text-sm disabled:opacity-50 transition-colors">确认</button>
-                  <button onClick={() => setShowBlocker(false)}
-                    className="px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
-                </div>
-              )}
+          {/* 更新进度 + 进度总览 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium">进度</h3>
+              <span className={cn('text-lg font-bold tabular-nums',
+                task.progress >= 100 ? 'text-emerald-600'
+                : task.progress >= 60 ? 'text-indigo-600'
+                : task.progress > 0 ? 'text-amber-600'
+                : 'text-gray-400'
+              )}>{task.progress}%</span>
             </div>
-          )}
 
+            {/* 大进度条 */}
+            <div className="h-3 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <div
+                className={cn('h-full rounded-full transition-all duration-500',
+                  task.progress >= 100 ? 'bg-emerald-500'
+                  : task.progress >= 60 ? 'bg-indigo-500'
+                  : task.progress > 0 ? 'bg-amber-500'
+                  : 'bg-gray-200'
+                )}
+                style={{ width: `${Math.min(task.progress, 100)}%` }}
+              />
+            </div>
+
+            {/* Toast 提示 */}
+            {progressToast && (
+              <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium mb-3 transition-all',
+                progressToast.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-red-50 text-red-700 border border-red-200'
+              )}>
+                <span>{progressToast.type === 'success' ? '✓' : '✕'}</span>
+                <span>{progressToast.msg}</span>
+              </div>
+            )}
+
+            {/* 输入表单 */}
+            {task.status !== 'done' && canEdit && (
+              <>
+                <div className="flex gap-3 mb-3">
+                  <input type="number" min="0" max="100"
+                    className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                    placeholder="0-100"
+                    value={progressVal} onChange={e => setProgressVal(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && progressVal) progressMut.mutate(); }}
+                  />
+                  <input
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                    placeholder="本次进展摘要（可选）"
+                    value={progressSummary} onChange={e => setProgressSummary(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && progressVal) progressMut.mutate(); }}
+                  />
+                  <button onClick={() => progressMut.mutate()} disabled={!progressVal || progressMut.isPending}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                    {progressMut.isPending ? '...' : '更新'}
+                  </button>
+                </div>
+                {!showBlocker ? (
+                  <button onClick={() => setShowBlocker(true)} className="text-xs text-red-500 hover:text-red-600">
+                    + 报告阻塞
+                  </button>
+                ) : (
+                  <div className="flex gap-2 mt-2">
+                    <input className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" placeholder="阻塞原因..."
+                      value={blockerText} onChange={e => setBlockerText(e.target.value)} />
+                    <button onClick={() => blockerMut.mutate()} disabled={!blockerText}
+                      className="px-3 py-2 rounded-lg bg-red-500 text-white text-sm disabled:opacity-50 transition-colors">确认</button>
+                    <button onClick={() => setShowBlocker(false)}
+                      className="px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">取消</button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 进度历史记录列表 */}
+            {(history as any[]).length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h4 className="text-xs text-gray-400 font-medium mb-2.5">更新记录</h4>
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {(history as any[]).slice().reverse().map((h: any, i: number) => (
+                    <div key={h.id || i} className="flex items-start gap-2.5 text-xs">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <div className={cn('w-2 h-2 rounded-full',
+                          h.progress >= 100 ? 'bg-emerald-500'
+                          : h.progress >= 60 ? 'bg-indigo-500'
+                          : 'bg-amber-500'
+                        )} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-700">{h.progress}%</span>
+                          {h.summary && (
+                            <span className="text-gray-500 truncate">{h.summary}</span>
+                          )}
+                        </div>
+                        <span className="text-gray-400 text-[10px]">{formatRelative(h.recordedAt)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 进度折线图 — 有 2+ 条记录时显示 */}
           {chartData.length > 1 && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">进度历史</h3>
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-3">进度趋势</h3>
               <ResponsiveContainer width="100%" height={120}>
                 <LineChart data={chartData}>
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
@@ -754,10 +841,22 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
             <div className="space-y-3">
               <MetaRow label="当前进度">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${task.progress}%` }} />
+                  <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full transition-all duration-500',
+                        task.progress >= 100 ? 'bg-emerald-500'
+                        : task.progress >= 60 ? 'bg-indigo-500'
+                        : task.progress > 0 ? 'bg-amber-500'
+                        : 'bg-gray-200'
+                      )}
+                      style={{ width: `${Math.min(task.progress, 100)}%` }}
+                    />
                   </div>
-                  <span className="text-xs text-gray-500">{task.progress}%</span>
+                  <span className={cn('text-sm font-semibold tabular-nums',
+                    task.progress >= 100 ? 'text-emerald-600'
+                    : task.progress > 0 ? 'text-indigo-600'
+                    : 'text-gray-400'
+                  )}>{task.progress}%</span>
                 </div>
               </MetaRow>
 
