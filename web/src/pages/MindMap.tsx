@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
-  useNodesState, useEdgesState,
+  useNodesState, useEdgesState, useReactFlow,
   type Node, type Edge, type NodeProps, type EdgeProps,
   Handle, Position, Panel,
   BaseEdge,
@@ -67,6 +67,35 @@ const PRESET_BORDER_COLORS = [
   '#d946ef', '#84cc16', '#06b6d4', '#f43f5e', '#a855f7',
 ];
 const PRESET_EMOJIS = ['', '🎯', '🔥', '💡', '⭐', '🚀', '🎨', '🔧', '📌', '💎', '🏆', '✅', '⚡', '🧩', '📦', '🛡️'];
+
+// ── 分组框（GroupBox）──────────────────────────────────────────────
+interface GroupBox {
+  id: string;
+  label: string;
+  color: string;           // 主题色
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const GROUP_BOX_COLORS = [
+  { value: '#6366f1', label: '靛蓝' },
+  { value: '#8b5cf6', label: '紫色' },
+  { value: '#ec4899', label: '粉色' },
+  { value: '#ef4444', label: '红色' },
+  { value: '#f97316', label: '橙色' },
+  { value: '#eab308', label: '黄色' },
+  { value: '#22c55e', label: '绿色' },
+  { value: '#14b8a6', label: '青色' },
+  { value: '#3b82f6', label: '蓝色' },
+  { value: '#64748b', label: '灰色' },
+];
+const GROUP_BOX_MIN_W = 200;
+const GROUP_BOX_MIN_H = 120;
+
+let _groupBoxSeq = Date.now();
+function nextGroupBoxId() { return `gb_${_groupBoxSeq++}`; }
 
 function getLabelColors(task: any) {
   const labels: string[] = (() => { try { return JSON.parse(task.labels ?? '[]'); } catch { return []; } })();
@@ -902,6 +931,162 @@ function TaskNode({ data, selected }: NodeProps) {
 }
 
 // ── 项目虚拟根节点 ──────────────────────────────────────────────────
+// ── 分组框节点 ─────────────────────────────────────────────────────
+function GroupBoxNode({ data, selected }: NodeProps) {
+  const gb = (data as any).groupBox as GroupBox;
+  const onEditGroupBox = (data as any).onEditGroupBox as (id: string) => void;
+  const onDeleteGroupBox = (data as any).onDeleteGroupBox as (id: string) => void;
+  const onResizeGroupBox = (data as any).onResizeGroupBox as (id: string, w: number, h: number) => void;
+  const color = gb.color || '#6366f1';
+
+  // 拖拽 resize handle
+  const resizing = useRef(false);
+  const startPos = useRef({ x: 0, y: 0, w: 0, h: 0 });
+
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    resizing.current = true;
+    startPos.current = { x: e.clientX, y: e.clientY, w: gb.width, h: gb.height };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const dw = ev.clientX - startPos.current.x;
+      const dh = ev.clientY - startPos.current.y;
+      const newW = Math.max(GROUP_BOX_MIN_W, startPos.current.w + dw);
+      const newH = Math.max(GROUP_BOX_MIN_H, startPos.current.h + dh);
+      onResizeGroupBox(gb.id, newW, newH);
+    };
+    const onUp = () => {
+      resizing.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [gb.id, gb.width, gb.height, onResizeGroupBox]);
+
+  return (
+    <div
+      className="relative group/gbox"
+      style={{
+        width: gb.width,
+        height: gb.height,
+        borderRadius: 16,
+        border: `2px ${selected ? 'solid' : 'dashed'} ${color}`,
+        backgroundColor: `${color}08`,
+        boxShadow: selected ? `0 0 0 3px ${color}30` : 'none',
+        transition: 'box-shadow 0.2s',
+      }}
+    >
+      {/* 标题栏 */}
+      <div
+        className="absolute -top-0.5 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-b-lg"
+        style={{ backgroundColor: `${color}18`, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 }}
+      >
+        <span className="text-xs font-semibold" style={{ color }}>{gb.label || '分组'}</span>
+        {/* 操作按钮 - 悬停显示 */}
+        <div className="flex items-center gap-0.5 opacity-0 group-hover/gbox:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEditGroupBox(gb.id); }}
+            className="w-5 h-5 flex items-center justify-center rounded text-[10px] hover:bg-white/60 transition-colors"
+            style={{ color }}
+            title="编辑分组框"
+          >✏️</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDeleteGroupBox(gb.id); }}
+            className="w-5 h-5 flex items-center justify-center rounded text-[10px] hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
+            title="删除分组框"
+          >✕</button>
+        </div>
+      </div>
+
+      {/* 右下角 resize 拖柄 */}
+      <div
+        className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize opacity-0 group-hover/gbox:opacity-60 transition-opacity"
+        onMouseDown={onResizeMouseDown}
+        style={{ color }}
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" className="w-full h-full">
+          <path d="M14 14H10V13H13V10H14V14ZM14 8H13V6H14V8ZM8 14H6V13H8V14Z" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ── 分组框编辑弹窗 ────────────────────────────────────────────────
+function GroupBoxEditModal({ groupBox, onSave, onClose }: {
+  groupBox: GroupBox;
+  onSave: (gb: GroupBox) => void;
+  onClose: () => void;
+}) {
+  const [label, setLabel] = useState(groupBox.label);
+  const [color, setColor] = useState(groupBox.color);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-gray-900 mb-4">编辑分组框</h3>
+
+        <div className="space-y-4">
+          {/* 标题 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">标题</label>
+            <input
+              type="text"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="分组名称"
+              autoFocus
+            />
+          </div>
+
+          {/* 颜色选择 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">颜色</label>
+            <div className="flex flex-wrap gap-2">
+              {GROUP_BOX_COLORS.map(c => (
+                <button
+                  key={c.value}
+                  onClick={() => setColor(c.value)}
+                  className={cn('w-8 h-8 rounded-lg transition-all hover:scale-110',
+                    color === c.value ? 'ring-2 ring-offset-2' : '')}
+                  style={{ backgroundColor: c.value, ['--tw-ring-color' as any]: c.value }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 预览 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">预览</label>
+            <div
+              className="rounded-xl px-4 py-3 min-h-[60px] flex items-start"
+              style={{
+                border: `2px dashed ${color}`,
+                backgroundColor: `${color}08`,
+              }}
+            >
+              <span className="text-xs font-semibold" style={{ color }}>{label || '分组'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end mt-6">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+          <button
+            onClick={() => { onSave({ ...groupBox, label, color }); onClose(); }}
+            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
+          >确认</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProjectRootNode({ data }: NodeProps) {
   const projectName = (data as any).projectName || '项目';
   return (
@@ -923,7 +1108,7 @@ function ProjectRootNode({ data }: NodeProps) {
   );
 }
 
-const NODE_TYPES = { taskNode: TaskNode, projectRoot: ProjectRootNode };
+const NODE_TYPES = { taskNode: TaskNode, projectRoot: ProjectRootNode, groupBox: GroupBoxNode };
 const EDGE_TYPES = { treeEdge: TreeEdge, assocEdge: AssocEdge };
 
 // ── localStorage 持久化 ──────────────────────────────────────────
@@ -945,6 +1130,7 @@ function saveState(key: string, value: any) {
 function MindMapCanvas() {
   const qc = useQueryClient();
   const activeProject = useActiveProject();
+  const { screenToFlowPosition } = useReactFlow();
   const [activeDomain, setActiveDomain] = useState(() => loadState('activeDomain', ''));
 
   const { data: domainList = [] } = useQuery({
@@ -979,6 +1165,8 @@ function MindMapCanvas() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [nodeStyles, setNodeStyles] = useState<Record<string, NodeStyle>>(() => loadState('nodeStyles', {}));
   const [styleModal, setStyleModal] = useState<{ taskId: string; title: string } | null>(null);
+  const [groupBoxes, setGroupBoxes] = useState<GroupBox[]>(() => loadState('groupBoxes', []));
+  const [editGroupBoxId, setEditGroupBoxId] = useState<string | null>(null);
   const [linkVisibility, setLinkVisibility] = useState<Record<string, boolean>>(() =>
     loadState('linkVisibility', { blocks: true, precedes: true, relates: false })
   );
@@ -1041,6 +1229,7 @@ function MindMapCanvas() {
   useEffect(() => { saveState('fieldFilters', fieldFilters); }, [fieldFilters]);
   useEffect(() => { saveState('selectedId', selectedId); }, [selectedId]);
   useEffect(() => { saveState('nodeStyles', nodeStyles); }, [nodeStyles]);
+  useEffect(() => { saveState('groupBoxes', groupBoxes); }, [groupBoxes]);
   useEffect(() => {
     saveState('coreFilters', {
       status: [...coreFilters.status],
@@ -1181,9 +1370,31 @@ function MindMapCanvas() {
 
     nodeDataMap.current.clear();
     ns.forEach(n => nodeDataMap.current.set(n.id, (n.data as any).task));
+
+    // 注入分组框节点（最底层，zIndex 最低）
+    for (const gb of groupBoxes) {
+      ns.unshift({
+        id: gb.id,
+        type: 'groupBox',
+        position: { x: gb.x, y: gb.y },
+        draggable: true,
+        selectable: true,
+        zIndex: -10,
+        style: { width: gb.width, height: gb.height },
+        data: {
+          groupBox: gb,
+          onEditGroupBox: (id: string) => setEditGroupBoxId(id),
+          onDeleteGroupBox: (id: string) => setGroupBoxes(prev => prev.filter(g => g.id !== id)),
+          onResizeGroupBox: (id: string, w: number, h: number) => {
+            setGroupBoxes(prev => prev.map(g => g.id === id ? { ...g, width: w, height: h } : g));
+          },
+        },
+      });
+    }
+
     setNodes(ns);
     setEdges(es);
-  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, activeProject]);
+  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, activeProject, groupBoxes]);
 
   // 独立更新拖拽放置目标高亮（避免整图重建导致拖拽中断）
   useEffect(() => {
@@ -1229,6 +1440,7 @@ function MindMapCanvas() {
 
   const onNodeDragStart = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.id === PROJECT_NODE_ID) return;
+    if (node.id.startsWith('gb_')) return; // groupBox 不需要拖拽快照
     const snap = new Map<string, { x: number; y: number }>();
     setNodes(curr => { curr.forEach(n => snap.set(n.id, { ...n.position })); return curr; });
     dragSnap.current = snap;
@@ -1236,6 +1448,7 @@ function MindMapCanvas() {
   }, []);
 
   const onNodeDrag = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.id.startsWith('gb_')) return; // groupBox 不做命中检测
     const start = dragSnap.current.get(node.id);
     if (!start) return;
     const dx = node.position.x - start.x;
@@ -1266,6 +1479,7 @@ function MindMapCanvas() {
     for (const n of nodesRef.current) {
       if (n.id === node.id) continue;
       if (n.id === PROJECT_NODE_ID) continue;
+      if (n.id.startsWith('gb_')) continue; // 跳过分组框
       if (descendants.has(n.id)) continue;
       const nx = n.position.x;
       const ny = n.position.y;
@@ -1283,6 +1497,12 @@ function MindMapCanvas() {
   }, []);
 
   const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
+    // 如果是分组框节点 → 直接保存新位置
+    if (node.id.startsWith('gb_')) {
+      setGroupBoxes(prev => prev.map(g => g.id === node.id ? { ...g, x: node.position.x, y: node.position.y } : g));
+      return;
+    }
+
     const targetId = dropTargetRef.current;
     const dragId = draggingNodeId.current;
     setDropTargetId(null);
@@ -1733,6 +1953,31 @@ function MindMapCanvas() {
             >
               + 新建根节点
             </button>
+            <button
+              onClick={() => {
+                const container = document.querySelector('.react-flow') as HTMLElement;
+                const rect = container?.getBoundingClientRect();
+                const screenCenter = rect
+                  ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                  : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+                const flowPos = screenToFlowPosition(screenCenter);
+                const newGB: GroupBox = {
+                  id: nextGroupBoxId(),
+                  label: '分组',
+                  color: '#6366f1',
+                  x: flowPos.x - 180,
+                  y: flowPos.y - 120,
+                  width: 360,
+                  height: 240,
+                };
+                setGroupBoxes(prev => [...prev, newGB]);
+                setEditGroupBoxId(newGB.id);
+              }}
+              className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-xs font-medium px-3 py-2 rounded-xl shadow-sm transition-colors"
+              title="在画布上添加一个分组框，框住多个节点"
+            >
+              ▢ 分组框
+            </button>
           </div>
         </Panel>
 
@@ -1835,6 +2080,19 @@ function MindMapCanvas() {
           }}
         />
       )}
+
+      {/* 分组框编辑弹窗 */}
+      {editGroupBoxId && (() => {
+        const gb = groupBoxes.find(g => g.id === editGroupBoxId);
+        if (!gb) return null;
+        return (
+          <GroupBoxEditModal
+            groupBox={gb}
+            onSave={(updated) => setGroupBoxes(prev => prev.map(g => g.id === updated.id ? updated : g))}
+            onClose={() => setEditGroupBoxId(null)}
+          />
+        );
+      })()}
 
       {/* 删除确认 */}
       {deleteConfirm && (
