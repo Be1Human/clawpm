@@ -112,10 +112,19 @@ const STATUS_LABEL_CN: Record<string, string> = {
   review: '验收中', done: '已完成',
 };
 
-// ── 进度计算（简单：直接子节点 done 数 / 总数） ──────────────────
+// ── 进度计算 ─────────────────────────────────────────────────────
+// 优先使用节点自身的 progress 字段（由后端 API 维护），
+// 对于有子节点且自身 progress 为 0 的父节点，回退到按子节点完成数计算。
 function calcProgress(node: any): number {
+  // 叶子节点：直接使用 API 返回的 progress 值
   const children = node.children ?? [];
-  if (!children.length) return node.status === 'done' ? 100 : 0;
+  if (!children.length) {
+    if (typeof node.progress === 'number' && node.progress > 0) return node.progress;
+    return node.status === 'done' ? 100 : 0;
+  }
+  // 父节点：如果自身有手动设置的 progress，优先使用
+  if (typeof node.progress === 'number' && node.progress > 0) return node.progress;
+  // 否则根据子节点状态自动计算
   const doneCount = children.filter((c: any) => c.status === 'done').length;
   return Math.round((doneCount / children.length) * 100);
 }
