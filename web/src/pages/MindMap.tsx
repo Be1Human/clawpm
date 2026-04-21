@@ -112,6 +112,105 @@ const STATUS_LABEL_CN: Record<string, string> = {
   review: '验收中', done: '已完成',
 };
 
+// ── 节点贴纸（Sticker）配置 ──────────────────────────────────────
+// 优先级贴纸 — 左上角小旗标
+const PRIORITY_STICKER: Record<string, { emoji: string; color: string; bg: string; label: string } | null> = {
+  P0: { emoji: '🔥', color: '#dc2626', bg: '#fef2f2', label: '紧急' },
+  P1: { emoji: '🟠', color: '#ea580c', bg: '#fff7ed', label: '重要' },
+  P2: null, // 默认优先级不显示
+  P3: { emoji: '🌿', color: '#16a34a', bg: '#f0fdf4', label: '低优' },
+};
+
+// 截止时间贴纸工具函数
+function getDueDateSticker(dueDate: string | null | undefined) {
+  if (!dueDate) return null;
+  const now = new Date();
+  const due = new Date(dueDate);
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / 86400000);
+
+  // 格式化日期：M月D日
+  const month = due.getMonth() + 1;
+  const day = due.getDate();
+  const dateStr = `${month}月${day}日`;
+
+  if (diffDays < 0) {
+    // 已过期
+    const overDays = Math.abs(diffDays);
+    return {
+      emoji: '💥',
+      text: `${dateStr}`,
+      sub: `超期${overDays}天`,
+      color: '#dc2626',
+      bg: 'linear-gradient(135deg, #fef2f2, #fee2e2)',
+      border: '#fca5a5',
+      urgent: 'overdue' as const,
+    };
+  } else if (diffDays === 0) {
+    return {
+      emoji: '⏰',
+      text: `${dateStr}`,
+      sub: '今天到期',
+      color: '#ea580c',
+      bg: 'linear-gradient(135deg, #fff7ed, #ffedd5)',
+      border: '#fdba74',
+      urgent: 'today' as const,
+    };
+  } else if (diffDays <= 3) {
+    return {
+      emoji: '⚡',
+      text: `${dateStr}`,
+      sub: `剩${diffDays}天`,
+      color: '#d97706',
+      bg: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
+      border: '#fcd34d',
+      urgent: 'soon' as const,
+    };
+  } else if (diffDays <= 7) {
+    return {
+      emoji: '📅',
+      text: `${dateStr}`,
+      sub: `剩${diffDays}天`,
+      color: '#2563eb',
+      bg: 'linear-gradient(135deg, #eff6ff, #dbeafe)',
+      border: '#93c5fd',
+      urgent: 'normal' as const,
+    };
+  } else {
+    return {
+      emoji: '🗓️',
+      text: `${dateStr}`,
+      sub: `剩${diffDays}天`,
+      color: '#64748b',
+      bg: 'linear-gradient(135deg, #f8fafc, #f1f5f9)',
+      border: '#cbd5e1',
+      urgent: 'far' as const,
+    };
+  }
+}
+
+// 标签颜色池（彩虹色，可爱柔和）
+const TAG_COLORS = [
+  { bg: '#fce7f3', color: '#be185d', border: '#f9a8d4' },  // 粉
+  { bg: '#ede9fe', color: '#6d28d9', border: '#c4b5fd' },  // 紫
+  { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },  // 蓝
+  { bg: '#ccfbf1', color: '#0f766e', border: '#5eead4' },  // 青
+  { bg: '#dcfce7', color: '#15803d', border: '#86efac' },  // 绿
+  { bg: '#fef9c3', color: '#a16207', border: '#fde047' },  // 黄
+  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74' },  // 橙
+  { bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' },  // 红
+];
+function getTagColor(idx: number) { return TAG_COLORS[idx % TAG_COLORS.length]; }
+
+// 节点贴纸可见性配置（可扩展）
+interface StickerVisibility {
+  showDueDate: boolean;
+  showPriority: boolean;
+  showTags: boolean;
+  showOwner: boolean;
+  showStartDate: boolean;
+}
+
 // ── 进度计算 ─────────────────────────────────────────────────────
 // 优先使用节点自身的 progress 字段（由后端 API 维护），
 // 对于有子节点且自身 progress 为 0 的父节点，回退到按子节点完成数计算。
@@ -364,6 +463,7 @@ function buildFlow(
   renamingId: string | null = null,
   nodeStyles: Record<string, NodeStyle> = {},
   dropTargetId: string | null = null,
+  stickerVisibility?: StickerVisibility,
 ) {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -390,6 +490,7 @@ function buildFlow(
         task: node, isRoot, isCollapsed: collapsed.has(node.taskId), progress,
         highlightDomains, renamingId, nodeStyle: nodeStyles[node.taskId] ?? {},
         isDropTarget: dropTargetId === node.taskId,
+        stickerVisibility,
         ...callbacks,
       },
     });
@@ -744,6 +845,9 @@ function TaskNode({ data, selected }: NodeProps) {
   const hlColor = isHighlighted ? domain!.color : null;
   const nodeStyle: NodeStyle = (data as any).nodeStyle ?? {};
   const isDropTarget: boolean = (data as any).isDropTarget ?? false;
+  const stickerVis: StickerVisibility = (data as any).stickerVisibility ?? {
+    showDueDate: true, showPriority: true, showTags: true, showOwner: true, showStartDate: false,
+  };
 
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState(task.title);
@@ -772,6 +876,15 @@ function TaskNode({ data, selected }: NodeProps) {
     (data as any).onContextMenu(e.clientX, e.clientY, task);
   }
 
+  // 计算贴纸数据
+  const dueDateSticker = stickerVis.showDueDate && task.status !== 'done'
+    ? getDueDateSticker(task.dueDate) : null;
+  const prioritySticker = stickerVis.showPriority
+    ? PRIORITY_STICKER[task.priority] ?? null : null;
+  const tags: string[] = Array.isArray(task.tags) ? task.tags : [];
+  const showTags = stickerVis.showTags && tags.length > 0;
+  const hasStickers = !!dueDateSticker || showTags;
+
   // 样式优先级：放置目标 > 用户自定义 > domain高亮 > label色系 > 默认
   const resolvedBorder = isDropTarget ? '#6366f1'
     : nodeStyle.borderColor
@@ -793,148 +906,238 @@ function TaskNode({ data, selected }: NodeProps) {
 
   return (
     <div
-      className="relative rounded-xl select-none"
-      style={{
-        width: NODE_W,
-        minHeight: NODE_H,
-        border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
-        boxShadow,
-        backgroundColor: resolvedBg,
-        transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
-      }}
-      onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
-      onContextMenu={handleContextMenu}
+      className="relative select-none"
+      style={{ width: NODE_W }}
     >
-      {/* 左侧色条 */}
-      <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
+      {/* ====== 主卡片 ====== */}
+      <div
+        className="relative rounded-xl"
+        style={{
+          minHeight: NODE_H,
+          border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
+          boxShadow,
+          backgroundColor: resolvedBg,
+          transition: 'box-shadow 0.3s, border-color 0.3s, background-color 0.3s',
+        }}
+        onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
+        onContextMenu={handleContextMenu}
+      >
+        {/* 左侧色条 */}
+        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
 
-      {/* 调度类型小耳朵徽标（右上角） */}
-      {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
-        const badgeCfg: Record<string, { icon: string; bg: string; border: string; title: string }> = {
-          recurring:        { icon: '🔄', bg: '#ede9fe', border: '#8b5cf6', title: '周期循环' },
-          scheduled:        { icon: '⏰', bg: '#fef3c7', border: '#f59e0b', title: '定时触发' },
-          milestone_driven: { icon: '🏁', bg: '#dcfce7', border: '#22c55e', title: '里程碑驱动' },
-          on_demand:        { icon: '⚡', bg: '#ffedd5', border: '#f97316', title: '按需触发' },
-        };
-        const cfg = badgeCfg[task.scheduleMode];
-        if (!cfg) return null;
-        return (
+        {/* 🔥 优先级旗标贴纸（左上角，像小贴纸一样翘起来） */}
+        {prioritySticker && (
           <div
-            className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] z-20 shadow-sm"
-            style={{ backgroundColor: cfg.bg, border: `2px solid ${cfg.border}` }}
-            title={cfg.title}
+            className="absolute -top-2.5 left-3 flex items-center gap-0.5 px-1.5 py-0.5 rounded-b-md rounded-t-sm z-20"
+            style={{
+              background: prioritySticker.bg,
+              border: `1.5px solid ${prioritySticker.color}40`,
+              boxShadow: `0 2px 6px ${prioritySticker.color}20`,
+              transform: 'rotate(-2deg)',
+            }}
+            title={`优先级: ${task.priority} ${prioritySticker.label}`}
           >
-            {cfg.icon}
+            <span className="text-[10px]">{prioritySticker.emoji}</span>
+            <span className="text-[8px] font-bold" style={{ color: prioritySticker.color }}>{task.priority}</span>
           </div>
-        );
-      })()}
+        )}
 
-      {/* 拖拽把手 */}
-      <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
-        {[0, 1].map(i => <div key={i} className="w-0.5 h-0.5 bg-gray-400 rounded-full" />)}
-      </div>
+        {/* 调度类型小耳朵徽标（右上角） */}
+        {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
+          const badgeCfg: Record<string, { icon: string; bg: string; border: string; title: string }> = {
+            recurring:        { icon: '🔄', bg: '#ede9fe', border: '#8b5cf6', title: '周期循环' },
+            scheduled:        { icon: '⏰', bg: '#fef3c7', border: '#f59e0b', title: '定时触发' },
+            milestone_driven: { icon: '🏁', bg: '#dcfce7', border: '#22c55e', title: '里程碑驱动' },
+            on_demand:        { icon: '⚡', bg: '#ffedd5', border: '#f97316', title: '按需触发' },
+          };
+          const cfg = badgeCfg[task.scheduleMode];
+          if (!cfg) return null;
+          return (
+            <div
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] z-20 shadow-sm"
+              style={{ backgroundColor: cfg.bg, border: `2px solid ${cfg.border}` }}
+              title={cfg.title}
+            >
+              {cfg.icon}
+            </div>
+          );
+        })()}
 
-      {/* 放置目标提示 */}
-      {isDropTarget && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
-          放置为子节点
+        {/* 拖拽把手 */}
+        <div className="absolute left-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing opacity-25 hover:opacity-60" title="拖拽移动">
+          {[0, 1].map(i => <div key={i} className="w-0.5 h-0.5 bg-gray-400 rounded-full" />)}
         </div>
-      )}
 
-      <div className="pl-5 pr-8 py-1.5">
-        {/* 上行：标签 + 标题 */}
-        <div className="flex items-center gap-1.5">
-          {firstLabel && (
-            <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-              style={{ backgroundColor: colors.pill, color: colors.text }}>
-              {firstLabel}{labels.length > 1 ? `+${labels.length - 1}` : ''}
-            </span>
-          )}
-          <div className="flex-1 min-w-0">
-            {editing ? (
-              <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={e => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-                  if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
-                }}
-                className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
-            ) : (
-              <p className="text-[12px] font-semibold leading-tight line-clamp-2" style={{ color: resolvedTextColor }} title={task.title}>
-                {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
-                {task.title}
-              </p>
+        {/* 放置目标提示 */}
+        {isDropTarget && (
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-30">
+            放置为子节点
+          </div>
+        )}
+
+        <div className="pl-5 pr-8 py-1.5">
+          {/* 上行：标签 + 标题 */}
+          <div className="flex items-center gap-1.5">
+            {firstLabel && (
+              <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: colors.pill, color: colors.text }}>
+                {firstLabel}{labels.length > 1 ? `+${labels.length - 1}` : ''}
+              </span>
             )}
+            <div className="flex-1 min-w-0">
+              {editing ? (
+                <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+                    if (e.key === 'Escape') { setEditing(false); setEditVal(task.title); }
+                  }}
+                  className="w-full text-[12px] font-semibold text-gray-800 bg-transparent border-b border-indigo-300 outline-none" />
+              ) : (
+                <p className="text-[12px] font-semibold leading-tight line-clamp-2" style={{ color: resolvedTextColor }} title={task.title}>
+                  {nodeStyle.emoji && <span className="mr-0.5">{nodeStyle.emoji}</span>}
+                  {task.title}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 下行：meta 信息 */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
+            {(task.attachmentCount ?? 0) > 0 && (
+              <span className="text-[9px] text-gray-400" title={`${task.attachmentCount} 个附件`}>📎{task.attachmentCount}</span>
+            )}
+            {task.owner && <span className="text-[9px] text-gray-400 truncate max-w-[60px]">{task.owner}</span>}
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={task.status} />
           </div>
         </div>
 
-        {/* 下行：meta 信息 */}
-        <div className="flex items-center gap-1.5 mt-1">
-          <span className="text-[9px] font-mono text-indigo-400 flex-shrink-0">{task.taskId}</span>
-          {(task.attachmentCount ?? 0) > 0 && (
-            <span className="text-[9px] text-gray-400" title={`${task.attachmentCount} 个附件`}>📎{task.attachmentCount}</span>
-          )}
-          {task.owner && <span className="text-[9px] text-gray-400 truncate max-w-[60px]">{task.owner}</span>}
-          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} title={task.status} />
+        {/* 进度圆环（右侧居中） */}
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+          <ProgressRing progress={progress} size={24} />
         </div>
-      </div>
 
-      {/* 进度圆环（右侧居中） */}
-      <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
-        <ProgressRing progress={progress} size={24} />
-      </div>
-
-      {/* 右侧：有子节点时显示展开/收缩，否则不显示 */}
-      {hasChildren && (
-        <button
-          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
-          onMouseDown={e => e.stopPropagation()}
-          onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
-          title={isCollapsed ? '展开' : '折叠'}
-        >
-          {isCollapsed ? '▶' : '▼'}
-        </button>
-      )}
-
-      {/* 选中时显示的操作按钮 */}
-      {selected && (
-        <>
-          {/* 右侧添加子节点 */}
+        {/* 右侧：有子节点时显示展开/收缩 */}
+        {hasChildren && (
           <button
-            className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+            className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 flex items-center justify-center text-[10px] shadow-sm z-10 transition-colors"
             onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
-            title="添加子节点 (Tab)"
+            onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
+            title={isCollapsed ? '展开' : '折叠'}
           >
-            +
+            {isCollapsed ? '▶' : '▼'}
           </button>
-          {/* 下方添加同级 */}
-          {!isRoot && (
+        )}
+
+        {/* 选中时显示的操作按钮 */}
+        {selected && (
+          <>
             <button
-              className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+              className="absolute -right-3.5 -bottom-3.5 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white text-white hover:bg-indigo-600 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
               onMouseDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
-              title="添加同级 (Enter)"
+              onClick={e => { e.stopPropagation(); (data as any).onAddChild(task.taskId); }}
+              title="添加子节点 (Tab)"
             >
               +
             </button>
-          )}
-        </>
-      )}
+            {!isRoot && (
+              <button
+                className="absolute left-1/2 -translate-x-1/2 -bottom-3.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-400 text-indigo-500 hover:bg-indigo-50 flex items-center justify-center text-sm shadow-md z-20 transition-colors"
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); (data as any).onAddSibling(task); }}
+                title="添加同级 (Enter)"
+              >
+                +
+              </button>
+            )}
+          </>
+        )}
 
-      {/* 子节点计数气泡（折叠时显示） */}
-      {isCollapsed && hasChildren && (
-        <div
-          className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 rounded-full text-white"
-          style={{ backgroundColor: colors.border }}
-        >
-          {task.children.length}
+        {/* 子节点计数气泡（折叠时显示） */}
+        {isCollapsed && hasChildren && !hasStickers && (
+          <div
+            className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 rounded-full text-white"
+            style={{ backgroundColor: colors.border }}
+          >
+            {task.children.length}
+          </div>
+        )}
+
+        <Handle type="target" position={Position.Left}  style={{ opacity: 0, width: 1, height: 1 }} />
+        <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+      </div>
+
+      {/* ====== 贴纸区（主卡片下方，像便利贴一样贴在卡片底部） ====== */}
+      {hasStickers && (
+        <div className="flex flex-wrap items-start gap-1 mt-1 px-1" style={{ maxWidth: NODE_W }}>
+          {/* 📅 截止时间贴纸 — 小票根样式 */}
+          {dueDateSticker && (
+            <div
+              className="inline-flex items-center gap-1 px-2 py-[3px] rounded-lg text-[9px] font-medium select-none"
+              style={{
+                background: dueDateSticker.bg,
+                border: `1.5px solid ${dueDateSticker.border}`,
+                color: dueDateSticker.color,
+                boxShadow: `0 1px 4px ${dueDateSticker.color}15`,
+                ...(dueDateSticker.urgent === 'overdue' ? {
+                  animation: 'sticker-shake 0.5s ease-in-out infinite alternate',
+                } : {}),
+              }}
+              title={`截止日期: ${task.dueDate}${dueDateSticker.sub ? ` (${dueDateSticker.sub})` : ''}`}
+            >
+              <span className="text-[11px] leading-none">{dueDateSticker.emoji}</span>
+              <span className="font-semibold">{dueDateSticker.text}</span>
+              <span className="opacity-70 text-[8px]">{dueDateSticker.sub}</span>
+            </div>
+          )}
+
+          {/* 🏷️ 自定义标签贴纸 — 彩色圆角小药丸 */}
+          {showTags && tags.slice(0, 4).map((tag: string, idx: number) => {
+            const tc = getTagColor(idx);
+            return (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-0.5 px-1.5 py-[2px] rounded-full text-[8px] font-semibold select-none"
+                style={{
+                  backgroundColor: tc.bg,
+                  color: tc.color,
+                  border: `1px solid ${tc.border}`,
+                  boxShadow: `0 1px 2px ${tc.color}10`,
+                }}
+                title={tag}
+              >
+                <span className="text-[9px]">✦</span>
+                {tag.length > 6 ? tag.slice(0, 6) + '…' : tag}
+              </span>
+            );
+          })}
+          {showTags && tags.length > 4 && (
+            <span className="text-[8px] text-gray-400 leading-none self-center">+{tags.length - 4}</span>
+          )}
+
+          {/* 折叠子节点计数（贴纸区有内容时移到这里） */}
+          {isCollapsed && hasChildren && (
+            <span
+              className="inline-flex items-center px-1.5 py-[2px] rounded-full text-[8px] font-bold text-white select-none"
+              style={{ backgroundColor: colors.border }}
+            >
+              {task.children.length}子节点
+            </span>
+          )}
         </div>
       )}
 
-      <Handle type="target" position={Position.Left}  style={{ opacity: 0, width: 1, height: 1 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+      {/* 过期抖动动画 CSS（注入 style 标签，只注入一次） */}
+      {dueDateSticker?.urgent === 'overdue' && (
+        <style>{`
+          @keyframes sticker-shake {
+            0% { transform: translateX(-0.5px) rotate(-0.5deg); }
+            100% { transform: translateX(0.5px) rotate(0.5deg); }
+          }
+        `}</style>
+      )}
     </div>
   );
 }
@@ -1181,6 +1384,9 @@ function MindMapCanvas() {
   );
   const [highlightDomains, setHighlightDomains] = useState<Set<string>>(() => new Set(loadState<string[]>('highlightDomains', [])));
   const [fieldFilters, setFieldFilters] = useState<Record<number, string>>(() => loadState('fieldFilters', {}));
+  const [stickerVisibility, setStickerVisibility] = useState<StickerVisibility>(() =>
+    loadState('stickerVisibility', { showDueDate: true, showPriority: true, showTags: true, showOwner: true, showStartDate: false })
+  );
 
   // 核心字段筛选
   const [coreFilters, setCoreFilters] = useState<CoreFilters>(() => {
@@ -1238,6 +1444,7 @@ function MindMapCanvas() {
   useEffect(() => { saveState('fieldFilters', fieldFilters); }, [fieldFilters]);
   useEffect(() => { saveState('selectedId', selectedId); }, [selectedId]);
   useEffect(() => { saveState('nodeStyles', nodeStyles); }, [nodeStyles]);
+  useEffect(() => { saveState('stickerVisibility', stickerVisibility); }, [stickerVisibility]);
   useEffect(() => { saveState('groupBoxes', groupBoxes); }, [groupBoxes]);
   useEffect(() => {
     saveState('coreFilters', {
@@ -1339,6 +1546,7 @@ function MindMapCanvas() {
       reqLinks as any[], linkVisibility, hlArr,
       fieldFilters, customFieldDefs as any[], coreFilters, renamingId, nodeStyles,
       null, // dropTargetId 由独立 effect 处理
+      stickerVisibility,
     );
 
     // 注入虚拟项目根节点：连接所有实际根节点
@@ -1403,7 +1611,7 @@ function MindMapCanvas() {
 
     setNodes(ns);
     setEdges(es);
-  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, activeProject, groupBoxes]);
+  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, stickerVisibility, activeProject, groupBoxes]);
 
   // 独立更新拖拽放置目标高亮（避免整图重建导致拖拽中断）
   useEffect(() => {
@@ -1676,6 +1884,28 @@ function MindMapCanvas() {
                   <span className="text-[10px] text-gray-400">
                     {key === 'blocks' ? '（阻塞依赖）' : key === 'precedes' ? '（顺序依赖）' : '（弱关联）'}
                   </span>
+                </label>
+              ))}
+            </div>
+
+            {/* 🏷️ 节点贴纸开关 */}
+            <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl shadow-sm px-4 py-3">
+              <p className="text-xs font-semibold text-gray-500 mb-2">🏷️ 节点贴纸</p>
+              {([
+                { key: 'showDueDate'  as const, emoji: '📅', label: '截止时间', desc: '显示 deadline 贴纸' },
+                { key: 'showPriority' as const, emoji: '🔥', label: '优先级旗标', desc: '左上角优先级标记' },
+                { key: 'showTags'     as const, emoji: '✦', label: '自定义标签', desc: '彩色标签药丸' },
+              ]).map(item => (
+                <label key={item.key} className="flex items-center gap-2 cursor-pointer mb-1.5 group">
+                  <input
+                    type="checkbox"
+                    checked={stickerVisibility[item.key]}
+                    onChange={ev => setStickerVisibility(prev => ({ ...prev, [item.key]: ev.target.checked }))}
+                    className="rounded accent-indigo-500"
+                  />
+                  <span className="text-[11px]">{item.emoji}</span>
+                  <span className="text-xs font-medium text-gray-700">{item.label}</span>
+                  <span className="text-[10px] text-gray-400 hidden group-hover:inline">({item.desc})</span>
                 </label>
               ))}
             </div>
