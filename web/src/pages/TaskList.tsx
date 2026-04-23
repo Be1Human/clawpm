@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
@@ -20,11 +20,24 @@ const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
   chore:   { bg: '#f1f5f9', text: '#475569' },
 };
 
+type ViewMode = 'tree' | 'table';
+const VIEW_STORAGE_KEY = 'clawpm-task-list-view';
+
 export default function TaskList() {
   const { t } = useI18n();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+      return (saved === 'table' ? 'table' : 'tree') as ViewMode;
+    } catch { return 'tree'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(VIEW_STORAGE_KEY, viewMode); } catch {}
+  }, [viewMode]);
+
   const activeProject = useActiveProject();
 
   const filterHook = useFilters('task-list');
@@ -77,7 +90,32 @@ export default function TaskList() {
             {visibleTasks.length} / {totalNodes} 个节点，按需求树展开，同级按优先级排序
           </p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary">+ 新建节点</button>
+        <div className="flex items-center gap-2">
+          {/* 视图切换 */}
+          <div className="inline-flex rounded-md overflow-hidden border border-slate-700 text-xs">
+            <button
+              onClick={() => setViewMode('tree')}
+              className={cn(
+                'px-3 py-1.5 transition-colors',
+                viewMode === 'tree' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:bg-slate-800'
+              )}
+              title="树形视图：每个节点一行"
+            >
+              🌳 树形
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'px-3 py-1.5 transition-colors border-l border-slate-700',
+                viewMode === 'table' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:bg-slate-800'
+              )}
+              title="表格视图：一个父节点一行，子节点缩进列在同一格"
+            >
+              📊 表格
+            </button>
+          </div>
+          <button onClick={() => setShowCreate(true)} className="btn-primary">+ 新建节点</button>
+        </div>
       </div>
 
       {/* 统一筛选栏 */}
@@ -88,7 +126,7 @@ export default function TaskList() {
       <div className="card overflow-hidden">
         <div className="min-w-[1080px]">
           <div className="flex items-center border-b border-slate-800 text-sm">
-            <div className="px-2 py-3 w-8">
+            <div className="px-2 py-2 w-8">
               <input
                 type="checkbox"
                 checked={allVisibleSelected}
@@ -96,26 +134,26 @@ export default function TaskList() {
                 className="rounded border-gray-500"
               />
             </div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thId')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium flex-1">{t('taskList.thTitle')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thLabel')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">处理人</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-28">{t('taskList.thProgress')}</div>
-            <div className="text-left px-4 py-3 text-xs text-slate-500 font-medium w-24">{t('taskList.thDueDate')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thId')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium flex-1">{t('taskList.thTitle')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thLabel')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">处理人</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-28">{t('taskList.thProgress')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thDueDate')}</div>
           </div>
 
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="border-b border-slate-800/50 px-4 py-3">
+              <div key={i} className="border-b border-slate-800/50 px-4 py-2">
                 <div className="h-4 bg-slate-800 rounded animate-pulse" />
               </div>
             ))
           ) : visibleTasks.length === 0 ? (
             <div className="text-center py-12 text-slate-600">没有节点</div>
-          ) : (
+          ) : viewMode === 'tree' ? (
             filteredTree.map((task: any) => (
               <TaskTreeRow
                 key={task.id}
@@ -125,6 +163,15 @@ export default function TaskList() {
                 collapsedIds={collapsedIds}
                 onToggleSelect={toggleSelect}
                 onToggleCollapse={toggleCollapse}
+              />
+            ))
+          ) : (
+            filteredTree.map((task: any) => (
+              <TaskTableRow
+                key={task.id}
+                task={task}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
               />
             ))
           )}
@@ -142,6 +189,9 @@ export default function TaskList() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// 树形视图行：每个节点一行
+// ═══════════════════════════════════════════════════════════════════
 function TaskTreeRow({
   task,
   depth,
@@ -172,7 +222,7 @@ function TaskTreeRow({
           isSelected && 'bg-indigo-900/20'
         )}
       >
-        <div className="px-2 py-3 w-8">
+        <div className="px-2 py-1.5 w-8">
           <input
             type="checkbox"
             checked={isSelected}
@@ -180,12 +230,12 @@ function TaskTreeRow({
             className="rounded border-gray-500"
           />
         </div>
-        <div className="px-4 py-3 w-24">
+        <div className="px-4 py-1.5 w-24">
           <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400">
             {task.taskId}
           </Link>
         </div>
-        <div className="px-4 py-3 flex-1 min-w-0">
+        <div className="px-4 py-1.5 flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: `${depth * 20}px` }}>
             <button
               type="button"
@@ -207,7 +257,7 @@ function TaskTreeRow({
             </div>
           )}
         </div>
-        <div className="px-4 py-3 w-24">
+        <div className="px-4 py-1.5 w-24">
           {labels.slice(0, 1).map(label => {
             const c = LABEL_COLORS[label] || { bg: '#f1f5f9', text: '#475569' };
             return (
@@ -232,16 +282,16 @@ function TaskTreeRow({
             );
           })()}
         </div>
-        <div className="px-4 py-3 w-24"><StatusBadge status={task.status} /></div>
-        <div className="px-4 py-3 w-16"><PriorityBadge priority={task.priority} /></div>
-        <div className="px-4 py-3 w-24">
+        <div className="px-4 py-1.5 w-24"><StatusBadge status={task.status} /></div>
+        <div className="px-4 py-1.5 w-16"><PriorityBadge priority={task.priority} /></div>
+        <div className="px-4 py-1.5 w-24">
           {task.domain ? (
             <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: `${task.domain.color}20`, color: task.domain.color }}>
               {task.domain.name}
             </span>
           ) : <span className="text-slate-700">-</span>}
         </div>
-        <div className="px-4 py-3 w-24">
+        <div className="px-4 py-1.5 w-24">
           {(task.assignee || task.owner) ? (
             <div className="flex items-center gap-1.5">
               <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
@@ -254,7 +304,7 @@ function TaskTreeRow({
             </div>
           ) : <span className="text-slate-700">-</span>}
         </div>
-        <div className="px-4 py-3 w-28">
+        <div className="px-4 py-1.5 w-28">
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
               <div className="h-full bg-brand-500 rounded-full" style={{ width: `${task.progress}%` }} />
@@ -262,7 +312,7 @@ function TaskTreeRow({
             <span className="text-xs text-slate-600 w-7">{task.progress}%</span>
           </div>
         </div>
-        <div className="px-4 py-3 w-24">
+        <div className="px-4 py-1.5 w-24">
           <span className={cn('text-xs', isOverdue ? 'text-red-400' : 'text-slate-500')}>
             {task.dueDate ? formatDate(task.dueDate) : '-'}
           </span>
@@ -281,5 +331,149 @@ function TaskTreeRow({
         />
       ))}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 表格视图行：一个顶层父节点一行，子节点递归缩进列在「标题」格内
+// 其他列展示父节点自身的值（飞书多维表格式的"分组聚合"风格）
+// ═══════════════════════════════════════════════════════════════════
+function TaskTableRow({
+  task,
+  selectedIds,
+  onToggleSelect,
+}: {
+  task: any;
+  selectedIds: Set<string>;
+  onToggleSelect: (taskId: string) => void;
+}) {
+  const days = getDaysUntil(task.dueDate);
+  const isOverdue = days !== null && days < 0;
+  const labels = getNodeLabels(task);
+  const isSelected = selectedIds.has(task.taskId);
+  const hasChildren = (task.children || []).length > 0;
+
+  return (
+    <div
+      className={cn(
+        'flex items-start border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors text-sm',
+        isSelected && 'bg-indigo-900/20'
+      )}
+    >
+      <div className="px-2 py-1.5 w-8 flex-shrink-0">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(task.taskId)}
+          className="rounded border-gray-500"
+        />
+      </div>
+      <div className="px-4 py-1.5 w-24 flex-shrink-0">
+        <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400">
+          {task.taskId}
+        </Link>
+      </div>
+
+      {/* 标题格：自身 + 所有子节点（递归缩进） */}
+      <div className="px-4 py-1.5 flex-1 min-w-0 space-y-0.5">
+        <Link to={`/tasks/${task.taskId}`} className="text-slate-100 font-medium hover:text-brand-400 line-clamp-1">
+          {task.title}
+        </Link>
+        {task.blocker && (
+          <div className="text-xs text-red-400 truncate">! {task.blocker}</div>
+        )}
+        {hasChildren && (
+          <div className="mt-1 border-l border-slate-700/50 pl-2">
+            {(task.children || []).map((child: any) => (
+              <NestedTitleRow key={child.id} task={child} depth={0} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 py-1.5 w-24 flex-shrink-0">
+        {labels.slice(0, 1).map(label => {
+          const c = LABEL_COLORS[label] || { bg: '#f1f5f9', text: '#475569' };
+          return (
+            <span
+              key={label}
+              className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full whitespace-nowrap overflow-hidden text-ellipsis inline-block max-w-full"
+              style={{ backgroundColor: c.bg, color: c.text }}
+              title={label}
+            >
+              {label}
+            </span>
+          );
+        })}
+        {labels.length === 0 && <span className="text-slate-700">-</span>}
+      </div>
+      <div className="px-4 py-1.5 w-24 flex-shrink-0"><StatusBadge status={task.status} /></div>
+      <div className="px-4 py-1.5 w-16 flex-shrink-0"><PriorityBadge priority={task.priority} /></div>
+      <div className="px-4 py-1.5 w-24 flex-shrink-0">
+        {task.domain ? (
+          <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: `${task.domain.color}20`, color: task.domain.color }}>
+            {task.domain.name}
+          </span>
+        ) : <span className="text-slate-700">-</span>}
+      </div>
+      <div className="px-4 py-1.5 w-24 flex-shrink-0">
+        {(task.assignee || task.owner) ? (
+          <div className="flex items-center gap-1.5">
+            <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
+              task.assignee ? "bg-brand-500/30 text-brand-400" : "bg-slate-500/30 text-slate-400")}>
+              {(task.assignee || task.owner)[0].toUpperCase()}
+            </span>
+            <span className="text-xs text-slate-400 truncate" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>
+              {task.assignee || task.owner}
+            </span>
+          </div>
+        ) : <span className="text-slate-700">-</span>}
+      </div>
+      <div className="px-4 py-1.5 w-28 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-full bg-brand-500 rounded-full" style={{ width: `${task.progress}%` }} />
+          </div>
+          <span className="text-xs text-slate-600 w-7">{task.progress}%</span>
+        </div>
+      </div>
+      <div className="px-4 py-1.5 w-24 flex-shrink-0">
+        <span className={cn('text-xs', isOverdue ? 'text-red-400' : 'text-slate-500')}>
+          {task.dueDate ? formatDate(task.dueDate) : '-'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// 表格视图 -- 标题格内的嵌套子节点展示（递归）
+function NestedTitleRow({ task, depth }: { task: any; depth: number }) {
+  const hasChildren = (task.children || []).length > 0;
+  return (
+    <div>
+      <div
+        className="flex items-center gap-2 py-0.5 min-w-0"
+        style={{ paddingLeft: `${depth * 14}px` }}
+      >
+        <span className="text-slate-600 text-[10px] flex-shrink-0">└</span>
+        <Link
+          to={`/tasks/${task.taskId}`}
+          className="font-mono text-[10px] text-slate-600 hover:text-brand-400 flex-shrink-0"
+        >
+          {task.taskId}
+        </Link>
+        <Link
+          to={`/tasks/${task.taskId}`}
+          className="text-xs text-slate-300 hover:text-brand-400 line-clamp-1 min-w-0"
+        >
+          {task.title}
+        </Link>
+        <StatusBadge status={task.status} />
+        <PriorityBadge priority={task.priority} />
+      </div>
+      {hasChildren && (task.children || []).map((child: any) => (
+        <NestedTitleRow key={child.id} task={child} depth={depth + 1} />
+      ))}
+    </div>
   );
 }
