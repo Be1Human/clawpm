@@ -36,9 +36,11 @@ const PRIORITY_BADGE: Record<string, { bg: string; text: string }> = {
 function TaskCard({
   task,
   onDragStart,
+  statusLabel,
 }: {
   task: any;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
+  statusLabel?: string;
 }) {
   const { t } = useI18n();
   const days = getDaysUntil(task.dueDate);
@@ -66,9 +68,16 @@ function TaskCard({
             );
           })}
         </div>
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: pb.bg, color: pb.text }}>
-          {task.priority}
-        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {statusLabel && (
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+              {statusLabel}
+            </span>
+          )}
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: pb.bg, color: pb.text }}>
+            {task.priority}
+          </span>
+        </div>
       </div>
 
       {/* Title */}
@@ -149,6 +158,38 @@ export default function KanbanBoard() {
     refetchInterval: 15000,
   });
 
+  // 工作流配置：状态 → 看板列映射。支持自定义状态机（如 MineFriend 8 态），
+  // 其状态通过 kanban 字段归入五列；无配置时回退为状态即列（clawpm 原生五态）
+  const { data: workflow } = useQuery({
+    queryKey: ['workflow'],
+    queryFn: () => api.getWorkflow(),
+    staleTime: 60000,
+  });
+  const statusToCol = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of (workflow?.statuses ?? []) as any[]) m[s.id] = s.kanban || s.id;
+    return m;
+  }, [workflow]);
+  const colToStatus = useMemo(() => {
+    // 拖入某列时应设置的具体状态：取该列对应的第一个工作流状态，回退列 key
+    const m: Record<string, string> = {};
+    for (const s of (workflow?.statuses ?? []) as any[]) {
+      const col = s.kanban || s.id;
+      if (!(col in m)) m[col] = s.id;
+    }
+    return m;
+  }, [workflow]);
+  const colOf = useCallback((status: string) => statusToCol[status] ?? status, [statusToCol]);
+  // 卡片状态标签：仅当状态被 kanban 映射到不同名的列（自定义工作流细分态）时显示
+  const statusLabelOf = useCallback(
+    (status: string, colKey: string): string | undefined => {
+      if (status === colKey) return undefined;
+      const s = ((workflow?.statuses ?? []) as any[]).find((x) => x.id === status);
+      return s?.label ?? status;
+    },
+    [workflow]
+  );
+
   const moveMut = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string; status: string }) =>
       api.updateTask(taskId, { status }),
@@ -166,9 +207,9 @@ export default function KanbanBoard() {
   const columnTasks = useMemo(
     () => Object.fromEntries(COLUMNS.map(col => [
       col.key,
-      visibleTasks.filter((t: any) => t.status === col.key).sort(compareNodesByPriority),
+      visibleTasks.filter((t: any) => colOf(t.status) === col.key).sort(compareNodesByPriority),
     ])),
-    [visibleTasks]
+    [visibleTasks, colOf]
   );
 
   function handleDragStart(e: React.DragEvent, taskId: string) {
@@ -182,20 +223,22 @@ export default function KanbanBoard() {
     setDraggingOver(colKey);
   }
 
-  function handleDrop(e: React.DragEvent, targetStatus: string) {
+  function handleDrop(e: React.DragEvent, targetCol: string) {
     e.preventDefault();
     setDraggingOver(null);
     const taskId = dragTaskId.current;
     if (!taskId) return;
     const task = visibleTasks.find(t => t.taskId === taskId);
-    if (!task || task.status === targetStatus) return;
-    moveMut.mutate({ taskId, status: targetStatus });
     dragTaskId.current = null;
+    if (!task || colOf(task.status) === targetCol) return; // 已在该列（同列多状态不变更）
+    // 拖入列 → 设为该列对应的具体状态（自定义工作流取列的首个状态）
+    const newStatus = colToStatus[targetCol] ?? targetCol;
+    moveMut.mutate({ taskId, status: newStatus });
   }
 
-  const totalByStatus = useCallback(
-    (status: string) => visibleTasks.filter(task => task.status === status).length,
-    [visibleTasks]
+  const totalByCol = useCallback(
+    (col: string) => visibleTasks.filter(task => colOf(task.status) === col).length,
+    [visibleTasks, colOf]
   );
 
   return (
@@ -253,7 +296,7 @@ export default function KanbanBoard() {
                       className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                       style={{ backgroundColor: `${col.accent}18`, color: col.accent }}
                     >
-                      {totalByStatus(col.key)}
+                      {totalByCol(col.key)}
                     </span>
                   </div>
                 </div>
@@ -282,6 +325,7 @@ export default function KanbanBoard() {
                         key={task.taskId}
                         task={task}
                         onDragStart={handleDragStart}
+                        statusLabel={statusLabelOf(task.status, col.key)}
                       />
                     ))
                   )}

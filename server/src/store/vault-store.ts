@@ -29,11 +29,18 @@ export class VaultStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
+  private _workflow: import('./types.js').VaultWorkflow = DEFAULT_WORKFLOW;
+
   private constructor(sqlite: SqliteDb, dir: string, slug: string) {
     this.sqlite = sqlite;
     this.dir = dir;
     this.slug = slug;
     this.db = createDrizzle(sqlite);
+  }
+
+  /** vault 的工作流配置（状态机 + 看板列映射 + 交付物轨道 + gates） */
+  get workflow(): import('./types.js').VaultWorkflow {
+    return this._workflow;
   }
 
   /**
@@ -68,7 +75,9 @@ export class VaultStore {
       `[vault] 已加载 ${vault.tasks.length} 个任务 / ${vault.domains.length} 域 / ${vault.links.length} 关联（来自 ${absDir}）`
     );
 
-    return new VaultStore(sqlite, absDir, slug);
+    const store = new VaultStore(sqlite, absDir, slug);
+    store._workflow = vault.config.workflow ?? DEFAULT_WORKFLOW;
+    return store;
   }
 
   /** 标记有写入，安排一次防抖落盘 */

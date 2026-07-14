@@ -136,6 +136,7 @@ export const api = {
     const qs = params ? '?' + new URLSearchParams(params) : '';
     return request<any[]>(withProject(`/tasks/tree${qs}`));
   },
+  getWorkflow: () => request<any>('/workflow'),
   getTaskChildren: (taskId: string) =>
     request<any[]>(`/tasks/${taskId}/children`),
   getTaskContext: (taskId: string) =>

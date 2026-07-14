@@ -17,6 +17,8 @@ import { AuthService } from '../services/auth-service.js';
 import { ScheduleService } from '../services/schedule-service.js';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
+import { getVaultStore } from '../store/vault-store.js';
+import { DEFAULT_WORKFLOW } from '../store/types.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members, projectMembers } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
 
@@ -33,6 +35,12 @@ function getBaseUrl(req: any) {
 }
 
 export async function registerRoutes(app: FastifyInstance) {
+
+  // 工作流配置（vault 模式返回 vault 的状态机 + 看板列映射；sqlite 模式返回默认五态）
+  app.get('/api/v1/workflow', async () => {
+    const store = getVaultStore();
+    return store ? store.workflow : DEFAULT_WORKFLOW;
+  });
 
   function requireAccountPrincipal(req: any, reply?: any) {
     const principal = req.clawpmPrincipal;
