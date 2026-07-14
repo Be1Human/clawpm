@@ -96,6 +96,20 @@ export const TaskService = {
 
     const taskId = await generateTaskId(domainId, projectId);
 
+    // 追加到同级末尾（sortOrder = 兄弟最大值 + 1）。默认 0 会与既有同级冲突，
+    // 破坏 vault 分片的稳定排序、导致新建任务时多个分片文件被重排（git 噪音）
+    const siblingRows = db
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.projectId, projectId),
+          parentTaskId != null ? eq(tasks.parentTaskId, parentTaskId) : isNull(tasks.parentTaskId)
+        )
+      )
+      .all();
+    const maxSort = siblingRows.reduce((m, s) => Math.max(m, (s as any).sortOrder ?? 0), 0);
+
     db.insert(tasks).values({
       taskId,
       projectId,
@@ -104,6 +118,7 @@ export const TaskService = {
       domainId,
       milestoneId,
       parentTaskId: parentTaskId ?? null,
+      sortOrder: maxSort + 1,
       priority: params.priority || 'P2',
       owner: params.owner,
       assignee: params.assignee || null,

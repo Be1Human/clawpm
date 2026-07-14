@@ -76,22 +76,24 @@ function parseJsonArray(raw: string | null, warnings: string[], ctx: string): st
   }
 }
 
-export function exportVault(opts: ExportOptions): ExportReport {
+export interface CollectedVault {
+  project: { id: number; slug: string; name: string };
+  data: Omit<VaultData, 'dir' | 'warnings'>;
+  archived: number;
+  warnings: string[];
+}
+
+/**
+ * 从任意 SQLite 库（文件或 :memory:）收集某项目的需求树数据为 vault 内存结构。
+ * CLI 导出与 VaultStore 落盘共用此函数，保证 SQLite↔vault 映射只有一份实现。
+ */
+export function collectVaultData(db: Database.Database, projectSlug: string): CollectedVault {
   const warnings: string[] = [];
-
-  if (fs.existsSync(opts.outDir)) {
-    const entries = fs.readdirSync(opts.outDir);
-    if (entries.length > 0 && !opts.force) {
-      throw new Error(`输出目录非空: ${opts.outDir}（使用 --force 覆盖写入）`);
-    }
-  }
-
-  const db = new Database(opts.dbPath, { readonly: true, fileMustExist: true });
-  try {
+  {
     const project = db
       .prepare('SELECT id, slug, name FROM projects WHERE slug = ?')
-      .get(opts.projectSlug) as { id: number; slug: string; name: string } | undefined;
-    if (!project) throw new Error(`项目不存在: ${opts.projectSlug}`);
+      .get(projectSlug) as { id: number; slug: string; name: string } | undefined;
+    if (!project) throw new Error(`项目不存在: ${projectSlug}`);
 
     // ── domains：task_prefix 作为 code，冲突时追加序号去重 ──
     const domainRows = db
@@ -393,16 +395,30 @@ export function exportVault(opts: ExportOptions): ExportReport {
       links,
       tasks,
     };
-    const files = writeVault(opts.outDir, data).sort(naturalCompare);
+    return { project, data, archived: archivedCount, warnings };
+  }
+}
 
+export function exportVault(opts: ExportOptions): ExportReport {
+  if (fs.existsSync(opts.outDir)) {
+    const entries = fs.readdirSync(opts.outDir);
+    if (entries.length > 0 && !opts.force) {
+      throw new Error(`输出目录非空: ${opts.outDir}（使用 --force 覆盖写入）`);
+    }
+  }
+
+  const db = new Database(opts.dbPath, { readonly: true, fileMustExist: true });
+  try {
+    const { project, data, archived, warnings } = collectVaultData(db, opts.projectSlug);
+    const files = writeVault(opts.outDir, data).sort(naturalCompare);
     return {
       project: project.slug,
-      tasks: tasks.length,
-      archived: archivedCount,
-      domains: domains.length,
-      milestones: milestones.length,
-      fields: fields.length,
-      links: links.length,
+      tasks: data.tasks.length,
+      archived,
+      domains: data.domains.length,
+      milestones: data.milestones.length,
+      fields: data.fields.length,
+      links: data.links.length,
       files,
       warnings,
     };

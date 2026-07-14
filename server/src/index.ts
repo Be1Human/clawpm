@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
 import { getDb } from './db/connection.js';
+import { markVaultDirty, flushVaultStore } from './store/vault-store.js';
 import { SchedulerWorker } from './scheduler/worker.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { AuthService, type AuthPrincipal } from './services/auth-service.js';
@@ -82,6 +83,17 @@ app.addHook('onRequest', async (req, reply) => {
   (req as any).clawpmUser = (req as any).clawpmMember;
 });
 
+// ── Vault 落盘触发（storage=vault）：非 GET 的 API 写请求成功后标脏，防抖落盘 ──
+if (config.storage === 'vault') {
+  app.addHook('onResponse', async (req, reply) => {
+    const m = req.method;
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return;
+    if (reply.statusCode >= 400) return;
+    const pathname = req.url?.split('?')[0] || '';
+    if (pathname.startsWith('/api/v1') || pathname === '/upload/image') markVaultDirty();
+  });
+}
+
 // ── Health check ───────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', version: '1.0.0' }));
 
@@ -119,6 +131,8 @@ app.post('/mcp/messages', async (req, reply) => {
   if (!session) return reply.code(404).send({ error: 'No MCP session' });
   // 将 Fastify 已解析的 body 直接传入，避免 SDK 重复读取 stream
   await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
+  // MCP 工具可能写库，保守标脏（无变更时 flush 的差量比对为空，落盘为空操作）
+  if (config.storage === 'vault') markVaultDirty();
 });
 
 // ── REST API ───────────────────────────────────────────────────────
@@ -141,19 +155,40 @@ if (fs.existsSync(config.webDistPath)) {
   });
 }
 
+// ── 退出前落盘（storage=vault）：确保防抖窗口内未落盘的写入不丢失 ──
+if (config.storage === 'vault') {
+  let flushed = false;
+  const flushOnce = () => {
+    if (flushed) return;
+    flushed = true;
+    flushVaultStore();
+  };
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, () => {
+      flushOnce();
+      process.exit(0);
+    });
+  }
+  process.on('beforeExit', flushOnce);
+}
+
 // ── Start ──────────────────────────────────────────────────────────
 try {
   getDb(); // init DB
   await app.listen({ port: config.port, host: '0.0.0.0' });
   console.log(`🚀 ClawPM running at http://0.0.0.0:${config.port}`);
   console.log(`📡 MCP SSE endpoint: http://0.0.0.0:${config.port}/mcp/sse`);
+  if (config.storage === 'vault') {
+    console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
+  }
 
-  // 启动调度器轮询（可通过环境变量关闭）
-  const schedulerEnabled = process.env.CLAWPM_SCHEDULER_ENABLED !== 'false';
+  // 启动调度器轮询（可通过环境变量关闭；vault 模式默认关闭：调度态不在文本格式内）
+  const schedulerEnabled =
+    process.env.CLAWPM_SCHEDULER_ENABLED !== 'false' && config.storage !== 'vault';
   if (schedulerEnabled) {
     SchedulerWorker.start();
   } else {
-    console.log('⏸️  SchedulerWorker 已禁用 (CLAWPM_SCHEDULER_ENABLED=false)');
+    console.log('⏸️  SchedulerWorker 已禁用');
   }
 } catch (err) {
   app.log.error(err);

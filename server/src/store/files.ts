@@ -71,24 +71,19 @@ export function shardRelPath(task: VaultTask): string {
   return `${dir}/${shardFileName(task.domain ?? INBOX_CODE)}`;
 }
 
-// ── 全量写 ──────────────────────────────────────────────────────
+// ── 序列化为文件映射 ────────────────────────────────────────────
 
 /**
- * 将整个 vault 写入目录。返回写入的相对路径列表。
- * 只写非空分片；不清理既有多余文件（调用方负责保证目录干净）。
+ * 把 vault 内存结构序列化为 {相对路径 → 文件内容} 映射（不落盘）。
+ * writeVault（全量写）与 syncVault（差量写）共用，保证两条路径产出一致。
  */
-export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'>): string[] {
-  const written: string[] = [];
-  const put = (rel: string, content: string) => {
-    atomicWriteFile(path.join(dir, rel), content);
-    written.push(rel);
-  };
-
-  put(CONFIG_FILE, stringifyConfig(data.config));
-  put('domains.json', stringifyDomains(data.domains));
-  put('milestones.json', stringifyMilestones(data.milestones));
-  put('fields.json', stringifyFields(data.fields));
-  put('links.json', stringifyLinks(data.links));
+export function buildVaultFiles(data: Omit<VaultData, 'dir' | 'warnings'>): Map<string, string> {
+  const files = new Map<string, string>();
+  files.set(CONFIG_FILE, stringifyConfig(data.config));
+  files.set('domains.json', stringifyDomains(data.domains));
+  files.set('milestones.json', stringifyMilestones(data.milestones));
+  files.set('fields.json', stringifyFields(data.fields));
+  files.set('links.json', stringifyLinks(data.links));
 
   const shards = new Map<string, VaultTask[]>();
   for (const t of data.tasks) {
@@ -101,7 +96,7 @@ export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'
     list.push(t);
   }
   // 大小写不敏感文件系统（Windows/macOS）上，仅大小写不同的分片名会互相覆盖导致静默丢数据。
-  // 写盘前硬性拦截：宁可报错也不悄悄丢任务。
+  // 序列化前硬性拦截：宁可报错也不悄悄丢任务。
   const byLower = new Map<string, string>();
   for (const rel of shards.keys()) {
     const lower = rel.toLowerCase();
@@ -114,9 +109,61 @@ export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'
     byLower.set(lower, rel);
   }
   for (const rel of [...shards.keys()].sort()) {
-    put(rel, stringifyTaskShard(shards.get(rel)!));
+    files.set(rel, stringifyTaskShard(shards.get(rel)!));
   }
-  return written;
+  return files;
+}
+
+/**
+ * 将整个 vault 写入目录（全量）。返回写入的相对路径列表。
+ * 只写非空分片；不清理既有多余文件（调用方负责保证目录干净）。
+ */
+export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'>): string[] {
+  const files = buildVaultFiles(data);
+  for (const [rel, content] of files) {
+    atomicWriteFile(path.join(dir, rel), content);
+  }
+  return [...files.keys()];
+}
+
+/**
+ * 差量落盘：只写内容变化的文件，并删除不再需要的孤儿分片
+ * （某 domain 最后一个任务被移走/删除后其分片文件应消失）。返回变更统计。
+ */
+export function syncVault(
+  dir: string,
+  data: Omit<VaultData, 'dir' | 'warnings'>
+): { changed: string[]; removed: string[] } {
+  const files = buildVaultFiles(data);
+  const changed: string[] = [];
+  for (const [rel, content] of files) {
+    const full = path.join(dir, rel);
+    let prev: string | null = null;
+    try {
+      prev = fs.readFileSync(full, 'utf8');
+    } catch {
+      prev = null;
+    }
+    if (prev !== content) {
+      atomicWriteFile(full, content);
+      changed.push(rel);
+    }
+  }
+  // 清理 tasks/ 与 archive/ 下不在目标集合中的孤儿分片
+  const removed: string[] = [];
+  for (const sub of ['tasks', 'archive'] as const) {
+    const subDir = path.join(dir, sub);
+    if (!fs.existsSync(subDir)) continue;
+    for (const name of fs.readdirSync(subDir)) {
+      if (!name.endsWith('.json')) continue;
+      const rel = `${sub}/${name}`;
+      if (!files.has(rel)) {
+        fs.rmSync(path.join(subDir, name), { force: true });
+        removed.push(rel);
+      }
+    }
+  }
+  return { changed, removed };
 }
 
 // ── 全量加载 ────────────────────────────────────────────────────
