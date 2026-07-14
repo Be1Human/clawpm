@@ -32,7 +32,27 @@ export function atomicWriteFile(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, content, 'utf8');
-  fs.renameSync(tmp, filePath);
+  // Windows 上杀软/索引器可能短暂锁定目标文件导致 rename EPERM/EBUSY，重试几次
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(tmp, filePath);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) {
+        try {
+          fs.rmSync(tmp, { force: true });
+        } catch {
+          /* 保留 tmp 以便排查 */
+        }
+        throw e;
+      }
+      const until = Date.now() + 20 * (attempt + 1);
+      while (Date.now() < until) {
+        /* 忙等短暂退避（同步 API，无法 await） */
+      }
+    }
+  }
 }
 
 // ── 分片归属 ────────────────────────────────────────────────────
@@ -41,6 +61,7 @@ export function atomicWriteFile(filePath: string, content: string): void {
 export function shardFileName(code: string): string {
   let safe = code.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '');
   if (safe === '') safe = '_unnamed';
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(safe)) safe = `${safe}_`; // Windows 保留设备名
   return `${safe}.json`;
 }
 
@@ -79,6 +100,19 @@ export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'
     }
     list.push(t);
   }
+  // 大小写不敏感文件系统（Windows/macOS）上，仅大小写不同的分片名会互相覆盖导致静默丢数据。
+  // 写盘前硬性拦截：宁可报错也不悄悄丢任务。
+  const byLower = new Map<string, string>();
+  for (const rel of shards.keys()) {
+    const lower = rel.toLowerCase();
+    const prev = byLower.get(lower);
+    if (prev && prev !== rel) {
+      throw new Error(
+        `分片文件名仅大小写不同会在不区分大小写的文件系统上互相覆盖: '${prev}' 与 '${rel}'（请让相关 domain code 在忽略大小写时唯一）`
+      );
+    }
+    byLower.set(lower, rel);
+  }
   for (const rel of [...shards.keys()].sort()) {
     put(rel, stringifyTaskShard(shards.get(rel)!));
   }
@@ -94,9 +128,11 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 
 function listShardFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
+  // 原子写的临时文件名为 `<path>.tmp-<pid>`（不以 .json 结尾），.json 过滤已排除；
+  // 故不额外按 '.tmp-' 子串过滤，避免误伤名字里含 '.tmp-' 的合法分片
   return fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith('.json') && !f.includes('.tmp-'))
+    .filter((f) => f.endsWith('.json'))
     .sort()
     .map((f) => path.join(dir, f));
 }
@@ -142,9 +178,16 @@ export function loadVault(dir: string): VaultData {
       const rel = `${sub}/${path.basename(file)}`;
       const shard = parseTaskShard(fs.readFileSync(file, 'utf8'), rel);
       for (const t of shard.tasks) {
+        if (t === null || typeof t !== 'object' || Array.isArray(t)) {
+          warnings.push(`${rel}: tasks 数组含非对象元素，已跳过`);
+          continue;
+        }
         if (typeof t.id !== 'string' || t.id === '' || typeof t.title !== 'string') {
           warnings.push(`${rel}: 存在缺少 id/title 的任务，已跳过`);
           continue;
+        }
+        if (typeof t.status !== 'string' || t.status === '') {
+          warnings.push(`${rel}: '${t.id}' 缺少 status，组树/导入时按 'backlog' 处理`);
         }
         const prev = seen.get(t.id);
         if (prev) {

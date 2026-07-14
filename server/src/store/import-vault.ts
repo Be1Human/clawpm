@@ -251,6 +251,8 @@ export function importVault(opts: ImportOptions): ImportReport {
           mId = milestoneId.get(t.milestone) ?? null;
           if (mId === null) warnings.push(`'${t.id}' 的 milestone '${t.milestone}' 未注册，已忽略`);
         }
+        const status = typeof t.status === 'string' && t.status !== '' ? t.status : 'backlog';
+        if (status !== t.status) warnings.push(`'${t.id}' 缺少 status，导入为 'backlog'`);
         const r = insTask.run(
           t.id,
           t.title,
@@ -258,7 +260,7 @@ export function importVault(opts: ImportOptions): ImportReport {
           dId,
           mId,
           t.type ?? 'task',
-          t.status,
+          status,
           t.progress ?? 0,
           t.priority ?? 'P2',
           t.owner ?? null,

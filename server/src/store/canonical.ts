@@ -41,10 +41,12 @@ export function naturalCompare(a: string, b: string): number {
     const nx = /^\d/.test(x);
     const ny = /^\d/.test(y);
     if (nx && ny) {
-      const dx = parseInt(x, 10);
-      const dy = parseInt(y, 10);
-      if (dx !== dy) return dx - dy;
-      // 数值相等但位数不同（01 vs 1）：短的在前，保证全序
+      // 按字符串比较数值（去前导零后比长度再比字典序），避免 parseInt 对超长数字段的精度丢失
+      const sx = x.replace(/^0+/, '') || '0';
+      const sy = y.replace(/^0+/, '') || '0';
+      if (sx.length !== sy.length) return sx.length - sy.length;
+      if (sx !== sy) return sx < sy ? -1 : 1;
+      // 数值相等但原串位数不同（01 vs 1）：前导零少者在前，保证全序
       if (x.length !== y.length) return x.length - y.length;
     } else if (x !== y) {
       return x < y ? -1 : 1;
@@ -108,6 +110,9 @@ export const TASK_KEY_ORDER = [
 
 const TASK_KEY_SET = new Set<string>(TASK_KEY_ORDER);
 
+/** 必填字段：即使值为 falsy（如 title=''、status=''）也必须落盘，否则 import 会静默丢任务/崩溃 */
+const REQUIRED_TASK_KEYS = new Set(['id', 'title', 'status']);
+
 /** 每元素占一行的数组字段 */
 const BLOCK_ARRAY_KEYS = new Set(['description', 'notes', 'history', 'attachments']);
 
@@ -144,7 +149,7 @@ function renderTask(t: VaultTask, indent: string): string {
   const lines: string[] = [];
   for (const key of orderedTaskKeys(t)) {
     const v = (t as Record<string, unknown>)[key];
-    if (isOmittedTaskValue(key, v)) continue;
+    if (!REQUIRED_TASK_KEYS.has(key) && isOmittedTaskValue(key, v)) continue;
     if (BLOCK_ARRAY_KEYS.has(key) && Array.isArray(v)) {
       const items = v.map((it) => `${inner}  ${stableStringify(it)}`);
       lines.push(`${inner}${JSON.stringify(key)}: [\n${items.join(',\n')}\n${inner}]`);
@@ -279,6 +284,13 @@ export function stringifyConfig(config: VaultConfig): string {
   if (wf.gates && wf.gates.length > 0) {
     const gates = wf.gates.map((g) => `      ${stableStringify(g)}`).join(',\n');
     wfLines.push(`    "gates": [\n${gates}\n    ]`);
+  }
+  const WF_KNOWN = new Set(['statuses', 'trackKeys', 'gates']);
+  const wfRecord = wf as unknown as Record<string, unknown>;
+  for (const k of Object.keys(wfRecord).filter((k) => !WF_KNOWN.has(k)).sort()) {
+    const v = wfRecord[k];
+    if (v === undefined || v === null) continue;
+    wfLines.push(`    ${JSON.stringify(k)}: ${stableStringify(v)}`);
   }
   lines.push(`  "workflow": {\n${wfLines.join(',\n')}\n  }`);
 

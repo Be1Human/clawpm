@@ -23,7 +23,10 @@ import {
   stringifyTaskShard,
 } from '../src/store/canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultTask } from '../src/store/types.js';
-import { shardFileName, shardRelPath } from '../src/store/files.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { shardFileName, shardRelPath, writeVault, loadVault } from '../src/store/files.js';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -129,6 +132,19 @@ test('naturalCompare 数字段按数值比较', () => {
   assert.deepEqual(arr, ['A-2', 'A-2b', 'A-10', 'B-1']);
 });
 
+test('naturalCompare 超长数字段确定性（parseInt 会丢精度）', () => {
+  // 两个相差 1 的 20 位数字，parseInt 会判等破坏排序
+  const a = 'T-12345678901234567890';
+  const b = 'T-12345678901234567891';
+  assert.ok(naturalCompare(a, b) < 0, '超长数字段应仍严格有序');
+  assert.ok(naturalCompare(b, a) > 0);
+  assert.equal(naturalCompare(a, a), 0);
+  // 全序性：排序后稳定
+  const arr = [b, a, 'T-9', 'T-100'];
+  arr.sort(naturalCompare);
+  assert.deepEqual(arr, ['T-9', 'T-100', a, b]);
+});
+
 // ── serializer ──────────────────────────────────────────────────
 
 test('缺省值省略规则', () => {
@@ -199,6 +215,17 @@ test('parse → stringify 幂等（canonical 不动点）', () => {
   assert.equal(text1, text2);
 });
 
+test('必填字段 title/status 即使为空也不省略', () => {
+  const t: VaultTask = { id: 'X-1', title: '', status: '' };
+  const text = stringifyTaskShard([t]);
+  assert.ok(text.includes('"title": ""'), 'title="" 必须落盘，否则 import 丢任务');
+  assert.ok(text.includes('"status": ""'), 'status="" 必须落盘，否则 import 崩溃');
+  // round-trip 后仍在
+  const back = parseTaskShard(text, 't.json').tasks;
+  assert.equal(back.length, 1);
+  assert.equal(back[0].title, '');
+});
+
 test('stableStringify 键序确定', () => {
   assert.equal(stableStringify({ b: 1, a: { d: 2, c: 3 } }), '{"a":{"c":3,"d":2},"b":1}');
   assert.equal(stableStringify({ a: undefined, b: 1 }), '{"b":1}');
@@ -253,6 +280,59 @@ test('shardRelPath 归档与 inbox 归属', () => {
     shardRelPath({ id: 'x', title: 'x', status: 'done', domain: 'AI', archivedAt: '2026-01-01' }),
     'archive/AI.json'
   );
+});
+
+test('writeVault 拦截大小写不敏感的分片名冲突', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-collide-'));
+  try {
+    assert.throws(
+      () =>
+        writeVault(tmp, {
+          config: { format: VAULT_FORMAT, name: 't', workflow: DEFAULT_WORKFLOW },
+          domains: [],
+          milestones: [],
+          fields: [],
+          links: [],
+          tasks: [
+            { id: 'A-1', title: 'a', status: 'backlog', domain: 'AI' },
+            { id: 'B-1', title: 'b', status: 'backlog', domain: 'ai' },
+          ],
+        }),
+      /大小写/
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('loadVault 容错：null 元素、空 title、悬空 parent', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-load-'));
+  try {
+    fs.writeFileSync(path.join(tmp, 'clawpm.json'), stringifyConfig({
+      format: VAULT_FORMAT, name: 't', workflow: DEFAULT_WORKFLOW,
+    }));
+    fs.mkdirSync(path.join(tmp, 'tasks'));
+    // 手工构造含 null、缺 title、悬空 parent 的分片
+    fs.writeFileSync(
+      path.join(tmp, 'tasks', 'X.json'),
+      JSON.stringify({
+        format: 'clawpm-tasks@1',
+        tasks: [
+          null,
+          { id: 'X-1', status: 'active' }, // 缺 title
+          { id: 'X-2', title: '正常', status: 'active', parent: 'NOPE-9' },
+        ],
+      })
+    );
+    const v = loadVault(tmp);
+    assert.equal(v.tasks.length, 1, '只应载入合法任务');
+    assert.equal(v.tasks[0].id, 'X-2');
+    assert.ok(v.warnings.some((w) => w.includes('非对象')), '应告警 null 元素');
+    assert.ok(v.warnings.some((w) => w.includes('id/title')), '应告警缺 title');
+    assert.ok(v.warnings.some((w) => w.includes('NOPE-9')), '应告警悬空 parent');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 console.log(`✅ 全部 ${passed} 个测试通过`);

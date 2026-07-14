@@ -105,6 +105,7 @@ export function exportVault(opts: ExportOptions): ExportReport {
       keywords: string;
       color: string;
     }[];
+    // 大小写不敏感去重：'AI' 与 'ai' 的分片文件在 Windows/macOS 上会互相覆盖
     const usedCodes = new Set<string>();
     const domainCode = new Map<number, string>();
     const domains: VaultDomain[] = [];
@@ -112,9 +113,9 @@ export function exportVault(opts: ExportOptions): ExportReport {
       let code = d.task_prefix || d.name;
       if (code.startsWith('_')) code = `D${code}`; // '_' 前缀是保留命名空间
       let unique = code;
-      for (let n = 2; usedCodes.has(unique); n++) unique = `${code}-${n}`;
+      for (let n = 2; usedCodes.has(unique.toLowerCase()); n++) unique = `${code}-${n}`;
       if (unique !== code) warnings.push(`domain 前缀冲突: '${code}' → '${unique}'（${d.name}）`);
-      usedCodes.add(unique);
+      usedCodes.add(unique.toLowerCase());
       domainCode.set(d.id, unique);
       domains.push({
         code: unique,
@@ -157,12 +158,18 @@ export function exportVault(opts: ExportOptions): ExportReport {
     const fieldRows = db
       .prepare('SELECT id, name, field_type, options, color FROM custom_fields ORDER BY sort_order, id')
       .all() as { id: number; name: string; field_type: string; options: string; color: string | null }[];
+    // 字段名去重：custom_fields.name 无唯一约束，重名会让 task.fields 字典键冲突丢值
+    const usedFieldNames = new Set<string>();
     const fieldName = new Map<number, string>();
     const fields: VaultFieldDef[] = [];
     for (const f of fieldRows) {
-      fieldName.set(f.id, f.name);
+      let name = f.name;
+      for (let n = 2; usedFieldNames.has(name); n++) name = `${f.name} (${n})`;
+      if (name !== f.name) warnings.push(`自定义字段重名: '${f.name}' → '${name}'`);
+      usedFieldNames.add(name);
+      fieldName.set(f.id, name);
       fields.push({
-        name: f.name,
+        name,
         type: f.field_type === 'text' ? undefined : f.field_type,
         options: parseJsonArray(f.options, warnings, `field ${f.name} options`),
         color: f.color || undefined,
@@ -336,6 +343,40 @@ export function exportVault(opts: ExportOptions): ExportReport {
         continue;
       }
       links.push({ source, target, type: l.link_type as VaultLinkType });
+    }
+
+    // ── 披露未导出的数据（不静默截断：Step 1 只导需求树，其余按设计裁剪或留待后续）──
+    const droppedCols = db
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN source IS NOT NULL AND source != 'planned' THEN 1 ELSE 0 END) AS src,
+           SUM(CASE WHEN schedule_mode != 'once' THEN 1 ELSE 0 END) AS sched,
+           SUM(CASE WHEN pos_x IS NOT NULL OR pos_y IS NOT NULL THEN 1 ELSE 0 END) AS pos,
+           SUM(CASE WHEN blocker IS NOT NULL AND blocker != '' THEN 1 ELSE 0 END) AS blk
+         FROM tasks WHERE project_id = ?`
+      )
+      .get(project.id) as { src: number; sched: number; pos: number; blk: number };
+    if (droppedCols.src) warnings.push(`ℹ ${droppedCols.src} 个任务的 source 列未导出（设计裁剪）`);
+    if (droppedCols.sched)
+      warnings.push(`ℹ ${droppedCols.sched} 个任务的 schedule_* 调度配置未导出（设计裁剪）`);
+    if (droppedCols.pos)
+      warnings.push(`ℹ ${droppedCols.pos} 个任务的 pos_x/pos_y 画布坐标未导出（布局由前端现算）`);
+
+    const tableExists = (name: string): boolean =>
+      !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+    const relatedTables: [string, string][] = [
+      ['backlog_items', '需求池'],
+      ['goals', '目标'],
+      ['iterations', '迭代'],
+      ['intake_items', '收件箱'],
+      ['members', '成员'],
+    ];
+    for (const [table, label] of relatedTables) {
+      if (!tableExists(table)) continue; // import 生成的最小库不含协作表
+      const row = db
+        .prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE project_id = ?`)
+        .get(project.id) as { c: number };
+      if (row.c > 0) warnings.push(`ℹ ${label}（${table}）有 ${row.c} 条数据，本次未导出`);
     }
 
     const config: VaultConfig = {
