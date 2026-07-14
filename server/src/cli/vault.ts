@@ -13,6 +13,7 @@ import os from 'os';
 import path from 'path';
 import { exportVault } from '../store/export-vault.js';
 import { importVault } from '../store/import-vault.js';
+import { migrateRequirements } from '../store/migrate-requirements.js';
 
 function parseArgs(argv: string[]): { cmd: string; flags: Map<string, string | true> } {
   const [cmd, ...rest] = argv;
@@ -122,6 +123,57 @@ function main(): number {
     return 0;
   }
 
+  if (cmd === 'migrate') {
+    const report = migrateRequirements({
+      fromFile: requireFlag(flags, 'from'),
+      vaultDir: requireFlag(flags, 'vault'),
+      force: flags.get('force') === true,
+      archivedDate: typeof flags.get('archived-date') === 'string' ? (flags.get('archived-date') as string) : undefined,
+    });
+    console.log(
+      `迁移完成: ${report.total} 条需求（活跃 ${report.active} / 归档 ${report.archived}）` +
+        ` → ${report.domains} 个领域 + ${report.syntheticRoots} 个合成层根节点，共 ${report.files.length} 个文件`
+    );
+    if (report.unknownResolved.length) {
+      console.log(`\n【unknown 状态归一 ${report.unknownResolved.length} 条】（请人工复核）:`);
+      for (const u of report.unknownResolved) console.log(`  - ${u}`);
+    }
+    if (report.trackingOther.length) {
+      console.log(`\n【tracking=other 归一 ${report.trackingOther.length} 处 → pending】（请人工复核）:`);
+      for (const t of report.trackingOther) console.log(`  - ${t}`);
+    }
+    if (report.warnings.length) {
+      console.log(`\n【告警 ${report.warnings.length} 条】:`);
+      printWarnings(report.warnings);
+    }
+    // 报告落盘供审阅
+    const reportPath = path.join(requireFlag(flags, 'vault'), '.clawpm', 'migrate-report.md');
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      [
+        `# 迁移报告`,
+        ``,
+        `- 来源: ${requireFlag(flags, 'from')}`,
+        `- 需求总数: ${report.total}（活跃 ${report.active} / 归档 ${report.archived}）`,
+        `- 领域: ${report.domains} 个；合成层根节点: ${report.syntheticRoots} 个`,
+        ``,
+        `## unknown 状态归一（${report.unknownResolved.length}）`,
+        ...report.unknownResolved.map((u) => `- ${u}`),
+        ``,
+        `## tracking=other → pending（${report.trackingOther.length}）`,
+        ...report.trackingOther.map((t) => `- ${t}`),
+        ``,
+        `## 告警（${report.warnings.length}）`,
+        ...report.warnings.map((w) => `- ${w}`),
+        ``,
+      ].join('\n'),
+      'utf8'
+    );
+    console.log(`\n报告已写入: ${reportPath}`);
+    return 0;
+  }
+
   if (cmd === 'roundtrip') {
     const dbPath = requireFlag(flags, 'db');
     const project = requireFlag(flags, 'project');
@@ -156,7 +208,8 @@ function main(): number {
   }
 
   console.error(
-    '用法: vault.ts <export|import|roundtrip> [--db <path>] [--project <slug>] [--out <dir>] [--vault <dir>] [--force] [--keep]'
+    '用法: vault.ts <export|import|roundtrip|migrate> [--db <path>] [--project <slug>] [--out <dir>]\n' +
+      '      [--vault <dir>] [--from <requirements.json>] [--archived-date <YYYY-MM-DD>] [--force] [--keep]'
   );
   return 2;
 }
