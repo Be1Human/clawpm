@@ -17,20 +17,22 @@ const app = Fastify({ logger: { level: config.logLevel } });
 const transports: Record<string, { transport: SSEServerTransport; mcp: ReturnType<typeof createMcpServer> }> = {};
 
 // ── Middleware ─────────────────────────────────────────────────────
-await app.register(cors, {
+// 注意：不用顶层 await（Fastify 内部按注册顺序排队加载插件，listen/ready 时统一解析），
+// 以便 esbuild 打成 CJS 供 Node SEA 打包单 exe
+app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
 });
 
 // ── Multipart (image upload) ──────────────────────────────────────
-await app.register(multipart, {
+app.register(multipart, {
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
 // ── Uploads static file serving ───────────────────────────────────
 const uploadsDir = path.join(path.dirname(config.dbPath), 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-await app.register(staticFiles, {
+app.register(staticFiles, {
   root: uploadsDir,
   prefix: '/uploads/',
   decorateReply: false, // 避免与后面 web dist 的 static 冲突
@@ -136,11 +138,11 @@ app.post('/mcp/messages', async (req, reply) => {
 });
 
 // ── REST API ───────────────────────────────────────────────────────
-await registerRoutes(app);
+registerRoutes(app);
 
 // ── Serve Web UI ───────────────────────────────────────────────────
 if (fs.existsSync(config.webDistPath)) {
-  await app.register(staticFiles, {
+  app.register(staticFiles, {
     root: config.webDistPath,
     prefix: '/',
     // wildcard 必须开启（默认 true），否则 /assets/* 等子目录文件无法被自动路由匹配
@@ -173,24 +175,29 @@ if (config.storage === 'vault') {
 }
 
 // ── Start ──────────────────────────────────────────────────────────
-try {
-  getDb(); // init DB
-  await app.listen({ port: config.port, host: '0.0.0.0' });
-  console.log(`🚀 ClawPM running at http://0.0.0.0:${config.port}`);
-  console.log(`📡 MCP SSE endpoint: http://0.0.0.0:${config.port}/mcp/sse`);
-  if (config.storage === 'vault') {
-    console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
-  }
+// 用异步 IIFE 而非顶层 await，保证 esbuild 可输出 CJS（Node SEA 单 exe 需要）
+void (async () => {
+  try {
+    getDb(); // init DB
+    // 本地 exe（vault 模式）默认只监听回环，避免暴露到局域网；可用 CLAWPM_HOST 覆盖
+    const host = process.env.CLAWPM_HOST || (config.storage === 'vault' ? '127.0.0.1' : '0.0.0.0');
+    await app.listen({ port: config.port, host });
+    console.log(`🚀 ClawPM running at http://${host}:${config.port}`);
+    console.log(`📡 MCP SSE endpoint: http://${host}:${config.port}/mcp/sse`);
+    if (config.storage === 'vault') {
+      console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
+    }
 
-  // 启动调度器轮询（可通过环境变量关闭；vault 模式默认关闭：调度态不在文本格式内）
-  const schedulerEnabled =
-    process.env.CLAWPM_SCHEDULER_ENABLED !== 'false' && config.storage !== 'vault';
-  if (schedulerEnabled) {
-    SchedulerWorker.start();
-  } else {
-    console.log('⏸️  SchedulerWorker 已禁用');
+    // 启动调度器轮询（可通过环境变量关闭；vault 模式默认关闭：调度态不在文本格式内）
+    const schedulerEnabled =
+      process.env.CLAWPM_SCHEDULER_ENABLED !== 'false' && config.storage !== 'vault';
+    if (schedulerEnabled) {
+      SchedulerWorker.start();
+    } else {
+      console.log('⏸️  SchedulerWorker 已禁用');
+    }
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
   }
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
+})();

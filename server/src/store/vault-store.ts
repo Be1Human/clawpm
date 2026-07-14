@@ -10,9 +10,7 @@
 // 运行时创建的协作数据（members/notifications 等）仅存于内存，重启即失——这些正是 Step 3 将裁剪的功能。
 
 import path from 'path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import * as schema from '../db/schema.js';
+import { openDatabase, createDrizzle, type SqliteDb, type DrizzleDb } from '../db/sqlite-driver.js';
 import { runMigrations } from '../db/connection.js';
 import { collectVaultData } from './export-vault.js';
 import { insertVaultData } from './import-vault.js';
@@ -20,12 +18,10 @@ import { isVaultDir, findVaultUp, loadVault, syncVault, CONFIG_FILE, atomicWrite
 import { stringifyConfig } from './canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultConfig } from './types.js';
 
-export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
-
 const FLUSH_DEBOUNCE_MS = 300;
 
 export class VaultStore {
-  readonly sqlite: Database.Database;
+  readonly sqlite: SqliteDb;
   readonly db: DrizzleDb;
   private readonly dir: string;
   private readonly slug: string;
@@ -33,11 +29,11 @@ export class VaultStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
-  private constructor(sqlite: Database.Database, dir: string, slug: string) {
+  private constructor(sqlite: SqliteDb, dir: string, slug: string) {
     this.sqlite = sqlite;
     this.dir = dir;
     this.slug = slug;
-    this.db = drizzle(sqlite, { schema });
+    this.db = createDrizzle(sqlite);
   }
 
   /**
@@ -59,8 +55,8 @@ export class VaultStore {
       console.log(`[vault] 初始化新 vault: ${absDir}`);
     }
 
-    const sqlite = new Database(':memory:');
-    sqlite.pragma('foreign_keys = ON');
+    const sqlite = openDatabase(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON');
     runMigrations(sqlite);
 
     const warnings: string[] = [];

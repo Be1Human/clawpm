@@ -4,7 +4,7 @@
 // 用途：round-trip 验证（export→import→export 字节一致）、老架构回迁、VaultStore 启动加载。
 
 import fs from 'fs';
-import Database from 'better-sqlite3';
+import { openDatabase, type SqliteDb } from '../db/sqlite-driver.js';
 import type { VaultData } from './types.js';
 import { INBOX_CODE } from './types.js';
 import { joinDescription, naturalCompare } from './canonical.js';
@@ -155,7 +155,7 @@ function nowSqlite(): string {
  * 假设库中该项目的需求树数据为空（VaultStore 用全新 :memory:；CLI import 用全新库）。
  */
 export function insertVaultData(
-  db: Database.Database,
+  db: SqliteDb,
   vault: VaultData,
   slug: string,
   warnings: string[]
@@ -366,10 +366,10 @@ export function importVault(opts: ImportOptions): ImportReport {
   const vault: VaultData = loadVault(opts.vaultDir);
   const warnings = [...vault.warnings];
 
-  const db = new Database(opts.dbPath);
+  const db = openDatabase(opts.dbPath);
   try {
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
     db.exec(MINIMAL_DDL);
     insertVaultData(db, vault, slug, warnings);
 

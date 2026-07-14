@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit",
     "vault": "tsx src/cli/vault.ts",
     "test:store": "tsx scripts/test-store.ts",
-    "test:vault-store": "tsx scripts/test-vault-store.ts"
+    "test:vault-store": "tsx scripts/test-vault-store.ts",
+    "build:portable": "node scripts/build-portable.mjs"
   },
   "dependencies": {
     "@fastify/cors": "latest",

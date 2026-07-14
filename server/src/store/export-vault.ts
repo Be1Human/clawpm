@@ -4,7 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import Database from 'better-sqlite3';
+import { openDatabase, type SqliteDb } from '../db/sqlite-driver.js';
 import type {
   VaultConfig,
   VaultData,
@@ -87,7 +87,7 @@ export interface CollectedVault {
  * 从任意 SQLite 库（文件或 :memory:）收集某项目的需求树数据为 vault 内存结构。
  * CLI 导出与 VaultStore 落盘共用此函数，保证 SQLite↔vault 映射只有一份实现。
  */
-export function collectVaultData(db: Database.Database, projectSlug: string): CollectedVault {
+export function collectVaultData(db: SqliteDb, projectSlug: string): CollectedVault {
   const warnings: string[] = [];
   {
     const project = db
@@ -407,7 +407,7 @@ export function exportVault(opts: ExportOptions): ExportReport {
     }
   }
 
-  const db = new Database(opts.dbPath, { readonly: true, fileMustExist: true });
+  const db = openDatabase(opts.dbPath, { readonly: true });
   try {
     const { project, data, archived, warnings } = collectVaultData(db, opts.projectSlug);
     const files = writeVault(opts.outDir, data).sort(naturalCompare);

@@ -1,6 +1,4 @@
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import * as schema from './schema.js';
+import { openDatabase, createDrizzle, type SqliteDb, type DrizzleDb } from './sqlite-driver.js';
 
 import { config } from '../config.js';
 import fs from 'fs';
@@ -9,7 +7,7 @@ import path from 'path';
 // 二者均在函数内使用对方，ESM 运行时安全（模块求值期不触碰）
 import { openVaultStore } from '../store/vault-store.js';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: DrizzleDb | null = null;
 
 export function getDb() {
   if (!_db) {
@@ -23,17 +21,17 @@ export function getDb() {
     const dir = path.dirname(config.dbPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const sqlite = new Database(config.dbPath);
-    sqlite.pragma('journal_mode = WAL');
-    sqlite.pragma('foreign_keys = ON');
+    const sqlite = openDatabase(config.dbPath);
+    sqlite.exec('PRAGMA journal_mode = WAL');
+    sqlite.exec('PRAGMA foreign_keys = ON');
 
-    _db = drizzle(sqlite, { schema });
+    _db = createDrizzle(sqlite);
     runMigrations(sqlite);
   }
   return _db;
 }
 
-export function runMigrations(sqlite: Database.Database) {
+export function runMigrations(sqlite: SqliteDb) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS domains (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
