@@ -189,6 +189,17 @@ export function isVaultDir(dir: string): boolean {
   return fs.existsSync(path.join(dir, CONFIG_FILE));
 }
 
+/** 从给定目录逐级向上查找含 clawpm.json 的 vault 根（语义同 git 找 .git），未找到返回 null */
+export function findVaultUp(startDir: string): string | null {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (isVaultDir(dir)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null; // 抵达根
+    dir = parent;
+  }
+}
+
 /**
  * 全量加载 vault 到内存。重复 ID / 悬空 parent / 分片与字段归属不一致
  * 记入 warnings（不阻断，与 git merge 后的临时不一致共存）。

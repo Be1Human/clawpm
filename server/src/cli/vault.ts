@@ -14,6 +14,9 @@ import path from 'path';
 import { exportVault } from '../store/export-vault.js';
 import { importVault } from '../store/import-vault.js';
 import { migrateRequirements } from '../store/migrate-requirements.js';
+import { isVaultDir, findVaultUp, atomicWriteFile, CONFIG_FILE } from '../store/files.js';
+import { stringifyConfig } from '../store/canonical.js';
+import { DEFAULT_WORKFLOW, VAULT_FORMAT } from '../store/types.js';
 
 function parseArgs(argv: string[]): { cmd: string; flags: Map<string, string | true> } {
   const [cmd, ...rest] = argv;
@@ -123,6 +126,28 @@ function main(): number {
     return 0;
   }
 
+  if (cmd === 'init') {
+    const dir = path.resolve(requireFlag(flags, 'vault'));
+    if (isVaultDir(dir)) {
+      console.log(`已是 vault: ${dir}（含 ${CONFIG_FILE}）`);
+      return 0;
+    }
+    const name = typeof flags.get('name') === 'string' ? (flags.get('name') as string) : path.basename(dir);
+    atomicWriteFile(
+      path.join(dir, CONFIG_FILE),
+      stringifyConfig({ format: VAULT_FORMAT, name, workflow: DEFAULT_WORKFLOW })
+    );
+    console.log(`已初始化 vault: ${dir}\n启动: CLAWPM_STORAGE=vault CLAWPM_VAULT="${dir}" pnpm --filter server dev`);
+    return 0;
+  }
+
+  if (cmd === 'find') {
+    const start = typeof flags.get('path') === 'string' ? (flags.get('path') as string) : process.cwd();
+    const found = findVaultUp(start);
+    console.log(found ? `找到 vault: ${found}` : `从 ${path.resolve(start)} 向上未发现 vault`);
+    return found ? 0 : 1;
+  }
+
   if (cmd === 'migrate') {
     const report = migrateRequirements({
       fromFile: requireFlag(flags, 'from'),
@@ -208,8 +233,13 @@ function main(): number {
   }
 
   console.error(
-    '用法: vault.ts <export|import|roundtrip|migrate> [--db <path>] [--project <slug>] [--out <dir>]\n' +
-      '      [--vault <dir>] [--from <requirements.json>] [--archived-date <YYYY-MM-DD>] [--force] [--keep]'
+    '用法: vault.ts <init|find|export|import|roundtrip|migrate>\n' +
+      '  init     --vault <dir> [--name <名称>]           初始化空 vault\n' +
+      '  find     [--path <dir>]                          从路径向上发现 vault\n' +
+      '  export   --db <path> --project <slug> --out <dir> [--force]\n' +
+      '  import   --vault <dir> --db <path> [--project <slug>] [--force]\n' +
+      '  roundtrip --db <path> --project <slug> [--keep]\n' +
+      '  migrate  --from <requirements.json> --vault <dir> [--archived-date <YYYY-MM-DD>] [--force]'
   );
   return 2;
 }

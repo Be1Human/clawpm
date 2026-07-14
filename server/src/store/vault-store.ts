@@ -16,7 +16,7 @@ import * as schema from '../db/schema.js';
 import { runMigrations } from '../db/connection.js';
 import { collectVaultData } from './export-vault.js';
 import { insertVaultData } from './import-vault.js';
-import { isVaultDir, loadVault, syncVault, CONFIG_FILE, atomicWriteFile } from './files.js';
+import { isVaultDir, findVaultUp, loadVault, syncVault, CONFIG_FILE, atomicWriteFile } from './files.js';
 import { stringifyConfig } from './canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultConfig } from './types.js';
 
@@ -121,12 +121,25 @@ export class VaultStore {
   }
 }
 
+/**
+ * 解析 vault 根目录：显式配置优先；否则从 cwd 向上发现（git 式）。
+ * 都没有则报错并提示用法。
+ */
+export function resolveVaultDir(configured: string): string {
+  if (configured) return path.resolve(configured);
+  const found = findVaultUp(process.cwd());
+  if (found) return found;
+  throw new Error(
+    '未指定 vault 目录且当前路径向上未发现 clawpm.json。请设 CLAWPM_VAULT 或在 vault 目录内启动（clawpm init 可初始化）'
+  );
+}
+
 // ── 单例（供 connection.ts 与落盘钩子共享） ─────────────────────
 let _store: VaultStore | null = null;
 
 export function openVaultStore(dir: string, slug: string): VaultStore {
   if (_store) return _store;
-  _store = VaultStore.open(dir, slug);
+  _store = VaultStore.open(resolveVaultDir(dir), slug);
   return _store;
 }
 
