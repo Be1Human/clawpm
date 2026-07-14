@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "vault": "tsx src/cli/vault.ts",
+    "test:store": "tsx scripts/test-store.ts"
   },
   "dependencies": {
     "@fastify/cors": "latest",
