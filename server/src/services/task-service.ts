@@ -66,10 +66,26 @@ export const TaskService = {
     const db = getDb();
     const projectId = params.projectId || 1;
 
+    // domain 同时接受显示名与代号：文本 vault 里任务存的是代号（tasks/<code>.json 的
+    // code，即 task_prefix），而人和 UI 习惯用显示名。只认其一会让另一种写法被静默丢弃。
     let domainId: number | undefined;
     if (params.domain) {
-      const d = db.select().from(domains).where(and(eq(domains.name, params.domain), eq(domains.projectId, projectId))).get();
-      if (d) domainId = d.id;
+      const d = db
+        .select()
+        .from(domains)
+        .where(
+          and(
+            or(eq(domains.name, params.domain), eq(domains.taskPrefix, params.domain)),
+            eq(domains.projectId, projectId)
+          )
+        )
+        .get();
+      if (!d) {
+        throw new Error(
+          `领域不存在: '${params.domain}'（请先创建领域，或去掉该字段。可用领域见 domains.json）`
+        );
+      }
+      domainId = d.id;
     }
 
     let milestoneId: number | undefined;
