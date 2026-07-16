@@ -17,7 +17,8 @@ import { AuthService } from '../services/auth-service.js';
 import { ScheduleService } from '../services/schedule-service.js';
 import { config } from '../config.js';
 import { getDb } from '../db/connection.js';
-import { getVaultStore } from '../store/vault-store.js';
+import { getVaultStore, switchVaultStore } from '../store/vault-store.js';
+import { listRecentVaults } from '../store/recent-vaults.js';
 import { DEFAULT_WORKFLOW } from '../store/types.js';
 import { domains, milestones, goals, objectives, objectiveTaskLinks, tasks, customFields, taskFieldValues, taskNotes, progressHistory, taskAttachments, members, projectMembers } from '../db/schema.js';
 import { eq, and, desc, asc } from 'drizzle-orm';
@@ -40,6 +41,33 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/v1/workflow', async () => {
     const store = getVaultStore();
     return store ? store.workflow : DEFAULT_WORKFLOW;
+  });
+
+  // ── 需求库切换（应用内「最近项目」）─────────────────────────────
+  app.get('/api/v1/vaults', async () => {
+    const store = getVaultStore();
+    const current = store ? path.resolve(store.vaultDir) : null;
+    return {
+      current,
+      currentName: store?.name ?? null,
+      recent: listRecentVaults().map((v) => ({
+        ...v,
+        active: current !== null && path.resolve(v.path).toLowerCase() === current.toLowerCase(),
+      })),
+    };
+  });
+
+  // 切换后前端需整页刷新：内存库已换，所有缓存数据都不再对应当前库
+  app.post('/api/v1/vaults/switch', async (req, reply) => {
+    const { path: target } = (req.body ?? {}) as { path?: string };
+    if (!target) return reply.code(400).send({ error: '缺少 path' });
+    if (!getVaultStore()) return reply.code(400).send({ error: '当前不是 vault 存储模式' });
+    try {
+      const store = switchVaultStore(target, config.vaultProject);
+      return { ok: true, vault: store.vaultDir, name: store.name };
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
   });
 
   function requireAccountPrincipal(req: any, reply?: any) {

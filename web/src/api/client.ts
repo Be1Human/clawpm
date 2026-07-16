@@ -137,6 +137,14 @@ export const api = {
     return request<any[]>(withProject(`/tasks/tree${qs}`));
   },
   getWorkflow: () => request<any>('/workflow'),
+
+  // 需求库：最近打开列表与切换（切换后调用方需整页刷新）
+  getVaults: () => request<{ current: string | null; currentName: string | null; recent: any[] }>('/vaults'),
+  switchVault: (path: string) =>
+    request<{ ok: boolean; vault: string; name: string }>('/vaults/switch', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
   getTaskChildren: (taskId: string) =>
     request<any[]>(`/tasks/${taskId}/children`),
   getTaskContext: (taskId: string) =>

@@ -137,14 +137,41 @@ export function buildVaultFiles(data: Omit<VaultData, 'dir' | 'warnings'>): Map<
 }
 
 /**
- * 将整个 vault 写入目录（全量）。返回写入的相对路径列表。
- * 只写非空分片；不清理既有多余文件（调用方负责保证目录干净）。
+ * 清理 tasks/ 与 archive/ 下不属于目标集合的分片文件，返回被删的相对路径。
+ *
+ * 这两个目录由 clawpm 独占，出现在其中却不在目标集合里的 .json 只可能是：
+ * 某 domain 最后一个任务被移走后的空壳，或上一次写入残留（如 migrate --force
+ * 覆盖一个旧库）。不清掉会被下次加载读回来，表现为「已删的需求复活」或
+ * 「冒出没注册的领域」。
+ */
+function removeOrphanShards(dir: string, keep: Set<string>): string[] {
+  const removed: string[] = [];
+  for (const sub of ['tasks', 'archive'] as const) {
+    const subDir = path.join(dir, sub);
+    if (!fs.existsSync(subDir)) continue;
+    for (const name of fs.readdirSync(subDir)) {
+      if (!name.endsWith('.json')) continue;
+      const rel = `${sub}/${name}`;
+      if (!keep.has(rel)) {
+        removeFile(path.join(subDir, name));
+        removed.push(rel);
+      }
+    }
+  }
+  return removed;
+}
+
+/**
+ * 将整个 vault 写入目录（全量），并清掉不属于本次写入的孤儿分片。
+ * 返回写入的相对路径列表。
  */
 export function writeVault(dir: string, data: Omit<VaultData, 'dir' | 'warnings'>): string[] {
   const files = buildVaultFiles(data);
   for (const [rel, content] of files) {
     atomicWriteFile(path.join(dir, rel), content);
   }
+  // 全量写＝该目录内容应与 data 完全一致，残留的旧分片必须清除
+  removeOrphanShards(dir, new Set(files.keys()));
   return [...files.keys()];
 }
 
@@ -171,20 +198,7 @@ export function syncVault(
       changed.push(rel);
     }
   }
-  // 清理 tasks/ 与 archive/ 下不在目标集合中的孤儿分片
-  const removed: string[] = [];
-  for (const sub of ['tasks', 'archive'] as const) {
-    const subDir = path.join(dir, sub);
-    if (!fs.existsSync(subDir)) continue;
-    for (const name of fs.readdirSync(subDir)) {
-      if (!name.endsWith('.json')) continue;
-      const rel = `${sub}/${name}`;
-      if (!files.has(rel)) {
-        removeFile(path.join(subDir, name));
-        removed.push(rel);
-      }
-    }
-  }
+  const removed = removeOrphanShards(dir, new Set(files.keys()));
   return { changed, removed };
 }
 

@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
 import { getDb } from './db/connection.js';
-import { markVaultDirty, flushVaultStore } from './store/vault-store.js';
+import { markVaultDirty, flushVaultStore, getVaultStore } from './store/vault-store.js';
 import { SchedulerWorker } from './scheduler/worker.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { AuthService, type AuthPrincipal } from './services/auth-service.js';
@@ -98,12 +98,16 @@ if (config.storage === 'vault') {
 }
 
 // ── Health check ───────────────────────────────────────────────────
-// vault 字段供其他实例判断「同一需求库是否已在运行」（见 findRunningInstance）
-app.get('/health', async () => ({
-  status: 'ok',
-  version: '1.0.0',
-  vault: config.storage === 'vault' ? path.resolve(config.vaultDir) : undefined,
-}));
+// vault 字段供其他实例判断「同一需求库是否已在运行」（见 findRunningInstance）。
+// 取自 store 而非 config：切换需求库后 config.vaultDir 仍是启动时那个，会误报。
+app.get('/health', async () => {
+  const store = getVaultStore();
+  return {
+    status: 'ok',
+    version: '1.0.0',
+    vault: store ? path.resolve(store.vaultDir) : undefined,
+  };
+});
 
 // ── Runtime config for web client ──────────────────────────────────
 app.get('/runtime-config.js', async (_req, reply) => {

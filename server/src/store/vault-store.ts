@@ -11,7 +11,7 @@
 
 import path from 'path';
 import { openDatabase, createDrizzle, type SqliteDb, type DrizzleDb } from '../db/sqlite-driver.js';
-import { runMigrations } from '../db/connection.js';
+import { runMigrations, resetDbCache } from '../db/connection.js';
 import { collectVaultData } from './export-vault.js';
 import { insertVaultData } from './import-vault.js';
 import { isVaultDir, findVaultUp, loadVault, syncVault, CONFIG_FILE, atomicWriteFile } from './files.js';
@@ -175,8 +175,9 @@ export function switchVaultStore(dir: string, slug: string): VaultStore {
   if (!isVaultDir(target)) throw new Error(`不是需求库（缺少 ${CONFIG_FILE}）: ${target}`);
   const previous = _store;
   const next = VaultStore.open(target, slug); // 打开失败会抛错，此时旧库仍在
-  previous?.close();
   _store = next;
+  resetDbCache(); // 必须在 close 旧库前后清掉缓存句柄，否则后续查询会打在已关闭的库上
+  previous?.close(); // close 内含 flush，旧库防抖窗口内的写入不会丢
   return next;
 }
 

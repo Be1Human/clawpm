@@ -9,6 +9,15 @@ import { openVaultStore } from '../store/vault-store.js';
 
 let _db: DrizzleDb | null = null;
 
+/**
+ * 丢弃 getDb() 的缓存句柄。
+ * 切换需求库时必须调用：旧库的 :memory: sqlite 已被 close，若继续复用这个句柄，
+ * 所有查询都会打在已关闭的库上而崩溃。下次 getDb() 会取到新库的句柄。
+ */
+export function resetDbCache(): void {
+  _db = null;
+}
+
 export function getDb() {
   if (!_db) {
     // storage=vault：内存库为查询引擎，文本 vault 为持久化真源（见 store/vault-store.ts）

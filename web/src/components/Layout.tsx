@@ -250,19 +250,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
 
-  function handleSwitchProject(slug: string) {
-    setActiveProject(slug);
-    // 清除所有非 projects 的查询缓存，强制用新 slug 重新拉取
-    qc.removeQueries({ predicate: q => q.queryKey[0] !== 'projects' });
-    qc.invalidateQueries();
-  }
+  // 最近打开过的需求库（后端从用户目录的 vaults.json 读）
+  const { data: vaultInfo } = useQuery({
+    queryKey: ['vaults'],
+    queryFn: () => api.getVaults(),
+  });
+  const [switching, setSwitching] = useState(false);
 
-  async function handleCreateProject() {
-    if (!newProjectName.trim()) return;
-    await api.createProject({ name: newProjectName.trim() });
-    setNewProjectName('');
-    setShowCreateProject(false);
-    qc.invalidateQueries({ queryKey: ['projects'] });
+  async function handleSwitchVault(target: string) {
+    if (!target || target === vaultInfo?.current || switching) return;
+    setSwitching(true);
+    try {
+      await api.switchVault(target);
+      // 整页刷新：切库换掉了整个内存库，任何缓存都不再对应当前库
+      window.location.reload();
+    } catch (e) {
+      setSwitching(false);
+      alert(`切换失败: ${(e as Error).message}`);
+    }
   }
 
 
@@ -288,18 +293,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* 项目切换器 */}
+        {/* 需求库切换器：列出最近打开过的库，切换即换整个内存库，故需整页刷新 */}
         <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">{t('nav.project')}</label>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">需求库</label>
           <div className="relative">
             <select
-              value={activeSlug}
-              onChange={e => handleSwitchProject(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all"
+              value={vaultInfo?.current ?? ''}
+              onChange={e => handleSwitchVault(e.target.value)}
+              disabled={switching}
+              title={vaultInfo?.current ?? ''}
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all disabled:opacity-60"
             >
-              {(projects as any[]).map((p: any) => (
-                <option key={p.slug} value={p.slug}>{p.name}</option>
+              {(vaultInfo?.recent ?? []).map((v: any) => (
+                <option key={v.path} value={v.path}>{v.name}</option>
               ))}
+              {!vaultInfo?.recent?.length && <option value="">{vaultInfo?.currentName ?? '（当前库）'}</option>}
             </select>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#9ca3af" strokeWidth="1.5">
@@ -307,26 +315,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </svg>
             </div>
           </div>
-          {showCreateProject ? (
-            <div className="mt-1.5 flex gap-1">
-              <input
-                autoFocus
-                value={newProjectName}
-                onChange={e => setNewProjectName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); if (e.key === 'Escape') setShowCreateProject(false); }}
-                placeholder={t('nav.projectNamePlaceholder')}
-                className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-              />
-              <button onClick={handleCreateProject} className="flex-shrink-0 text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700">{t('nav.confirm')}</button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowCreateProject(true)}
-              className="mt-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors"
-            >
-              {t('nav.newProject')}
-            </button>
-          )}
+          <p className="mt-1 text-[10px] text-gray-400 truncate" title={vaultInfo?.current ?? ''}>
+            {switching ? '正在切换…' : vaultInfo?.current ?? ''}
+          </p>
         </div>
 
         {/* Navigation */}
