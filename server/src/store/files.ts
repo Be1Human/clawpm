@@ -25,6 +25,28 @@ import {
 
 export const CONFIG_FILE = 'clawpm.json';
 
+// ── 文件删除 ────────────────────────────────────────────────────
+
+/**
+ * 删除单个文件。
+ *
+ * 不能用 fs.rmSync：实测 Node v24.11.1 (Windows) 下，只要路径中含任何非 ASCII
+ * 字符（vault 路径常含中文，如 docs/需求管理），rmSync 删文件即静默无效——
+ * 既不抛错也不删除，调用方会误判成功。unlinkSync 无此问题。
+ * 删除后显式校验存在性，宁可抛错也不谎报成功（孤儿分片残留会让已删任务复活）。
+ */
+export function removeFile(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw e;
+  }
+  if (fs.existsSync(filePath)) {
+    throw new Error(`文件删除失败（调用未报错但文件仍存在）: ${filePath}`);
+  }
+}
+
 // ── 原子写 ──────────────────────────────────────────────────────
 
 /** 写临时文件后 rename 原子替换；内容必须已含末尾换行（canonical 保证） */
@@ -41,7 +63,7 @@ export function atomicWriteFile(filePath: string, content: string): void {
       const code = (e as NodeJS.ErrnoException).code;
       if (attempt >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) {
         try {
-          fs.rmSync(tmp, { force: true });
+          removeFile(tmp);
         } catch {
           /* 保留 tmp 以便排查 */
         }
@@ -158,7 +180,7 @@ export function syncVault(
       if (!name.endsWith('.json')) continue;
       const rel = `${sub}/${name}`;
       if (!files.has(rel)) {
-        fs.rmSync(path.join(subDir, name), { force: true });
+        removeFile(path.join(subDir, name));
         removed.push(rel);
       }
     }

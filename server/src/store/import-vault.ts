@@ -8,7 +8,7 @@ import { openDatabase, type SqliteDb } from '../db/sqlite-driver.js';
 import type { VaultData } from './types.js';
 import { INBOX_CODE } from './types.js';
 import { joinDescription, naturalCompare } from './canonical.js';
-import { loadVault } from './files.js';
+import { loadVault, removeFile } from './files.js';
 import { compareRanks } from './rank.js';
 
 export interface ImportOptions {
@@ -360,7 +360,7 @@ export function importVault(opts: ImportOptions): ImportReport {
 
   if (fs.existsSync(opts.dbPath)) {
     if (!opts.force) throw new Error(`目标库已存在: ${opts.dbPath}（使用 --force 覆盖）`);
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(opts.dbPath + suffix, { force: true });
+    for (const suffix of ['', '-wal', '-shm']) removeFile(opts.dbPath + suffix);
   }
 
   const vault: VaultData = loadVault(opts.vaultDir);

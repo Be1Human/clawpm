@@ -26,7 +26,7 @@ import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultTask } from '../src/store/typ
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { shardFileName, shardRelPath, writeVault, loadVault } from '../src/store/files.js';
+import { shardFileName, shardRelPath, writeVault, loadVault, syncVault, removeFile } from '../src/store/files.js';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -332,6 +332,50 @@ test('loadVault 容错：null 元素、空 title、悬空 parent', () => {
     assert.ok(v.warnings.some((w) => w.includes('NOPE-9')), '应告警悬空 parent');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('removeFile 在非 ASCII 路径下真的删除（fs.rmSync 在此静默无效）', () => {
+  // Node v24 (Windows) 下路径含非 ASCII 时 fs.rmSync 删文件不报错也不生效，
+  // 而 vault 路径常含中文（docs/需求管理）——孤儿分片删不掉会让已删任务复活。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-rm-'));
+  const dir = path.join(base, '需求管理', 'tasks');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    for (const name of ['plain.json', '中文文件.json']) {
+      const p = path.join(dir, name);
+      fs.writeFileSync(p, '{}');
+      removeFile(p);
+      assert.equal(fs.existsSync(p), false, `removeFile 应真正删除 ${name}`);
+    }
+    // 不存在的文件按 ENOENT 静默通过
+    removeFile(path.join(dir, '不存在.json'));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('syncVault 清理孤儿分片（中文路径下已删任务不得复活）', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-orphan-'));
+  const dir = path.join(base, '需求管理');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    const config = { format: VAULT_FORMAT, name: 't', workflow: DEFAULT_WORKFLOW };
+    const empty = { config, domains: [], milestones: [], fields: [], links: [] };
+    writeVault(dir, { ...empty, tasks: [{ id: 'T-1', title: '待删', status: 'backlog' }] });
+    assert.ok(fs.existsSync(path.join(dir, 'tasks', '_inbox.json')), '任务应落盘');
+
+    // 删光任务后落盘：孤儿分片必须消失，否则重启会把 T-1 读回来
+    const res = syncVault(dir, { ...empty, tasks: [] });
+    assert.deepEqual(res.removed, ['tasks/_inbox.json'], '应报告删除孤儿分片');
+    assert.equal(
+      fs.existsSync(path.join(dir, 'tasks', '_inbox.json')),
+      false,
+      '孤儿分片必须真的从磁盘消失（报告成功但文件还在 = 任务复活）'
+    );
+    assert.equal(loadVault(dir).tasks.length, 0, '重新加载不应出现已删任务');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
   }
 });
 
