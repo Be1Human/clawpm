@@ -17,6 +17,7 @@ import { insertVaultData } from './import-vault.js';
 import { isVaultDir, findVaultUp, loadVault, syncVault, CONFIG_FILE, atomicWriteFile } from './files.js';
 import { stringifyConfig } from './canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultConfig } from './types.js';
+import { rememberVault } from './recent-vaults.js';
 
 const FLUSH_DEBOUNCE_MS = 300;
 
@@ -30,6 +31,7 @@ export class VaultStore {
   private closed = false;
 
   private _workflow: import('./types.js').VaultWorkflow = DEFAULT_WORKFLOW;
+  private _name = '';
 
   private constructor(sqlite: SqliteDb, dir: string, slug: string) {
     this.sqlite = sqlite;
@@ -77,7 +79,18 @@ export class VaultStore {
 
     const store = new VaultStore(sqlite, absDir, slug);
     store._workflow = vault.config.workflow ?? DEFAULT_WORKFLOW;
+    store._name = vault.config.name || path.basename(absDir);
+    rememberVault(absDir, store._name);
     return store;
+  }
+
+  /** 当前库目录（供切换与 /health 校验用） */
+  get vaultDir(): string {
+    return this.dir;
+  }
+
+  get name(): string {
+    return this._name;
   }
 
   /** 标记有写入，安排一次防抖落盘 */
@@ -150,6 +163,21 @@ export function openVaultStore(dir: string, slug: string): VaultStore {
 
 export function getVaultStore(): VaultStore | null {
   return _store;
+}
+
+/**
+ * 切换到另一个需求库（应用内「切换项目」）。
+ * 先 flush + close 旧库再打开新库，保证防抖窗口内的写入不丢。
+ * 返回新库；打开失败时保持旧库不变并抛错（不能让用户切换失败还丢了当前库）。
+ */
+export function switchVaultStore(dir: string, slug: string): VaultStore {
+  const target = path.resolve(dir);
+  if (!isVaultDir(target)) throw new Error(`不是需求库（缺少 ${CONFIG_FILE}）: ${target}`);
+  const previous = _store;
+  const next = VaultStore.open(target, slug); // 打开失败会抛错，此时旧库仍在
+  previous?.close();
+  _store = next;
+  return next;
 }
 
 /** 有写操作后调用，触发防抖落盘（storage=sqlite 时无副作用） */
