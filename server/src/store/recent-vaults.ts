@@ -16,9 +16,22 @@ export interface RecentVault {
 }
 
 function appDataDir(): string {
-  const base =
-    process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  // CLAWPM_APPDATA 让测试/临时实例把最近列表写到别处：
+  // 否则跑一次测试就会把临时库顶到列表首位，用户双击 exe 打开的就成了测试库。
+  const override = process.env.CLAWPM_APPDATA;
+  if (override) return override;
+  const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   return path.join(base, 'clawpm');
+}
+
+/**
+ * 临时目录下的库不进最近列表：它们是测试/一次性产物，
+ * 混进来会顶掉用户的真实项目（双击 exe 打开的是最近一个）。
+ */
+function isTransientVault(dir: string): boolean {
+  const abs = path.resolve(dir).toLowerCase();
+  const tmp = path.resolve(os.tmpdir()).toLowerCase();
+  return abs.startsWith(tmp);
 }
 
 function listFile(): string {
@@ -36,10 +49,11 @@ export function listRecentVaults(): RecentVault[] {
   }
 }
 
-/** 记录一次打开（置顶、去重，最多保留 10 条） */
+/** 记录一次打开（置顶、去重，最多保留 10 条）。临时目录下的库不记录 */
 export function rememberVault(dir: string, name: string): void {
   try {
     const abs = path.resolve(dir);
+    if (isTransientVault(abs)) return;
     const rest = listRecentVaults().filter(
       (v) => path.resolve(v.path).toLowerCase() !== abs.toLowerCase()
     );
