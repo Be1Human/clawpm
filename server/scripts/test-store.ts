@@ -379,4 +379,41 @@ test('syncVault 清理孤儿分片（中文路径下已删任务不得复活）'
   }
 });
 
+test('writeVault 全量写会清掉陌生分片（migrate --force 覆盖旧库）', () => {
+  // 全量写＝目录内容应与 data 完全一致。残留的旧分片若不清掉，会被下次加载读回来，
+  // 表现为「冒出没注册的领域」「已删的需求复活」——实测曾导致 41 条加载告警。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-wv-'));
+  const dir = path.join(base, '需求管理'); // 中文路径：removeFile 走 unlinkSync 才有效
+  fs.mkdirSync(path.join(dir, 'tasks'), { recursive: true });
+  try {
+    const config = { format: VAULT_FORMAT, name: 't', workflow: DEFAULT_WORKFLOW };
+    const empty = { config, domains: [], milestones: [], fields: [], links: [] };
+
+    // 目录里先有一个陌生分片（上一次写入/别的工具留下的）
+    fs.writeFileSync(
+      path.join(dir, 'tasks', 'STALE.json'),
+      stringifyTaskShard([{ id: 'STALE-1', title: '旧数据', status: 'backlog', domain: 'STALE' }])
+    );
+
+    writeVault(dir, {
+      ...empty,
+      domains: [{ code: 'NEW', name: '新域' }],
+      tasks: [{ id: 'NEW-1', title: '新数据', status: 'backlog', domain: 'NEW' }],
+    });
+
+    assert.equal(fs.existsSync(path.join(dir, 'tasks', 'NEW.json')), true, '新分片应写入');
+    assert.equal(
+      fs.existsSync(path.join(dir, 'tasks', 'STALE.json')),
+      false,
+      '陌生分片必须被清除，否则旧数据会混进新库'
+    );
+    const reloaded = loadVault(dir);
+    assert.equal(reloaded.tasks.length, 1, '重新加载只应有新数据');
+    assert.equal(reloaded.tasks[0].id, 'NEW-1');
+    assert.deepEqual(reloaded.warnings, [], '不应有未注册领域之类的告警');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 console.log(`✅ 全部 ${passed} 个测试通过`);
