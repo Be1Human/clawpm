@@ -98,7 +98,12 @@ if (config.storage === 'vault') {
 }
 
 // ── Health check ───────────────────────────────────────────────────
-app.get('/health', async () => ({ status: 'ok', version: '1.0.0' }));
+// vault 字段供其他实例判断「同一需求库是否已在运行」（见 findRunningInstance）
+app.get('/health', async () => ({
+  status: 'ok',
+  version: '1.0.0',
+  vault: config.storage === 'vault' ? path.resolve(config.vaultDir) : undefined,
+}));
 
 // ── Runtime config for web client ──────────────────────────────────
 app.get('/runtime-config.js', async (_req, reply) => {
@@ -175,18 +180,106 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 }
 process.on('beforeExit', flushOnce);
 
+// ── 实例锁与端口 ────────────────────────────────────────────────────
+// 一个需求库同时只应有一个写者。锁文件记录 {pid, port}，放在库的 .clawpm/ 下
+// （运行时产物，不入 git）。锁可能因强杀残留，故以「端口上确实跑着本库的服务」
+// 为准做二次确认，而非只看文件存在。
+
+const LOCK_FILE = 'instance.json';
+
+function lockPath(vaultDir: string): string {
+  return path.join(vaultDir, '.clawpm', LOCK_FILE);
+}
+
+function writeInstanceLock(vaultDir: string, port: number): void {
+  try {
+    const file = lockPath(vaultDir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ pid: process.pid, port }), 'utf8');
+    const cleanup = () => {
+      try {
+        const cur = JSON.parse(fs.readFileSync(file, 'utf8')) as { pid?: number };
+        if (cur.pid === process.pid) fs.unlinkSync(file); // 只清自己的锁
+      } catch {
+        /* 锁已被清理或损坏，忽略 */
+      }
+    };
+    process.on('exit', cleanup);
+  } catch {
+    /* 锁只是优化，写不了不影响启动 */
+  }
+}
+
+/** 返回该库正在运行的实例端口；无则 null（锁陈旧会被忽略） */
+async function findRunningInstance(vaultDir: string): Promise<number | null> {
+  let port: number;
+  try {
+    const raw = JSON.parse(fs.readFileSync(lockPath(vaultDir), 'utf8')) as { port?: number };
+    if (!raw.port) return null;
+    port = raw.port;
+  } catch {
+    return null;
+  }
+  // 端口可能已被别的程序（甚至另一个库的 clawpm）占用，故校验 vault 路径一致
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return null;
+    const info = (await res.json()) as { vault?: string };
+    if (!info.vault) return null;
+    return path.resolve(info.vault) === path.resolve(vaultDir) ? port : null;
+  } catch {
+    return null; // 端口无响应 = 锁陈旧
+  }
+}
+
+/** 从 startPort 起顺延监听，返回实际端口 */
+async function listenWithFallback(host: string, startPort: number): Promise<number> {
+  const MAX_TRIES = 20;
+  for (let i = 0; i < MAX_TRIES; i++) {
+    const port = startPort + i;
+    try {
+      await app.listen({ port, host });
+      if (i > 0) console.log(`端口 ${startPort} 被占用，已改用 ${port}`);
+      return port;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
+    }
+  }
+  throw new Error(`端口 ${startPort}-${startPort + MAX_TRIES - 1} 均被占用`);
+}
+
 // ── Start ──────────────────────────────────────────────────────────
 // 用异步 IIFE 而非顶层 await，保证 esbuild 可输出 CJS（Node SEA 单 exe 需要）
 void (async () => {
   try {
+    // 同一需求库已在运行 → 直接打开它的窗口并退出。
+    // 文本存储必须单写者：两个进程同时写同一批 tasks/*.json 会互相覆盖。
+    if (config.storage === 'vault' && process.env.CLAWPM_DESKTOP === '1') {
+      const running = await findRunningInstance(config.vaultDir);
+      if (running) {
+        console.log(`该需求库已在运行（端口 ${running}），打开其窗口。`);
+        // detach：窗口归已在运行的实例管，本进程开完就退，不滞留
+        openDesktopWindow(`http://127.0.0.1:${running}`, () => {}, {
+          detach: true,
+          profileKey: String(running),
+        });
+        return;
+      }
+    }
+
     getDb(); // init DB
     // 本地 exe（vault 模式）默认只监听回环，避免暴露到局域网；可用 CLAWPM_HOST 覆盖
     const host = process.env.CLAWPM_HOST || (config.storage === 'vault' ? '127.0.0.1' : '0.0.0.0');
-    await app.listen({ port: config.port, host });
-    console.log(`🚀 ClawPM running at http://${host}:${config.port}`);
-    console.log(`📡 MCP SSE endpoint: http://${host}:${config.port}/mcp/sse`);
+    // 端口被占（多开不同需求库是常态）→ 顺延，而非崩溃退出：
+    // GUI 子系统下没有控制台，崩溃对用户表现为「双击没反应」。
+    const port = await listenWithFallback(host, config.port);
+    console.log(`🚀 ClawPM running at http://${host}:${port}`);
+    console.log(`📡 MCP SSE endpoint: http://${host}:${port}/mcp/sse`);
     if (config.storage === 'vault') {
       console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
+      writeInstanceLock(config.vaultDir, port);
     }
 
     // 启动调度器轮询（可通过环境变量关闭；vault 模式默认关闭：调度态不在文本格式内）
@@ -200,10 +293,16 @@ void (async () => {
 
     // 桌面模式（exe 启动器设置）：开应用窗口而非浏览器标签页，关窗即退出
     if (process.env.CLAWPM_DESKTOP === '1') {
-      const { appWindow } = openDesktopWindow(`http://127.0.0.1:${config.port}`, () => {
-        console.log('窗口已关闭，正在保存并退出…');
-        shutdown();
-      });
+      // profileKey 按端口区分：多个需求库同时打开时各自是独立的浏览器进程，
+      // 否则后开的会被并入先开的实例并立即退出，被误判为「窗口已关闭」而关掉本服务。
+      const { appWindow } = openDesktopWindow(
+        `http://127.0.0.1:${port}`,
+        () => {
+          console.log('窗口已关闭，正在保存并退出…');
+          shutdown();
+        },
+        { profileKey: String(port) }
+      );
       console.log(appWindow ? '🖥️  已打开应用窗口（关闭窗口即退出）' : '🌐 未找到 Edge/Chrome，已用默认浏览器打开');
     }
   } catch (err) {

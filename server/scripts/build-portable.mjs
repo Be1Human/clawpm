@@ -39,6 +39,22 @@ function log(msg) {
   console.log(`[build] ${msg}`);
 }
 
+/**
+ * 改写 PE 可选头的 Subsystem 字段（3=控制台 / 2=GUI）。
+ * GUI 子系统的进程不分配控制台窗口——双击 exe 不再弹黑框。
+ * 字段位置：DOS 头 0x3C 处存 PE 头偏移；Subsystem 在可选头内偏移 68，
+ * 而可选头紧跟 PE 签名(4B) + COFF 头(20B)，故绝对偏移 = peOffset + 92（PE32/PE32+ 一致）。
+ */
+function setPeSubsystem(exeFile, subsystem) {
+  const buf = fs.readFileSync(exeFile);
+  const peOffset = buf.readUInt32LE(0x3c);
+  if (buf.toString('ascii', peOffset, peOffset + 4) !== 'PE\0\0') {
+    throw new Error(`${exeFile} 不是有效的 PE 文件`);
+  }
+  buf.writeUInt16LE(subsystem, peOffset + 92);
+  fs.writeFileSync(exeFile, buf);
+}
+
 // ── 1. 清理输出目录 ──
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
@@ -126,6 +142,14 @@ execFileSync(
   `npx --yes postject "${exePath}" NODE_SEA_BLOB "${blob}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`,
   { stdio: 'inherit', shell: true }
 );
+// 同一份 SEA 产物出两个 exe：日常双击用 GUI 版（不弹控制台黑框），跑子命令用 CLI 版。
+// 二者仅差 PE 头 Subsystem 一个字段——GUI 子系统下进程不分配控制台，
+// 从 cmd/PowerShell 运行时 stdout 无处可写、命令输出不可见，故 CLI 必须保留控制台版。
+const cliExe = path.join(out, 'clawpm-cli.exe');
+fs.copyFileSync(exePath, cliExe);
+setPeSubsystem(exePath, 2); // 2 = IMAGE_SUBSYSTEM_WINDOWS_GUI
+log('clawpm.exe（GUI，双击无黑框）+ clawpm-cli.exe（控制台，子命令用）');
+
 // 中间产物不入发行包；clawpm.cjs 已注入 exe，保留仅供排查
 for (const f of [seaConfig, blob]) fs.unlinkSync(f);
 
@@ -136,14 +160,17 @@ const readme = `# clawpm 桌面版
 
 ## 使用
 - 把需求库文件夹**拖到 clawpm.exe 上**，或在库目录里运行 clawpm.exe。
-- 打开的是独立应用窗口（非浏览器标签页）；**关闭窗口即退出**。
+- 打开的是独立应用窗口（非浏览器标签页，无地址栏）；**关闭窗口即退出**。
 - 在空目录运行会自动初始化成新需求库。
 
-## 命令行
-    clawpm.exe <需求库目录>              打开指定需求库
-    clawpm.exe init --vault <dir>       新建空需求库
-    clawpm.exe migrate --from <json> --vault <dir>   迁移旧需求数据
-    clawpm.exe find --path <dir>        向上查找所属需求库
+## 命令行（用 clawpm-cli.exe）
+子命令要看输出，须用控制台版 clawpm-cli.exe（clawpm.exe 是 GUI 版，双击不弹黑框，
+但在 cmd 里没有输出）：
+
+    clawpm-cli.exe init --vault <dir>                     新建空需求库
+    clawpm-cli.exe migrate --from <json> --vault <dir>    迁移旧需求数据
+    clawpm-cli.exe find --path <dir>                      向上查找所属需求库
+    clawpm-cli.exe export --db <db> --project <slug> --out <dir>   从 SQLite 导出
 
 ## 环境变量（可选）
 - CLAWPM_PORT      端口（默认 3210）

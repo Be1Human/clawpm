@@ -30,11 +30,29 @@ export interface DesktopWindowResult {
   appWindow: boolean;
 }
 
+export interface DesktopWindowOptions {
+  /** 开完窗口即与之脱离（不等待关闭）。用于「库已在运行、只补开一个窗口」的场景，
+   *  避免启动器进程白白滞留。此时不会回调 onClose。 */
+  detach?: boolean;
+  /**
+   * profile 区分键（同时开多个需求库时必须各不相同）。
+   *
+   * Edge/Chrome 对同一 user-data-dir 只保留一个浏览器进程：第二次启动会把 URL 交给
+   * 已有实例后立即退出，其退出会被误判成「窗口已关闭」而连带关掉刚起的服务。
+   * 每个库用独立 profile 即可各自成为独立进程，窗口生命周期与服务一一对应。
+   */
+  profileKey?: string;
+}
+
 /**
  * 打开应用窗口。找不到 Edge/Chrome 时回退为默认浏览器（此时不接管退出）。
- * onClose 仅在应用窗口模式下于窗口关闭时调用。
+ * onClose 仅在应用窗口模式且未 detach 时，于窗口关闭时调用。
  */
-export function openDesktopWindow(url: string, onClose: () => void): DesktopWindowResult {
+export function openDesktopWindow(
+  url: string,
+  onClose: () => void,
+  opts: DesktopWindowOptions = {}
+): DesktopWindowResult {
   const browser = findBrowser();
   if (!browser) {
     spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
@@ -43,7 +61,8 @@ export function openDesktopWindow(url: string, onClose: () => void): DesktopWind
 
   // 独立 user-data-dir：确保新开进程而非并入用户已开的浏览器
   // （并入的话子进程会立即退出，误判为窗口关闭），也避免与日常浏览会话串扰。
-  const profileDir = path.join(os.tmpdir(), 'clawpm-app-window');
+  // profileKey 再按需求库细分，使多库并存时各自独立（见 DesktopWindowOptions.profileKey）。
+  const profileDir = path.join(os.tmpdir(), 'clawpm-app-window', opts.profileKey ?? 'default');
   const child = spawn(
     browser,
     [
@@ -54,11 +73,15 @@ export function openDesktopWindow(url: string, onClose: () => void): DesktopWind
       '--no-default-browser-check',
       '--disable-features=Translate,MediaRouter',
     ],
-    { stdio: 'ignore' }
+    { stdio: 'ignore', detached: opts.detach === true }
   );
-  child.on('exit', onClose);
   child.on('error', () => {
     spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
   });
+  if (opts.detach) {
+    child.unref(); // 不阻塞本进程退出
+  } else {
+    child.on('exit', onClose);
+  }
   return { appWindow: true };
 }
