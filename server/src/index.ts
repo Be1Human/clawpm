@@ -12,6 +12,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { AuthService, type AuthPrincipal } from './services/auth-service.js';
 import fs from 'fs';
 import path from 'path';
+import { openDesktopWindow } from './desktop.js';
 
 const app = Fastify({ logger: { level: config.logLevel } });
 const transports: Record<string, { transport: SSEServerTransport; mcp: ReturnType<typeof createMcpServer> }> = {};
@@ -158,21 +159,21 @@ if (fs.existsSync(config.webDistPath)) {
 }
 
 // ── 退出前落盘（storage=vault）：确保防抖窗口内未落盘的写入不丢失 ──
-if (config.storage === 'vault') {
-  let flushed = false;
-  const flushOnce = () => {
-    if (flushed) return;
-    flushed = true;
-    flushVaultStore();
-  };
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-      flushOnce();
-      process.exit(0);
-    });
-  }
-  process.on('beforeExit', flushOnce);
+let flushed = false;
+const flushOnce = () => {
+  if (flushed || config.storage !== 'vault') return;
+  flushed = true;
+  flushVaultStore();
+};
+/** 落盘后退出（信号、窗口关闭共用） */
+const shutdown = () => {
+  flushOnce();
+  process.exit(0);
+};
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, shutdown);
 }
+process.on('beforeExit', flushOnce);
 
 // ── Start ──────────────────────────────────────────────────────────
 // 用异步 IIFE 而非顶层 await，保证 esbuild 可输出 CJS（Node SEA 单 exe 需要）
@@ -195,6 +196,15 @@ void (async () => {
       SchedulerWorker.start();
     } else {
       console.log('⏸️  SchedulerWorker 已禁用');
+    }
+
+    // 桌面模式（exe 启动器设置）：开应用窗口而非浏览器标签页，关窗即退出
+    if (process.env.CLAWPM_DESKTOP === '1') {
+      const { appWindow } = openDesktopWindow(`http://127.0.0.1:${config.port}`, () => {
+        console.log('窗口已关闭，正在保存并退出…');
+        shutdown();
+      });
+      console.log(appWindow ? '🖥️  已打开应用窗口（关闭窗口即退出）' : '🌐 未找到 Edge/Chrome，已用默认浏览器打开');
     }
   } catch (err) {
     app.log.error(err);

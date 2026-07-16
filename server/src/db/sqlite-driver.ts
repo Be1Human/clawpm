@@ -7,6 +7,9 @@
 // 这里保留最小 SqliteDb 接口抽象：export/import/vault-store 通过它操作原始句柄，
 // 便于未来更换驱动，不与具体实现耦合。
 
+// better-sqlite3 是原生模块，无法打进 SEA 单 exe，随发行包放在 exe 同级 node_modules。
+// 打包时由 esbuild 插件（scripts/build-portable.mjs）把该模块重定向为以 exe 目录为基准
+// 解析——SEA 内 require() 只认内置模块，直接 require 会抛 ERR_UNKNOWN_BUILTIN_MODULE。
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';

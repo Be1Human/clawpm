@@ -1,13 +1,18 @@
-// 打包 clawpm 为自包含便携发行版（Windows）。
-// 产物 server/dist-portable/：clawpm.cjs（打包后端）+ node.exe + better-sqlite3 原生模块
-// + web（前端，如已构建）+ clawpm.cmd 启动器。双击 clawpm.cmd 即在当前目录作为 vault 打开。
+// 打包 clawpm 为 Windows 桌面发行版。
+// 产物 server/dist-portable/：clawpm.exe（Node SEA 单可执行文件，内含后端）
+// + node_modules（仅 better-sqlite3 原生模块，无法打进 exe）+ web（前端）。
+// 双击 clawpm.exe 即以当前目录为需求库、开独立应用窗口。
 //
-// 说明：原计划 bun build --compile 单 exe，但 Fastify 5 在 Bun 1.3.14(Windows) 下 listen 后
-// 无法接受连接（见 db/sqlite-driver.ts 注释），故走 Node 运行时便携发行版。
+// 说明：
+// - 原计划 bun build --compile，但 Fastify 5 在 Bun 1.3.14(Windows) 下 listen 后无法接受
+//   连接（见 db/sqlite-driver.ts 注释），故走 Node SEA。
+// - better-sqlite3 是原生 .node，SEA 无法内嵌；SEA 内 require() 只解析内置模块，
+//   驱动层已改为以 exe 目录为基准解析（见 sqlite-driver.ts）。
 //
 // 用法: node scripts/build-portable.mjs
 
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,15 +43,37 @@ function log(msg) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
-// ── 2. esbuild 打包后端为单 CJS ──
+// ── 2. esbuild 打包后端为单 CJS（SEA 主脚本）──
+//
+// better-sqlite3 是原生模块，打不进 SEA，必须放 exe 同级 node_modules。而 SEA 内
+// require() 只解析内置模块，普通 require("better-sqlite3")（drizzle 适配器内部也有）
+// 会抛 ERR_UNKNOWN_BUILTIN_MODULE。故用插件把它统一替换为「以 exe 目录为基准解析」
+// 的虚拟模块——一处收口，覆盖自有代码与第三方依赖。
+const nativeSqlitePlugin = {
+  name: 'native-sqlite-loader',
+  setup(build) {
+    build.onResolve({ filter: /^better-sqlite3$/ }, () => ({
+      path: 'better-sqlite3',
+      namespace: 'native-sqlite',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'native-sqlite' }, () => ({
+      contents: `
+        const { createRequire } = require('node:module');
+        module.exports = createRequire(process.execPath)('better-sqlite3');
+      `,
+      loader: 'js',
+    }));
+  },
+};
+
 log('esbuild 打包后端 → clawpm.cjs');
 await esbuild.build({
-  entryPoints: [path.join(serverDir, 'src/index.ts')],
+  entryPoints: [path.join(serverDir, 'src/exe-main.ts')],
   bundle: true,
   platform: 'node',
   format: 'cjs',
   target: 'node20',
-  external: ['better-sqlite3'],
+  plugins: [nativeSqlitePlugin],
   banner: { js: 'const __IMPORT_META_URL__=require("url").pathToFileURL(__filename).href;' },
   define: { 'import.meta.url': '__IMPORT_META_URL__' },
   outfile: path.join(out, 'clawpm.cjs'),
@@ -81,43 +108,51 @@ if (fs.existsSync(webDist)) {
   log('⚠ 未找到 web/dist，跳过前端（先运行 pnpm --filter web build）');
 }
 
-// ── 5. 复制 node.exe（自包含，免装 Node）──
-log(`复制 Node 运行时 (${process.version})`);
-fs.copyFileSync(process.execPath, path.join(out, 'node.exe'));
-
-// ── 6. 启动器 clawpm.cmd ──
-// 当前目录（或第一个参数）作为 vault；启动服务并打开浏览器
-const launcher = `@echo off
-setlocal
-set "HERE=%~dp0"
-set "VAULT=%~1"
-if "%VAULT%"=="" set "VAULT=%CD%"
-set "CLAWPM_STORAGE=vault"
-set "CLAWPM_VAULT=%VAULT%"
-set "CLAWPM_HOME=%HERE%"
-set "CLAWPM_WEB_DIST=%HERE%web"
-if not defined CLAWPM_PORT set "CLAWPM_PORT=3210"
-echo 启动 clawpm，需求库: %VAULT%
-start "" http://127.0.0.1:%CLAWPM_PORT%
-"%HERE%node.exe" "%HERE%clawpm.cjs"
-`;
-fs.writeFileSync(path.join(out, 'clawpm.cmd'), launcher.replace(/\n/g, '\r\n'), 'utf8');
+// ── 5. 生成 clawpm.exe（Node SEA：node 二进制 + 注入 bundle）──
+log(`生成 clawpm.exe（Node SEA, ${process.version}）`);
+const seaConfig = path.join(out, 'sea-config.json');
+const blob = path.join(out, 'sea-prep.blob');
+const exePath = path.join(out, 'clawpm.exe');
+fs.writeFileSync(
+  seaConfig,
+  JSON.stringify({ main: path.join(out, 'clawpm.cjs'), output: blob, disableExperimentalSEAWarning: true }),
+  'utf8'
+);
+execFileSync(process.execPath, ['--experimental-sea-config', seaConfig], { stdio: 'inherit' });
+fs.copyFileSync(process.execPath, exePath);
+// postject 把 blob 注入 exe 的 NODE_SEA_BLOB 段（sentinel fuse 为 Node 官方固定值）。
+// 用 shell 调 npx：Node 24 起 spawn 不允许直接执行 .cmd（EINVAL）。
+execFileSync(
+  `npx --yes postject "${exePath}" NODE_SEA_BLOB "${blob}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`,
+  { stdio: 'inherit', shell: true }
+);
+// 中间产物不入发行包；clawpm.cjs 已注入 exe，保留仅供排查
+for (const f of [seaConfig, blob]) fs.unlinkSync(f);
 
 // ── 7. README ──
-const readme = `# clawpm 便携版
+const readme = `# clawpm 桌面版
 
-本地轻量需求管理，数据以文本文件（vault）存储，可随 git 仓库版本化。
+本地轻量需求管理，数据以文本文件（需求库/vault）存储，可随 git 仓库版本化。
 
 ## 使用
-1. 在需求库目录（放 clawpm.json 的目录）运行 clawpm.cmd，或把库目录拖到 clawpm.cmd 上。
-2. 浏览器自动打开 http://127.0.0.1:3210。
-3. 首次在空目录运行会自动初始化 clawpm.json。
+- 把需求库文件夹**拖到 clawpm.exe 上**，或在库目录里运行 clawpm.exe。
+- 打开的是独立应用窗口（非浏览器标签页）；**关闭窗口即退出**。
+- 在空目录运行会自动初始化成新需求库。
+
+## 命令行
+    clawpm.exe <需求库目录>              打开指定需求库
+    clawpm.exe init --vault <dir>       新建空需求库
+    clawpm.exe migrate --from <json> --vault <dir>   迁移旧需求数据
+    clawpm.exe find --path <dir>        向上查找所属需求库
 
 ## 环境变量（可选）
-- CLAWPM_PORT     端口（默认 3210）
-- CLAWPM_VAULT    需求库目录（默认当前目录）
+- CLAWPM_PORT      端口（默认 3210）
+- CLAWPM_DESKTOP   设为 0 则用默认浏览器打开而非应用窗口
 
-数据即文本：所有需求存于库目录的 tasks/*.json、domains.json 等，可直接编辑、git diff、合并。
+## 目录说明
+clawpm.exe 需与 node_modules/（原生 SQLite 模块）、web/（前端）放在一起，勿单独移动 exe。
+
+数据即文本：需求存于库目录的 tasks/*.json、domains.json 等，可直接编辑、git diff、合并。
 `;
 fs.writeFileSync(path.join(out, 'README.md'), readme, 'utf8');
 
