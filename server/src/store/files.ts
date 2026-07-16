@@ -323,6 +323,22 @@ export function loadVault(dir: string): VaultData {
     }
   }
 
+  // 状态合法性：任务的 status 必须在本库工作流里声明过。
+  // 曾发生过 clawpm.json 的自定义工作流被落盘覆盖成默认五态，导致 39 条任务的状态
+  // 集体失去定义（看板无法归列），而当时没有任何环节会发现 —— 故在此显式告警。
+  const legalStatuses = new Set(config.workflow.statuses.map((s) => s.id));
+  const illegal = new Map<string, number>();
+  for (const t of tasks) {
+    if (t.status && !legalStatuses.has(t.status)) {
+      illegal.set(t.status, (illegal.get(t.status) ?? 0) + 1);
+    }
+  }
+  for (const [status, count] of illegal) {
+    warnings.push(
+      `${count} 个任务的 status '${status}' 未在 ${CONFIG_FILE} 的 workflow.statuses 中声明（看板无法归列）`
+    );
+  }
+
   for (const t of tasks) {
     if (t.parent && !seen.has(t.parent)) {
       warnings.push(`'${t.id}' 的 parent '${t.parent}' 不存在（组树时按根节点处理）`);

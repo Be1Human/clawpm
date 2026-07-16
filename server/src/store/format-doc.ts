@@ -14,8 +14,13 @@ import { INBOX_CODE, type VaultConfig, type VaultDomain } from './types.js';
 
 export const AGENTS_FILE = 'AGENTS.md';
 
-/** 字段说明表：key → 人话解释。未列出的字段按 TASK_KEY_ORDER 顺序仍会出现在文档里 */
-const FIELD_DOC: Record<string, string> = {
+/**
+ * 字段说明表：key → 人话解释。
+ * 说明文字推导不出来，但「有没有写」可以强制：test-store.ts 会校验
+ * TASK_KEY_ORDER 里的每个字段都在此有条目 —— 加字段忘写说明 = 测试变红，
+ * 避免文档悄悄烂掉（字段表里出现空白说明）。
+ */
+export const FIELD_DOC: Record<string, string> = {
   id: '唯一主键，字符串。分片内不重复；整库不得重复',
   title: '标题',
   type: '类型：feat / bug / test / task',

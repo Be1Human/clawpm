@@ -21,12 +21,15 @@ import {
   stringifyDomains,
   stringifyLinks,
   stringifyTaskShard,
+  TASK_DEFAULTS,
+  TASK_KEY_ORDER,
 } from '../src/store/canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultTask, type VaultConfig } from '../src/store/types.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { shardFileName, shardRelPath, writeVault, loadVault, syncVault, removeFile } from '../src/store/files.js';
+import { FIELD_DOC, renderAgentsDoc } from '../src/store/format-doc.js';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -457,6 +460,65 @@ test('落盘不得覆盖库自定义的 workflow（每存一次盘就打回默�
     );
     assert.deepEqual(reloaded.config.workflow.trackKeys, ['评审', '测试报告']);
     assert.equal(reloaded.config.name, '八态库', '库名不得被覆盖');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('AGENTS.md 字段表不得漏字段（加字段忘写说明 = 文档悄悄烂掉）', () => {
+  for (const k of TASK_KEY_ORDER) {
+    assert.ok(
+      FIELD_DOC[k],
+      `TASK_KEY_ORDER 里的 '${k}' 没有说明文字：请在 store/format-doc.ts 的 FIELD_DOC 补一行`
+    );
+  }
+});
+
+test('AGENTS.md 渲染出本库的状态机与默认值', () => {
+  const config: VaultConfig = {
+    format: VAULT_FORMAT,
+    name: '测试库',
+    workflow: {
+      statuses: [{ id: 'doing', label: '实施中', kanban: 'active' }],
+      trackKeys: ['评审'],
+    },
+  };
+  const doc = renderAgentsDoc(config, [{ code: 'AI', name: 'AI生成' }]);
+  assert.ok(doc.includes('`doing`'), '应渲染本库自己的状态，而非默认五态');
+  assert.ok(!doc.includes('`backlog` | 待规划'), '不应出现别的库的状态');
+  assert.ok(doc.includes('`AI`'), '应渲染领域表');
+  // 默认值必须写进文档，否则 agent 无法解释「字段不存在」
+  for (const [k, v] of Object.entries(TASK_DEFAULTS)) {
+    assert.ok(doc.includes(`\`${k}\``), `文档应说明默认值字段 ${k}`);
+    assert.ok(doc.includes(JSON.stringify(v)), `文档应写出 ${k} 的默认值 ${JSON.stringify(v)}`);
+  }
+});
+
+test('loadVault 告警：任务状态不在本库工作流内', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-st-'));
+  const dir = path.join(base, '需求管理');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    writeVault(dir, {
+      config: {
+        format: VAULT_FORMAT,
+        name: 't',
+        workflow: { statuses: [{ id: 'done', label: '完成', kanban: 'done' }] },
+      },
+      domains: [],
+      milestones: [],
+      fields: [],
+      links: [],
+      tasks: [
+        { id: 'T-1', title: 'a', status: 'done' },
+        { id: 'T-2', title: 'b', status: 'accept' }, // 未声明
+        { id: 'T-3', title: 'c', status: 'accept' },
+      ],
+    });
+    const v = loadVault(dir);
+    const w = v.warnings.find((x) => x.includes('accept'));
+    assert.ok(w, '未声明的状态必须告警，否则看板无法归列却无人知晓');
+    assert.ok(w!.includes('2 个任务'), '应统计条数');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

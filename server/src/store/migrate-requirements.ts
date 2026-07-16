@@ -88,7 +88,7 @@ const EMOJI_STATUS: Record<string, string> = {
 
 const KNOWN_STATUS = new Set(['review', 'design', 'ready', 'doing', 'accept', 'done', 'closed']);
 
-const MINEFRIEND_WORKFLOW: VaultWorkflow = {
+export const MINEFRIEND_WORKFLOW: VaultWorkflow = {
   statuses: [
     { id: 'backlog', label: '📋 待规划', kanban: 'backlog' },
     { id: 'review', label: '🔍 待评审', kanban: 'review' },
