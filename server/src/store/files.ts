@@ -10,8 +10,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { VaultData, VaultTask } from './types.js';
+import type { VaultConfig, VaultData, VaultDomain, VaultTask } from './types.js';
 import { INBOX_CODE } from './types.js';
+import { AGENTS_FILE, renderAgentsDoc } from './format-doc.js';
 import {
   parseConfig,
   parseTaskShard,
@@ -24,6 +25,31 @@ import {
 } from './canonical.js';
 
 export const CONFIG_FILE = 'clawpm.json';
+
+/**
+ * 写入/刷新 vault 根的 AGENTS.md（给 AI agent 的格式说明）。
+ * 内容由代码常量与本库配置渲染，故每次打开都重写以保证不过期；
+ * 内容不变时不写，避免制造无谓的 git 改动。
+ */
+export function writeAgentsDoc(
+  dir: string,
+  config: VaultConfig,
+  domains: VaultDomain[]
+): void {
+  try {
+    const file = path.join(dir, AGENTS_FILE);
+    const content = renderAgentsDoc(config, domains);
+    let prev: string | null = null;
+    try {
+      prev = fs.readFileSync(file, 'utf8');
+    } catch {
+      prev = null;
+    }
+    if (prev !== content) atomicWriteFile(file, content);
+  } catch {
+    /* 说明文件只是便利功能，写不了不应影响打开库 */
+  }
+}
 
 // ── 文件删除 ────────────────────────────────────────────────────
 

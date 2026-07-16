@@ -14,7 +14,7 @@ import path from 'path';
 import { exportVault } from '../store/export-vault.js';
 import { importVault } from '../store/import-vault.js';
 import { migrateRequirements } from '../store/migrate-requirements.js';
-import { isVaultDir, findVaultUp, atomicWriteFile, CONFIG_FILE } from '../store/files.js';
+import { isVaultDir, findVaultUp, atomicWriteFile, writeAgentsDoc, CONFIG_FILE } from '../store/files.js';
 import { stringifyConfig } from '../store/canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT } from '../store/types.js';
 
@@ -133,11 +133,13 @@ function main(): number {
       return 0;
     }
     const name = typeof flags.get('name') === 'string' ? (flags.get('name') as string) : path.basename(dir);
-    atomicWriteFile(
-      path.join(dir, CONFIG_FILE),
-      stringifyConfig({ format: VAULT_FORMAT, name, workflow: DEFAULT_WORKFLOW })
-    );
-    console.log(`已初始化 vault: ${dir}\n启动: CLAWPM_STORAGE=vault CLAWPM_VAULT="${dir}" pnpm --filter server dev`);
+    const config = { format: VAULT_FORMAT, name, workflow: DEFAULT_WORKFLOW };
+    atomicWriteFile(path.join(dir, CONFIG_FILE), stringifyConfig(config));
+    // 建库即产出给 agent 的格式说明，无需先把软件跑起来
+    writeAgentsDoc(dir, config, []);
+    console.log(`已初始化需求库: ${dir}`);
+    console.log(`  ${CONFIG_FILE}  库标识与工作流配置`);
+    console.log(`  AGENTS.md     给 AI agent 的格式说明（自动生成，勿手改）`);
     return 0;
   }
 

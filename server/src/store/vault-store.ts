@@ -14,7 +14,7 @@ import { openDatabase, createDrizzle, type SqliteDb, type DrizzleDb } from '../d
 import { runMigrations, resetDbCache } from '../db/connection.js';
 import { collectVaultData } from './export-vault.js';
 import { insertVaultData } from './import-vault.js';
-import { isVaultDir, findVaultUp, loadVault, syncVault, CONFIG_FILE, atomicWriteFile } from './files.js';
+import { isVaultDir, findVaultUp, loadVault, syncVault, writeAgentsDoc, CONFIG_FILE, atomicWriteFile } from './files.js';
 import { stringifyConfig } from './canonical.js';
 import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultConfig } from './types.js';
 import { rememberVault } from './recent-vaults.js';
@@ -32,6 +32,8 @@ export class VaultStore {
 
   private _workflow: import('./types.js').VaultWorkflow = DEFAULT_WORKFLOW;
   private _name = '';
+  /** 打开时读到的 clawpm.json 原样保留，落盘时回写，避免自定义工作流被默认值覆盖 */
+  private _config: VaultConfig | null = null;
 
   private constructor(sqlite: SqliteDb, dir: string, slug: string) {
     this.sqlite = sqlite;
@@ -78,9 +80,11 @@ export class VaultStore {
     );
 
     const store = new VaultStore(sqlite, absDir, slug);
+    store._config = vault.config;
     store._workflow = vault.config.workflow ?? DEFAULT_WORKFLOW;
     store._name = vault.config.name || path.basename(absDir);
     rememberVault(absDir, store._name);
+    writeAgentsDoc(absDir, vault.config, vault.domains);
     return store;
   }
 
@@ -116,7 +120,7 @@ export class VaultStore {
       this.timer = null;
     }
     try {
-      const { data } = collectVaultData(this.sqlite, this.slug);
+      const { data } = collectVaultData(this.sqlite, this.slug, this._config ?? undefined);
       const { changed, removed } = syncVault(this.dir, data);
       this.dirty = false;
       if (changed.length || removed.length) {

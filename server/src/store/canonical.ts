@@ -126,14 +126,31 @@ function isEmptyObject(v: unknown): boolean {
 }
 
 /** 缺省值省略规则 */
+/**
+ * 有默认值的字段：取值等于默认值时不落盘（文件只含信息量，diff 无噪音）。
+ *
+ * 这是「字段缺失 = 取默认值」这条约定的**唯一事实来源**：序列化的省略规则、
+ * 必填字段判定、以及给 agent 看的格式说明（store/format-doc.ts）都从这里读，
+ * 改这里三处一起变，杜绝「代码改了文档还在骗人」。
+ */
+export const TASK_DEFAULTS: Readonly<Record<string, unknown>> = {
+  type: 'task',
+  progress: 0,
+  priority: 'P2',
+};
+
+/**
+ * 必填字段：即使是空值也必须落盘。
+ * 省略它们会导致加载时任务被判为非法而静默丢弃（title）或崩溃（status）。
+ */
+export const TASK_REQUIRED_KEYS: readonly string[] = ['id', 'title', 'status'];
+
 export function isOmittedTaskValue(key: string, v: unknown): boolean {
+  if (TASK_REQUIRED_KEYS.includes(key)) return false;
   if (v === undefined || v === null || v === '') return true;
   if (Array.isArray(v) && v.length === 0) return true;
   if (isEmptyObject(v)) return true;
-  if (key === 'type' && v === 'task') return true;
-  if (key === 'progress' && v === 0) return true;
-  if (key === 'priority' && v === 'P2') return true;
-  return false;
+  return key in TASK_DEFAULTS && v === TASK_DEFAULTS[key];
 }
 
 function orderedTaskKeys(t: VaultTask): string[] {

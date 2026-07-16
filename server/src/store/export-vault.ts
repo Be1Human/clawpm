@@ -87,7 +87,11 @@ export interface CollectedVault {
  * 从任意 SQLite 库（文件或 :memory:）收集某项目的需求树数据为 vault 内存结构。
  * CLI 导出与 VaultStore 落盘共用此函数，保证 SQLite↔vault 映射只有一份实现。
  */
-export function collectVaultData(db: SqliteDb, projectSlug: string): CollectedVault {
+export function collectVaultData(
+  db: SqliteDb,
+  projectSlug: string,
+  existingConfig?: VaultConfig
+): CollectedVault {
   const warnings: string[] = [];
   {
     const project = db
@@ -381,7 +385,11 @@ export function collectVaultData(db: SqliteDb, projectSlug: string): CollectedVa
       if (row.c > 0) warnings.push(`ℹ ${label}（${table}）有 ${row.c} 条数据，本次未导出`);
     }
 
-    const config: VaultConfig = {
+    // 已有 vault 的 config 必须原样保留：workflow（每库可自定义状态机/轨道/门禁）、
+    // 库名以及用户自加的键都不在 SQLite 里，凭 SQLite 重建等于把它们抹掉。
+    // 落盘走的就是本函数，若在此合成 config，每存一次盘就会把自定义工作流打回默认五态。
+    // 仅当没有既有 config（SQLite → 全新 vault 的导出）时才给默认值。
+    const config: VaultConfig = existingConfig ?? {
       format: VAULT_FORMAT,
       name: project.name,
       workflow: DEFAULT_WORKFLOW,

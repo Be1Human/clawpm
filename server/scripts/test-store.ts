@@ -22,7 +22,7 @@ import {
   stringifyLinks,
   stringifyTaskShard,
 } from '../src/store/canonical.js';
-import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultTask } from '../src/store/types.js';
+import { DEFAULT_WORKFLOW, VAULT_FORMAT, type VaultTask, type VaultConfig } from '../src/store/types.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -411,6 +411,52 @@ test('writeVault 全量写会清掉陌生分片（migrate --force 覆盖旧库�
     assert.equal(reloaded.tasks.length, 1, '重新加载只应有新数据');
     assert.equal(reloaded.tasks[0].id, 'NEW-1');
     assert.deepEqual(reloaded.warnings, [], '不应有未注册领域之类的告警');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('落盘不得覆盖库自定义的 workflow（每存一次盘就打回默认五态）', () => {
+  // 真实事故：collectVaultData 曾写死 workflow: DEFAULT_WORKFLOW，而落盘走的就是它，
+  // 于是 migrate 写入的 8 态工作流在软件第一次存盘时被悄悄改回 5 态，
+  // 库里 accept/doing 等状态的任务在看板上无处安放。
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpm-wf-'));
+  const dir = path.join(base, '需求管理');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    const custom: VaultConfig = {
+      format: VAULT_FORMAT,
+      name: '八态库',
+      workflow: {
+        statuses: [
+          { id: 'design', label: '设计中', kanban: 'backlog' },
+          { id: 'doing', label: '实施中', kanban: 'active' },
+          { id: 'accept', label: '待验收', kanban: 'review' },
+          { id: 'done', label: '已完成', kanban: 'done' },
+        ],
+        trackKeys: ['评审', '测试报告'],
+      },
+    };
+    const data = {
+      config: custom,
+      domains: [],
+      milestones: [],
+      fields: [],
+      links: [],
+      tasks: [{ id: 'T-1', title: 'x', status: 'accept' }],
+    };
+    writeVault(dir, data);
+
+    // 模拟一次落盘：syncVault 拿到的 config 必须仍是自定义的那份
+    syncVault(dir, data);
+    const reloaded = loadVault(dir);
+    assert.deepEqual(
+      reloaded.config.workflow.statuses.map((s) => s.id),
+      ['design', 'doing', 'accept', 'done'],
+      '自定义状态机必须原样保留'
+    );
+    assert.deepEqual(reloaded.config.workflow.trackKeys, ['评审', '测试报告']);
+    assert.equal(reloaded.config.name, '八态库', '库名不得被覆盖');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
