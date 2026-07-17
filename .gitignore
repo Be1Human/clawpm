@@ -43,3 +43,6 @@ desktop.ini
 tmp_*.txt
 *.backup
 
+
+server/dist-installer/
+server/dist-portable/
