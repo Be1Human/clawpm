@@ -10,6 +10,25 @@ import { useI18n } from '@/lib/i18n';
 import logoImg from '@/assets/logo.png';
 import CommandPalette from './CommandPalette';
 
+const RECENT_PROJECTS_KEY = 'clawpm-recentProjects';
+
+function loadRecentProjectSlugs(): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(RECENT_PROJECTS_KEY) || '[]');
+    return Array.isArray(value) ? value.filter((slug): slug is string => typeof slug === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentProjectSlugs(slugs: string[]): void {
+  try {
+    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(slugs.slice(0, 10)));
+  } catch {
+    // 浏览器禁用 localStorage 时，项目切换仍应可用。
+  }
+}
+
 // ── 导航结构（单机 lite：去除个人/项目双空间与多人协作项） ────────
 const NAV_GROUPS = [
   {
@@ -222,12 +241,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { t, locale, setLocale } = useI18n();
-  const [showCreateProject, setShowCreateProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const activeSlug = useActiveProject();
   const { recentTasks } = useRecentTasks();
   const { favorites } = useFavorites();
+  const [recentProjectSlugs, setRecentProjectSlugs] = useState(loadRecentProjectSlugs);
 
   // Cmd+K / Ctrl+K global shortcut
   useEffect(() => {
@@ -248,7 +266,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     queryFn: () => api.getProjects(),
   });
 
-  const activeProject = (projects as any[]).find((p: any) => p.slug === activeSlug);
+  const projectList = projects as any[];
+  const activeProject = projectList.find((p: any) => p.slug === activeSlug);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    setRecentProjectSlugs(previous => {
+      const next = [activeProject.slug, ...previous.filter(slug => slug !== activeProject.slug)];
+      saveRecentProjectSlugs(next);
+      return next;
+    });
+  }, [activeProject?.slug]);
 
   // 最近打开过的需求库（后端从用户目录的 vaults.json 读）
   const { data: vaultInfo } = useQuery({
@@ -269,6 +297,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       alert(`切换失败: ${(e as Error).message}`);
     }
   }
+
+  function handleSwitchProject(target: string) {
+    if (!target || target === activeSlug) return;
+    setActiveProject(target);
+    qc.invalidateQueries();
+  }
+
+  const recentProjects = recentProjectSlugs
+    .map(slug => projectList.find(project => project.slug === slug))
+    .filter(Boolean);
+  const otherProjects = projectList.filter(project => !recentProjectSlugs.includes(project.slug));
 
 
   return (
@@ -293,31 +332,63 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* 需求库切换器：列出最近打开过的库，切换即换整个内存库，故需整页刷新 */}
+        {/* Vault 模式切换需求库；SQLite 模式切换同一数据库中的项目。 */}
         <div className="px-3 py-2 border-b" style={{ borderColor: '#e8eaed' }}>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">需求库</label>
-          <div className="relative">
-            <select
-              value={vaultInfo?.current ?? ''}
-              onChange={e => handleSwitchVault(e.target.value)}
-              disabled={switching}
-              title={vaultInfo?.current ?? ''}
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all disabled:opacity-60"
-            >
-              {(vaultInfo?.recent ?? []).map((v: any) => (
-                <option key={v.path} value={v.path}>{v.name}</option>
-              ))}
-              {!vaultInfo?.recent?.length && <option value="">{vaultInfo?.currentName ?? '（当前库）'}</option>}
-            </select>
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#9ca3af" strokeWidth="1.5">
-                <path d="M2 3.5L5 6.5L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-          </div>
-          <p className="mt-1 text-[10px] text-gray-400 truncate" title={vaultInfo?.current ?? ''}>
-            {switching ? '正在切换…' : vaultInfo?.current ?? ''}
-          </p>
+          {vaultInfo?.current ? (
+            <>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">需求库</label>
+              <div className="relative">
+                <select
+                  value={vaultInfo.current}
+                  onChange={e => handleSwitchVault(e.target.value)}
+                  disabled={switching}
+                  title={vaultInfo.current}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all disabled:opacity-60"
+                >
+                  {(vaultInfo.recent ?? []).map((v: any) => (
+                    <option key={v.path} value={v.path}>{v.name}</option>
+                  ))}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#9ca3af" strokeWidth="1.5">
+                    <path d="M2 3.5L5 6.5L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+              <p className="mt-1 text-[10px] text-gray-400 truncate" title={vaultInfo.current}>
+                {switching ? '正在切换…' : vaultInfo.current}
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">项目</label>
+              <div className="relative">
+                <select
+                  value={activeProject?.slug ?? ''}
+                  onChange={e => handleSwitchProject(e.target.value)}
+                  disabled={!projectList.length}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-gray-800 appearance-none cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all disabled:opacity-60"
+                >
+                  {!projectList.length && <option value="">未找到项目</option>}
+                  {recentProjects.length > 0 && (
+                    <optgroup label="最近项目">
+                      {recentProjects.map(project => <option key={project.slug} value={project.slug}>{project.name}</option>)}
+                    </optgroup>
+                  )}
+                  {otherProjects.length > 0 && (
+                    <optgroup label="全部项目">
+                      {otherProjects.map(project => <option key={project.slug} value={project.slug}>{project.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#9ca3af" strokeWidth="1.5">
+                    <path d="M2 3.5L5 6.5L8 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Navigation */}
