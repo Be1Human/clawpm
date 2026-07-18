@@ -57,7 +57,6 @@ async function main(): Promise<void> {
   }
 
   // ??= 保证显式传入的环境变量优先（调试/自定义端口）
-  process.env.CLAWPM_STORAGE ??= 'vault';
   process.env.CLAWPM_VAULT ??= vault;
   process.env.CLAWPM_HOME ??= exeDir;
   process.env.CLAWPM_WEB_DIST ??= path.join(exeDir, 'web');

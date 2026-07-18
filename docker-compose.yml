@@ -14,7 +14,7 @@ services:
       NODE_ENV: production
       CLAWPM_PORT: 3210
       CLAWPM_API_TOKEN: ${CLAWPM_API_TOKEN:?请设置 CLAWPM_API_TOKEN}
-      CLAWPM_DB_PATH: /app/data/clawpm.db
+      CLAWPM_VAULT: /app/data/vault
       CLAWPM_BASE_PATH: ${CLAWPM_BASE_PATH:-}
       CLAWPM_LOG_LEVEL: ${CLAWPM_LOG_LEVEL:-info}
     healthcheck:

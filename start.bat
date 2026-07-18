@@ -29,6 +29,7 @@ if not exist "node_modules" (
 
 :: Ensure data directory exists
 if not exist "data" mkdir data
+if "%CLAWPM_VAULT%"=="" set "CLAWPM_VAULT=%~dp0data\vault"
 
 echo [OK] Starting ClawPM server (backend + frontend)...
 echo.
@@ -36,6 +37,7 @@ echo   Backend API:  http://localhost:3210
 echo   Frontend:     http://localhost:5173
 echo   MCP SSE:      http://localhost:3210/mcp/sse
 echo   Health Check: http://localhost:3210/health
+echo   Vault:        %CLAWPM_VAULT%
 echo.
 echo   API Token:    dev-token (default)
 echo.

@@ -185,7 +185,7 @@ export function switchVaultStore(dir: string, slug: string): VaultStore {
   return next;
 }
 
-/** 有写操作后调用，触发防抖落盘（storage=sqlite 时无副作用） */
+/** 有写操作后调用，触发防抖落盘。 */
 export function markVaultDirty(): void {
   _store?.markDirty();
 }

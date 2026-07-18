@@ -7,7 +7,6 @@ import { registerRoutes } from './api/routes.js';
 import { createMcpServer } from './mcp/server.js';
 import { getDb } from './db/connection.js';
 import { markVaultDirty, flushVaultStore, getVaultStore } from './store/vault-store.js';
-import { SchedulerWorker } from './scheduler/worker.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { AuthService, type AuthPrincipal } from './services/auth-service.js';
 import fs from 'fs';
@@ -31,7 +30,7 @@ app.register(multipart, {
 });
 
 // ── Uploads static file serving ───────────────────────────────────
-const uploadsDir = path.join(path.dirname(config.dbPath), 'uploads');
+const uploadsDir = path.join(config.dataDir, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.register(staticFiles, {
   root: uploadsDir,
@@ -86,16 +85,14 @@ app.addHook('onRequest', async (req, reply) => {
   (req as any).clawpmUser = (req as any).clawpmMember;
 });
 
-// ── Vault 落盘触发（storage=vault）：非 GET 的 API 写请求成功后标脏，防抖落盘 ──
-if (config.storage === 'vault') {
-  app.addHook('onResponse', async (req, reply) => {
-    const m = req.method;
-    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return;
-    if (reply.statusCode >= 400) return;
-    const pathname = req.url?.split('?')[0] || '';
-    if (pathname.startsWith('/api/v1') || pathname === '/upload/image') markVaultDirty();
-  });
-}
+// ── Vault 落盘触发：非 GET 的 API 写请求成功后标脏，防抖落盘 ──
+app.addHook('onResponse', async (req, reply) => {
+  const m = req.method;
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return;
+  if (reply.statusCode >= 400) return;
+  const pathname = req.url?.split('?')[0] || '';
+  if (pathname.startsWith('/api/v1') || pathname === '/upload/image') markVaultDirty();
+});
 
 // ── Health check ───────────────────────────────────────────────────
 // vault 字段供其他实例判断「同一需求库是否已在运行」（见 findRunningInstance）。
@@ -144,7 +141,7 @@ app.post('/mcp/messages', async (req, reply) => {
   // 将 Fastify 已解析的 body 直接传入，避免 SDK 重复读取 stream
   await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
   // MCP 工具可能写库，保守标脏（无变更时 flush 的差量比对为空，落盘为空操作）
-  if (config.storage === 'vault') markVaultDirty();
+  markVaultDirty();
 });
 
 // ── REST API ───────────────────────────────────────────────────────
@@ -167,10 +164,10 @@ if (fs.existsSync(config.webDistPath)) {
   });
 }
 
-// ── 退出前落盘（storage=vault）：确保防抖窗口内未落盘的写入不丢失 ──
+// ── 退出前落盘：确保防抖窗口内未落盘的写入不丢失 ──
 let flushed = false;
 const flushOnce = () => {
-  if (flushed || config.storage !== 'vault') return;
+  if (flushed) return;
   flushed = true;
   flushVaultStore();
 };
@@ -260,7 +257,7 @@ void (async () => {
   try {
     // 同一需求库已在运行 → 直接打开它的窗口并退出。
     // 文本存储必须单写者：两个进程同时写同一批 tasks/*.json 会互相覆盖。
-    if (config.storage === 'vault' && process.env.CLAWPM_DESKTOP === '1') {
+    if (process.env.CLAWPM_DESKTOP === '1') {
       const running = await findRunningInstance(config.vaultDir);
       if (running) {
         console.log(`该需求库已在运行（端口 ${running}），打开其窗口。`);
@@ -274,26 +271,18 @@ void (async () => {
     }
 
     getDb(); // init DB
-    // 本地 exe（vault 模式）默认只监听回环，避免暴露到局域网；可用 CLAWPM_HOST 覆盖
-    const host = process.env.CLAWPM_HOST || (config.storage === 'vault' ? '127.0.0.1' : '0.0.0.0');
+    // Vault 是本地单写者，默认只监听回环；可用 CLAWPM_HOST 覆盖。
+    const host = process.env.CLAWPM_HOST || '127.0.0.1';
     // 端口被占（多开不同需求库是常态）→ 顺延，而非崩溃退出：
     // GUI 子系统下没有控制台，崩溃对用户表现为「双击没反应」。
     const port = await listenWithFallback(host, config.port);
     console.log(`🚀 ClawPM running at http://${host}:${port}`);
     console.log(`📡 MCP SSE endpoint: http://${host}:${port}/mcp/sse`);
-    if (config.storage === 'vault') {
-      console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
-      writeInstanceLock(config.vaultDir, port);
-    }
+    console.log(`📁 存储引擎: vault（文本文件真源）→ ${path.resolve(config.vaultDir)}`);
+    writeInstanceLock(config.vaultDir, port);
 
-    // 启动调度器轮询（可通过环境变量关闭；vault 模式默认关闭：调度态不在文本格式内）
-    const schedulerEnabled =
-      process.env.CLAWPM_SCHEDULER_ENABLED !== 'false' && config.storage !== 'vault';
-    if (schedulerEnabled) {
-      SchedulerWorker.start();
-    } else {
-      console.log('⏸️  SchedulerWorker 已禁用');
-    }
+    // 调度运行态不属于 Vault 格式，Vault-only 运行时不启动调度器。
+    console.log('⏸️  SchedulerWorker 已禁用');
 
     // 桌面模式（exe 启动器设置）：开应用窗口而非浏览器标签页，关窗即退出
     if (process.env.CLAWPM_DESKTOP === '1') {

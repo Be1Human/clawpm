@@ -1,8 +1,6 @@
-import { openDatabase, createDrizzle, type SqliteDb, type DrizzleDb } from './sqlite-driver.js';
+import { type SqliteDb, type DrizzleDb } from './sqlite-driver.js';
 
 import { config } from '../config.js';
-import fs from 'fs';
-import path from 'path';
 // 注意：vault-store.ts 反向依赖本文件的 runMigrations，形成循环引用；
 // 二者均在函数内使用对方，ESM 运行时安全（模块求值期不触碰）
 import { openVaultStore } from '../store/vault-store.js';
@@ -20,22 +18,8 @@ export function resetDbCache(): void {
 
 export function getDb() {
   if (!_db) {
-    // storage=vault：内存库为查询引擎，文本 vault 为持久化真源（见 store/vault-store.ts）
-    if (config.storage === 'vault') {
-      const store = openVaultStore(config.vaultDir, config.vaultProject);
-      _db = store.db;
-      return _db;
-    }
-
-    const dir = path.dirname(config.dbPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-    const sqlite = openDatabase(config.dbPath);
-    sqlite.exec('PRAGMA journal_mode = WAL');
-    sqlite.exec('PRAGMA foreign_keys = ON');
-
-    _db = createDrizzle(sqlite);
-    runMigrations(sqlite);
+    const store = openVaultStore(config.vaultDir, config.vaultProject);
+    _db = store.db;
   }
   return _db;
 }

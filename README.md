@@ -45,7 +45,7 @@ ClawPM 是一个可自托管的轻量级项目管理中枢。它通过 [MCP (Mod
 - **归档机制** — 安全的软删除，支持恢复
 - **需求池 + 目标管理** — OKR 式目标拆解，需求收集排期
 - **风险分析** — 逾期检测、停滞预警、健康度评分
-- **轻量部署** — SQLite + Docker，单容器运行
+- **轻量部署** — 文本 Vault + Docker，单容器运行
 
 ## 常用文档
 
@@ -406,7 +406,7 @@ review_intake(
 ## Tech Stack
 
 - **Backend**: Node.js + TypeScript + Fastify
-- **Database**: SQLite (Drizzle ORM)
+- **Storage**: 文本 Vault（内存 SQLite / Drizzle 仅作查询引擎）
 - **MCP**: @modelcontextprotocol/sdk（支持 stdio + SSE 双模式）
 - **Frontend**: React + Vite + Tailwind CSS + ReactFlow
 - **Charts**: Recharts
@@ -418,14 +418,14 @@ review_intake(
 clawpm/
 ├── server/src/
 │   ├── index.ts              # 服务入口（Fastify + SSE MCP）
-│   ├── config.ts             # 配置（端口/Token/数据库路径）
+│   ├── config.ts             # 配置（端口/Token/Vault 路径）
 │   ├── mcp/
 │   │   ├── server.ts         # MCP 工具定义（59 个工具）
 │   │   └── stdio.ts          # MCP stdio 入口（CodeBuddy 用）
 │   ├── api/routes.ts         # REST API 路由
 │   ├── db/
 │   │   ├── schema.ts         # Drizzle schema 定义
-│   │   └── connection.ts     # SQLite 连接 + 自动迁移
+│   │   └── connection.ts     # 内存查询引擎 + 自动迁移
 │   └── services/
 │       ├── task-service.ts       # 节点业务逻辑
 │       ├── project-service.ts    # 项目管理
@@ -474,7 +474,7 @@ clawpm/
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
 | `CLAWPM_PORT` | `3210` | 服务端口 |
-| `CLAWPM_DB_PATH` | `./data/clawpm.db` | SQLite 数据库路径 |
+| `CLAWPM_VAULT` | `./data/vault` | 文本 Vault 根目录 |
 | `CLAWPM_API_TOKEN` | `dev-token` | 兼容模式与开发态全局 Token，生产环境建议仅作为管理员/迁移用途 |
 | `CLAWPM_LOG_LEVEL` | `info` | 日志级别 |
 | `CLAWPM_AGENT_TOKEN` | — | MCP stdio 模式下的 Agent 专属 Token，推荐使用 |

@@ -36,7 +36,8 @@ mkdir -p data
 
 PORT="${CLAWPM_PORT:-3210}"
 TOKEN="${CLAWPM_API_TOKEN:-dev-token}"
-DB_PATH="${CLAWPM_DB_PATH:-$SCRIPT_DIR/data/clawpm.db}"
+VAULT_DIR="${CLAWPM_VAULT:-$SCRIPT_DIR/data/vault}"
+export CLAWPM_VAULT="$VAULT_DIR"
 
 echo "============================================"
 echo "  ClawPM - Self-hosted PM with MCP"
@@ -48,7 +49,7 @@ echo "  Backend API:  http://localhost:${PORT}"
 echo "  Frontend:     http://localhost:5173"
 echo "  MCP SSE:      http://localhost:${PORT}/mcp/sse"
 echo "  Health Check: http://localhost:${PORT}/health"
-echo "  Database:     ${DB_PATH}"
+echo "  Vault:        ${VAULT_DIR}"
 echo "  API Token:    ${TOKEN}"
 echo ""
 echo "  Press Ctrl+C to stop all services."

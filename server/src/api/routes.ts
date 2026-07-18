@@ -37,7 +37,7 @@ function getBaseUrl(req: any) {
 
 export async function registerRoutes(app: FastifyInstance) {
 
-  // 工作流配置（vault 模式返回 vault 的状态机 + 看板列映射；sqlite 模式返回默认五态）
+  // 工作流配置：由当前 Vault 的状态机与看板列映射提供。
   app.get('/api/v1/workflow', async () => {
     const store = getVaultStore();
     return store ? store.workflow : DEFAULT_WORKFLOW;
@@ -61,7 +61,6 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post('/api/v1/vaults/switch', async (req, reply) => {
     const { path: target } = (req.body ?? {}) as { path?: string };
     if (!target) return reply.code(400).send({ error: '缺少 path' });
-    if (!getVaultStore()) return reply.code(400).send({ error: '当前不是 vault 存储模式' });
     try {
       const store = switchVaultStore(target, config.vaultProject);
       return { ok: true, vault: store.vaultDir, name: store.name };
@@ -1042,7 +1041,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const safeExt = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) ? ext : 'png';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
 
-    const uploadPath = path.join(path.dirname(config.dbPath), 'uploads');
+    const uploadPath = path.join(config.dataDir, 'uploads');
     if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
 
     const filePath = path.join(uploadPath, filename);
