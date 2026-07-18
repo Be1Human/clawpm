@@ -1,7 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
-
 export interface VaultSnapshot {
   path: string;
+  projectPath: string;
+  name: string;
   files: Record<string, string>;
 }
 
@@ -10,27 +10,42 @@ export interface VaultWrite {
   content: string;
 }
 
-export function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export interface RecentProject {
+  projectPath: string;
+  vaultPath: string;
+  name: string;
+  lastOpenedAt: string;
 }
 
-function requireTauri(): void {
-  if (!isTauriRuntime()) {
-    throw new Error('ClawPM 必须在桌面客户端中运行，浏览器预览无法访问本地 Vault。');
+declare global {
+  interface Window {
+    clawpm?: {
+      chooseProject(): Promise<VaultSnapshot | null>;
+      createProject(projectPath: string): Promise<VaultSnapshot>;
+      openProject(projectPath: string): Promise<VaultSnapshot>;
+      recentProjects(): Promise<RecentProject[]>;
+      writeVaultFiles(projectPath: string, files: VaultWrite[]): Promise<void>;
+    };
   }
 }
 
+export function isElectronRuntime(): boolean {
+  return typeof window !== 'undefined' && window.clawpm !== undefined;
+}
+
+function requireDesktop(): NonNullable<Window['clawpm']> {
+  if (!window.clawpm) throw new Error('ClawPM 必须在桌面客户端中运行。');
+  return window.clawpm;
+}
+
 export async function pickVault(): Promise<VaultSnapshot | null> {
-  requireTauri();
-  return invoke<VaultSnapshot | null>('pick_vault');
+  return requireDesktop().chooseProject();
 }
 
-export async function openVault(path: string): Promise<VaultSnapshot> {
-  requireTauri();
-  return invoke<VaultSnapshot>('open_vault', { path });
+export async function openVault(projectPath: string): Promise<VaultSnapshot> {
+  return requireDesktop().openProject(projectPath);
 }
 
-export async function writeVaultFiles(path: string, files: VaultWrite[]): Promise<void> {
-  requireTauri();
-  await invoke('write_vault_files', { path, files });
+export async function writeVaultFiles(projectPath: string, files: VaultWrite[]): Promise<void> {
+  await requireDesktop().writeVaultFiles(projectPath, files);
 }

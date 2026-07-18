@@ -54,6 +54,7 @@ interface TaskRow {
   priority: string;
   owner: string | null;
   assignee: string | null;
+  collaborators: string;
   due_date: string | null;
   start_date: string | null;
   blocker: string | null;
@@ -186,7 +187,7 @@ export function collectVaultData(
     const taskRows = db
       .prepare(
         `SELECT id, task_id, title, description, domain_id, milestone_id, parent_task_id,
-                type, status, progress, priority, owner, assignee, due_date, start_date,
+                type, status, progress, priority, owner, assignee, collaborators, due_date, start_date,
                 blocker, tags, labels, sort_order, archived_at, created_at, updated_at
          FROM tasks WHERE project_id = ? ORDER BY id`
       )
@@ -289,6 +290,7 @@ export function collectVaultData(
         rank: rankOf.get(r.id),
         owner: r.owner ?? undefined,
         assignee: r.assignee ?? undefined,
+        collaborators: parseJsonArray(r.collaborators, warnings, `task ${r.task_id} collaborators`),
         startDate: r.start_date ?? undefined,
         dueDate: r.due_date ?? undefined,
         milestone,
@@ -401,6 +403,14 @@ export function collectVaultData(
       milestones,
       fields,
       links,
+      people: (db.prepare(`SELECT m.identifier, m.name, m.color, m.description
+        FROM members m JOIN project_members pm ON pm.member_identifier = m.identifier
+        WHERE pm.project_id = ? ORDER BY m.name, m.identifier`).all(project.id) as any[]).map(person => ({
+          identifier: person.identifier,
+          name: person.name,
+          color: person.color ?? undefined,
+          description: person.description ?? undefined,
+        })),
       tasks,
     };
     return { project, data, archived: archivedCount, warnings };

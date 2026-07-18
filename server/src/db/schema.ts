@@ -46,6 +46,7 @@ export const tasks = sqliteTable('tasks', {
   priority: text('priority').notNull().default('P2'),
   owner: text('owner'),
   assignee: text('assignee'),  // 处理人/执行人
+  collaborators: text('collaborators').notNull().default('[]'),
   dueDate: text('due_date'),
   startDate: text('start_date'),
   source: text('source').notNull().default('planned'),

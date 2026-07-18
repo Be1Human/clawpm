@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useRecentTasks } from '@/lib/useRecentTasks';
 import { useFavorites } from '@/lib/useFavorites';
-import { api } from '@/api/client';
+import { api, setActiveProject } from '@/api/client';
 import { useI18n } from '@/lib/i18n';
 import logoImg from '@/assets/logo.png';
 import CommandPalette from './CommandPalette';
@@ -32,6 +32,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/domains',        labelKey: 'nav.domains',        icon: DomainIcon },
       { to: '/custom-fields',  labelKey: 'nav.customFields',   icon: FieldsIcon },
+      { to: '/members',        labelKey: 'nav.members',        icon: MembersIcon },
       { to: '/archive',        labelKey: 'nav.archive',        icon: ArchiveIcon },
     ],
   },
@@ -251,6 +252,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setSwitching(true);
     try {
       await api.switchVault(target);
+      setActiveProject('default');
       // 整页刷新：切库换掉了整个内存库，任何缓存都不再对应当前库
       window.location.reload();
     } catch (e) {

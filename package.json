@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "pnpm --filter server dev",
     "dev:web": "pnpm --filter web dev",
+    "dev:desktop": "set CLAWPM_ELECTRON=1&& pnpm --filter web build && pnpm --filter desktop dev",
     "build": "pnpm --filter server build && pnpm --filter web build",
+    "build:desktop": "set CLAWPM_ELECTRON=1&& pnpm --filter web build && pnpm --filter desktop package",
     "start": "pnpm --filter server start",
     "lint": "pnpm -r lint"
   },

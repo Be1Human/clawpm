@@ -88,6 +88,7 @@ export const TASK_KEY_ORDER = [
   'rank',
   'owner',
   'assignee',
+  'collaborators',
   'startDate',
   'dueDate',
   'milestone',

@@ -99,6 +99,13 @@ export interface VaultReview {
   doc?: string;
 }
 
+export interface VaultPerson {
+  identifier: string;
+  name: string;
+  color?: string;
+  description?: string;
+}
+
 export interface VaultTask {
   id: string;
   title: string;
@@ -117,6 +124,7 @@ export interface VaultTask {
   rank?: string;
   owner?: string;
   assignee?: string;
+  collaborators?: string[];
   startDate?: string;
   dueDate?: string;
   /** 按 name 引用 milestones.json */
@@ -159,6 +167,7 @@ export interface VaultData {
   milestones: VaultMilestone[];
   fields: VaultFieldDef[];
   links: VaultLink[];
+  people: VaultPerson[];
   /** 活跃 + 归档（archivedAt 区分） */
   tasks: VaultTask[];
   /** 加载期校验告警（重复 ID、悬空 parent 等），不阻断 */

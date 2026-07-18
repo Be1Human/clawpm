@@ -311,6 +311,7 @@ export function runMigrations(sqlite: SqliteDb) {
   // v3.5 迁移：tasks 新增 assignee / start_date 字段
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN assignee TEXT`); } catch {}
   try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN start_date TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE tasks ADD COLUMN collaborators TEXT NOT NULL DEFAULT '[]'`); } catch {}
 
   // v4.0 迁移：members 新增 role / onboarded_at 字段
   try { sqlite.exec(`ALTER TABLE members ADD COLUMN role TEXT`); } catch {}

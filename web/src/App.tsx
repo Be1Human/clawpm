@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Component, useEffect, type ReactNode } from 'react';
 import Layout from './components/Layout';
 import KanbanBoard from './pages/KanbanBoard';
@@ -11,9 +11,12 @@ import GanttChart from './pages/GanttChart';
 import Domains from './pages/Domains';
 import CustomFields from './pages/CustomFields';
 import Archive from './pages/Archive';
+import Members from './pages/Members';
 import { setCurrentMember, getCurrentMember } from './lib/useCurrentMember';
 import { setCurrentUser, setOnboarded } from './lib/useCurrentUser';
 import { BASE_PATH, withBasePath } from './api/client';
+import VaultGateway from './components/VaultGateway';
+import { isElectronRuntime } from './vault/desktop';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -61,10 +64,12 @@ function LocalGuard() {
 }
 
 export default function App() {
+  const Router = isElectronRuntime() ? HashRouter : BrowserRouter;
   return (
     <ErrorBoundary>
-      <BrowserRouter basename={BASE_PATH || undefined}>
-        <Routes>
+      <Router basename={isElectronRuntime() ? undefined : BASE_PATH || undefined}>
+        <VaultGateway>
+          <Routes>
           <Route element={<LocalGuard />}>
             {/* 默认入口 → 思维导图（需求树核心视图） */}
             <Route path="/" element={<Navigate to="/mindmap" replace />} />
@@ -79,12 +84,12 @@ export default function App() {
             <Route path="/domains" element={<Domains />} />
             <Route path="/custom-fields" element={<CustomFields />} />
             <Route path="/archive" element={<Archive />} />
+            <Route path="/members" element={<Members />} />
 
             {/* 已移除的多人协作/个人空间路由 → 重定向到首页 */}
             <Route path="/requirements" element={<Navigate to="/mindmap" replace />} />
             <Route path="/dashboard" element={<Navigate to="/mindmap" replace />} />
             <Route path="/goals" element={<Navigate to="/mindmap" replace />} />
-            <Route path="/members" element={<Navigate to="/mindmap" replace />} />
             <Route path="/system-members" element={<Navigate to="/mindmap" replace />} />
             <Route path="/iterations" element={<Navigate to="/mindmap" replace />} />
             <Route path="/iterations/:id" element={<Navigate to="/mindmap" replace />} />
@@ -94,8 +99,9 @@ export default function App() {
             <Route path="/my-tasks" element={<Navigate to="/mindmap" replace />} />
             <Route path="*" element={<Navigate to="/mindmap" replace />} />
           </Route>
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </VaultGateway>
+      </Router>
     </ErrorBoundary>
   );
 }

@@ -12,6 +12,7 @@ import { formatDate, formatRelative, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import PermissionPanel from '@/components/PermissionPanel';
 import MarkdownPreview from '@/components/MarkdownPreview';
+import MemberMultiSelect from '@/components/MemberMultiSelect';
 
 const ATTACHMENT_TYPES = [
   { key: 'doc', label: '文档', icon: '📄' },
@@ -915,6 +916,15 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
                       <span className="text-sm text-gray-700">{v}</span>
                     </div>
                   ) : <span className="text-sm text-gray-400">—</span>}
+                  disabled={!canEdit}
+                />
+              </MetaRow>
+
+              <MetaRow label="协作人员">
+                <MemberMultiSelect
+                  members={members as any[]}
+                  value={Array.isArray(task.collaborators) ? task.collaborators : []}
+                  onChange={collaborators => updateMut.mutate({ collaborators })}
                   disabled={!canEdit}
                 />
               </MetaRow>

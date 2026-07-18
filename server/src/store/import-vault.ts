@@ -223,6 +223,17 @@ export function insertVaultData(
       fieldId.set(f.name, Number(r.lastInsertRowid));
     });
 
+    const insPerson = db.prepare(
+      'INSERT INTO members (project_id, name, identifier, type, color, description) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    const linkPerson = db.prepare(
+      'INSERT INTO project_members (project_id, member_identifier) VALUES (?, ?)'
+    );
+    for (const person of vault.people ?? []) {
+      insPerson.run(projectId, person.name, person.identifier, 'human', person.color ?? '#64748b', person.description ?? null);
+      linkPerson.run(projectId, person.identifier);
+    }
+
     // sort_order：按 (rank, id) 还原每个兄弟组的整数排序
     const byParent = new Map<string, typeof vault.tasks>();
     for (const t of vault.tasks) {
@@ -243,9 +254,9 @@ export function insertVaultData(
     const taskNumId = new Map<string, number>();
     const insTask = db.prepare(
       `INSERT INTO tasks (task_id, project_id, title, description, domain_id, milestone_id,
-         type, status, progress, priority, owner, assignee, due_date, start_date, blocker,
+         type, status, progress, priority, owner, assignee, collaborators, due_date, start_date, blocker,
          tags, labels, sort_order, archived_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const sortedTasks = [...vault.tasks].sort((a, b) => naturalCompare(a.id, b.id));
     for (const t of sortedTasks) {
@@ -274,6 +285,7 @@ export function insertVaultData(
         t.priority ?? 'P2',
         t.owner ?? null,
         t.assignee ?? null,
+        JSON.stringify(t.collaborators ?? []),
         t.dueDate ?? null,
         t.startDate ?? null,
         t.blocker ?? null,

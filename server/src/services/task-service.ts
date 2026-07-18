@@ -13,6 +13,7 @@ export interface CreateTaskParams {
   milestone?: string;
   owner?: string;
   assignee?: string;
+  collaborators?: string[];
   due_date?: string;
   start_date?: string;
   parent_task_id?: string;
@@ -34,6 +35,7 @@ export interface UpdateTaskParams {
   priority?: string;
   owner?: string;
   assignee?: string;
+  collaborators?: string[];
   due_date?: string;
   start_date?: string;
   milestone?: string;
@@ -138,6 +140,7 @@ export const TaskService = {
       priority: params.priority || 'P2',
       owner: params.owner,
       assignee: params.assignee || null,
+      collaborators: JSON.stringify(params.collaborators || []),
       dueDate: params.due_date,
       startDate: params.start_date || null,
       source: params.source || 'planned',
@@ -245,6 +248,7 @@ export const TaskService = {
     if (params.priority !== undefined) updates.priority = params.priority;
     if (params.owner !== undefined) updates.owner = params.owner;
     if (params.assignee !== undefined) updates.assignee = params.assignee;
+    if (params.collaborators !== undefined) updates.collaborators = JSON.stringify(params.collaborators);
     if (params.due_date !== undefined) updates.dueDate = params.due_date;
     if (params.start_date !== undefined) updates.startDate = params.start_date;
     if (params.blocker !== undefined) updates.blocker = params.blocker;
@@ -712,6 +716,7 @@ export const TaskService = {
       ...task,
       tags: JSON.parse(task.tags || '[]'),
       labels,
+      collaborators: (() => { try { return JSON.parse(task.collaborators || '[]'); } catch { return []; } })(),
       parentTaskIdStr,
       domain: domain ? { id: domain.id, name: domain.name, color: domain.color } : null,
       milestone: milestone ? { id: milestone.id, name: milestone.name } : null,

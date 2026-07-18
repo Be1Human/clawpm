@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
+import MemberMultiSelect from './MemberMultiSelect';
 
 const PRESET_LABELS = [
   { value: 'epic',    label: 'Epic',    color: '#8b5cf6', bg: '#ede9fe' },
@@ -40,6 +41,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     parent_task_id: defaultParentId || '',
     priority: 'P2',
     owner: '',
+    collaborators: [] as string[],
     due_date: '',
     domain: defaultDomain || '',
     milestone: '',
@@ -100,6 +102,7 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
     if (form.labels.length) payload.labels = form.labels;
     if (form.priority !== 'P2') payload.priority = form.priority;
     if (form.owner) payload.owner = form.owner;
+    if (form.collaborators.length) payload.collaborators = form.collaborators;
     if (form.due_date) payload.due_date = form.due_date;
     if (form.domain) payload.domain = form.domain;
     if (form.milestone) payload.milestone = form.milestone;
@@ -202,6 +205,15 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
                 <textarea className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
                   rows={2} placeholder="详细描述（可选）" value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1.5 block">协作人员</label>
+                <MemberMultiSelect
+                  members={members as any[]}
+                  value={form.collaborators}
+                  onChange={collaborators => setForm(current => ({ ...current, collaborators }))}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

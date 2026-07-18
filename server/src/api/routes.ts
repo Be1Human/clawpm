@@ -26,7 +26,13 @@ import { eq, and, desc, asc } from 'drizzle-orm';
 /** 从请求中解析项目 slug → projectId */
 function getProjectId(req: any): number {
   const slug = (req.query as any)?.project || (req.body as any)?.project;
-  return ProjectService.resolveProjectId(slug);
+  try {
+    return ProjectService.resolveProjectId(slug);
+  } catch (error) {
+    // 文本 Vault 每次只加载一个工程，浏览器可能在切换后短暂携带旧 slug。
+    if (getVaultStore() && slug) return ProjectService.resolveProjectId();
+    throw error;
+  }
 }
 
 function getBaseUrl(req: any) {

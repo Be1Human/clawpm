@@ -248,6 +248,7 @@ export function migrateRequirements(opts: MigrateReqOptions): MigrateReqReport {
     milestones: [],
     fields: [],
     links: [],
+    people: [],
     tasks,
   };
   const files = writeVault(opts.vaultDir, data).sort(naturalCompare);

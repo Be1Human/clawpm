@@ -132,6 +132,7 @@ export function buildVaultFiles(data: Omit<VaultData, 'dir' | 'warnings'>): Map<
   files.set('milestones.json', stringifyMilestones(data.milestones));
   files.set('fields.json', stringifyFields(data.fields));
   files.set('links.json', stringifyLinks(data.links));
+  files.set('people.json', JSON.stringify({ format: 'clawpm-people@1', people: data.people }, null, 2) + '\n');
 
   const shards = new Map<string, VaultTask[]>();
   for (const t of data.tasks) {
@@ -290,6 +291,10 @@ export function loadVault(dir: string): VaultData {
     path.join(dir, 'links.json'),
     { links: [] }
   ).links ?? [];
+  const people = readJsonFile<{ people: VaultData['people'] }>(
+    path.join(dir, 'people.json'),
+    { people: [] }
+  ).people ?? [];
 
   const tasks: VaultTask[] = [];
   const seen = new Map<string, string>(); // id -> 文件
@@ -345,5 +350,5 @@ export function loadVault(dir: string): VaultData {
     }
   }
 
-  return { dir, config, domains, milestones, fields, links, tasks, warnings };
+  return { dir, config, domains, milestones, fields, links, people, tasks, warnings };
 }
