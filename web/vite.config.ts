@@ -11,7 +11,10 @@ function normalizeBasePath(input?: string) {
 }
 
 export default defineConfig({
-  base: normalizeBasePath(process.env.CLAWPM_WEB_BASE_PATH),
+  // Electron loads index.html through file://, which requires relative asset URLs.
+  base: process.env.CLAWPM_ELECTRON === '1'
+    ? './'
+    : normalizeBasePath(process.env.CLAWPM_WEB_BASE_PATH),
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
