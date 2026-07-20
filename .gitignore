@@ -8,6 +8,9 @@ dist/
 build/
 dist-portable/
 dist-exe/
+desktop/release/
+desktop/release-refresh*/
+release-artifacts/
 
 # Database
 *.db
@@ -42,6 +45,7 @@ desktop.ini
 # Temp
 tmp_*.txt
 *.backup
+.tmp-release-*
 
 
 server/dist-installer/
