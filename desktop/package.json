@@ -1,12 +1,14 @@
 {
   "name": "@clawpm/desktop",
-  "version": "0.1.0",
+  "version": "0.1.2",
+  "description": "ClawPM local-first project management desktop application",
+  "author": "ClawPM Contributors",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "pnpm build && electron .",
-    "package": "pnpm build && electron-builder --win"
+    "package": "pnpm build && electron-builder --win nsis --x64"
   },
   "build": {
     "appId": "com.clawpm.desktop",
@@ -14,6 +16,9 @@
     "directories": {
       "output": "release"
     },
+    "asar": true,
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
     "files": [
       "dist/**/*"
     ],
@@ -24,12 +29,22 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ClawPM",
+      "artifactName": "ClawPM-Setup-${version}-${arch}.${ext}"
     }
   },
   "devDependencies": {

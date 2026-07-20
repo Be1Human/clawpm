@@ -24,6 +24,11 @@ declare global {
       createProject(projectPath: string): Promise<VaultSnapshot>;
       openProject(projectPath: string): Promise<VaultSnapshot>;
       recentProjects(): Promise<RecentProject[]>;
+      onProjectOpened(callback: (snapshot: VaultSnapshot) => void): () => void;
+      onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void;
+      minimizeWindow(): Promise<void>;
+      toggleMaximizeWindow(): Promise<boolean>;
+      closeWindow(): Promise<void>;
       writeVaultFiles(projectPath: string, files: VaultWrite[]): Promise<void>;
     };
   }
@@ -44,6 +49,18 @@ export async function pickVault(): Promise<VaultSnapshot | null> {
 
 export async function openVault(projectPath: string): Promise<VaultSnapshot> {
   return requireDesktop().openProject(projectPath);
+}
+
+export async function listDesktopProjects(): Promise<RecentProject[]> {
+  return requireDesktop().recentProjects();
+}
+
+export function onVaultOpened(callback: (snapshot: VaultSnapshot) => void): () => void {
+  return requireDesktop().onProjectOpened(callback);
+}
+
+export function onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void {
+  return requireDesktop().onVaultChanged(callback);
 }
 
 export async function writeVaultFiles(projectPath: string, files: VaultWrite[]): Promise<void> {

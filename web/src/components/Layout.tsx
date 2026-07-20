@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useRecentTasks } from '@/lib/useRecentTasks';
 import { useFavorites } from '@/lib/useFavorites';
@@ -8,6 +8,8 @@ import { api, setActiveProject } from '@/api/client';
 import { useI18n } from '@/lib/i18n';
 import logoImg from '@/assets/logo.png';
 import CommandPalette from './CommandPalette';
+import { reopenVault, useVaultSession } from '@/vault/session';
+import { isElectronRuntime } from '@/vault/desktop';
 
 // ── 导航结构（单机 lite：去除个人/项目双空间与多人协作项） ────────
 const NAV_GROUPS = [
@@ -220,10 +222,13 @@ function ClockIcon({ className }: { className?: string }) {
 // ── Sidebar 组件 ─────────────────────────────────────────────────
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { t, locale, setLocale } = useI18n();
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const { recentTasks } = useRecentTasks();
   const { favorites } = useFavorites();
+  const vaultSession = useVaultSession();
+  const desktop = isElectronRuntime();
 
   // Cmd+K / Ctrl+K global shortcut
   useEffect(() => {
@@ -241,15 +246,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
 
   // 最近打开过的需求库（后端从用户目录的 vaults.json 读）
-  const { data: vaultInfo } = useQuery({
+  const { data: apiVaultInfo } = useQuery({
     queryKey: ['vaults'],
     queryFn: () => api.getVaults(),
+    enabled: !desktop,
   });
+  const vaultInfo = desktop
+    ? {
+        current: vaultSession.status === 'ready' ? vaultSession.vault.path : null,
+        currentName: vaultSession.status === 'ready' ? vaultSession.vault.name : null,
+        recent: vaultSession.recent,
+      }
+    : apiVaultInfo;
   const [switching, setSwitching] = useState(false);
 
   async function handleSwitchVault(target: string) {
     if (!target || target === vaultInfo?.current || switching) return;
     setSwitching(true);
+    if (desktop) {
+      try {
+        await reopenVault(target);
+        await queryClient.invalidateQueries();
+      } catch (error) {
+        alert((error as Error).message);
+      } finally {
+        setSwitching(false);
+      }
+      return;
+    }
     try {
       await api.switchVault(target);
       setActiveProject('default');
@@ -261,9 +285,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   }
 
-
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
+    <div className={cn('flex overflow-hidden', desktop ? 'h-full' : 'h-screen')} style={{ backgroundColor: '#f4f5f7' }}>
       {/* Sidebar */}
       <aside
         className="w-[220px] flex-shrink-0 flex flex-col border-r"

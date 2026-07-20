@@ -1,5 +1,7 @@
 import { getCurrentMember } from '../lib/useCurrentMember';
 import { getAuthToken } from '../lib/useAuthSession';
+import { isElectronRuntime } from '../vault/desktop';
+import { localRequest } from '../vault/local-api';
 
 declare global {
   interface Window {
@@ -82,6 +84,7 @@ function buildAuthHeaders(options?: RequestInit, includeAuth = true): Record<str
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  if (isElectronRuntime()) return localRequest<T>(path, options);
   const headers = buildAuthHeaders(options, true);
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -95,6 +98,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 async function requestPublic<T>(path: string, options?: RequestInit): Promise<T> {
+  if (isElectronRuntime()) return localRequest<T>(path, options);
   const headers = buildAuthHeaders(options, false);
   const res = await fetch(`${BASE}${path}`, {
     ...options,

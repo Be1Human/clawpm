@@ -16,6 +16,7 @@ import { setCurrentMember, getCurrentMember } from './lib/useCurrentMember';
 import { setCurrentUser, setOnboarded } from './lib/useCurrentUser';
 import { BASE_PATH, withBasePath } from './api/client';
 import VaultGateway from './components/VaultGateway';
+import DesktopTitleBar from './components/DesktopTitleBar';
 import { isElectronRuntime } from './vault/desktop';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -64,10 +65,14 @@ function LocalGuard() {
 }
 
 export default function App() {
-  const Router = isElectronRuntime() ? HashRouter : BrowserRouter;
+  const desktop = isElectronRuntime();
+  const Router = desktop ? HashRouter : BrowserRouter;
   return (
     <ErrorBoundary>
-      <Router basename={isElectronRuntime() ? undefined : BASE_PATH || undefined}>
+      <Router basename={desktop ? undefined : BASE_PATH || undefined}>
+        <div className={desktop ? 'flex h-screen flex-col' : undefined}>
+        {desktop && <DesktopTitleBar />}
+        <div className={desktop ? 'min-h-0 flex-1' : undefined}>
         <VaultGateway>
           <Routes>
           <Route element={<LocalGuard />}>
@@ -101,6 +106,8 @@ export default function App() {
           </Route>
           </Routes>
         </VaultGateway>
+        </div>
+        </div>
       </Router>
     </ErrorBoundary>
   );

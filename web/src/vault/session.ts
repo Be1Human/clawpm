@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { openVault, pickVault, type VaultSnapshot } from './desktop';
+import { isElectronRuntime, listDesktopProjects, onVaultChanged, onVaultOpened, openVault, pickVault, type VaultSnapshot } from './desktop';
 import { forgetVault, listRecentVaults, rememberVault, type RecentVault } from './recent-vaults';
 
 export type VaultSessionState =
@@ -26,13 +26,31 @@ function vaultName(snapshot: VaultSnapshot): string {
 }
 
 async function activate(snapshot: VaultSnapshot): Promise<void> {
-  const recent = await rememberVault({ path: snapshot.path, name: vaultName(snapshot) });
+  const recent = await rememberVault({ path: snapshot.projectPath, name: vaultName(snapshot) });
   publish({ status: 'ready', recent, vault: snapshot });
+}
+
+function refresh(snapshot: VaultSnapshot): void {
+  if (state.status === 'ready' && state.vault.projectPath === snapshot.projectPath) {
+    publish({ ...state, vault: snapshot });
+    return;
+  }
+  void activate(snapshot);
 }
 
 export async function initializeVaultSession(): Promise<void> {
   try {
-    const recent = await listRecentVaults();
+    if (isElectronRuntime()) {
+      onVaultOpened(snapshot => { void activate(snapshot); });
+      onVaultChanged(refresh);
+    }
+    const recent = isElectronRuntime()
+      ? (await listDesktopProjects()).map(project => ({
+        path: project.projectPath,
+        name: project.name,
+        lastOpenedAt: project.lastOpenedAt,
+      }))
+      : await listRecentVaults();
     publish({ status: 'empty', recent });
   } catch (error) {
     publish({ status: 'error', recent: [], message: (error as Error).message });

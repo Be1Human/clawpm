@@ -1,6 +1,6 @@
 {
   "name": "clawpm",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Self-hosted project management hub with MCP integration for AI agents",
   "private": true,
   "scripts": {
@@ -9,6 +9,9 @@
     "dev:desktop": "set CLAWPM_ELECTRON=1&& pnpm --filter web build && pnpm --filter desktop dev",
     "build": "pnpm --filter server build && pnpm --filter web build",
     "build:desktop": "set CLAWPM_ELECTRON=1&& pnpm --filter web build && pnpm --filter desktop package",
+    "release:preflight": "node scripts/release/preflight.mjs",
+    "release:clean": "node scripts/release/clean.mjs",
+    "release:build:win": "node scripts/release/build-windows.mjs",
     "start": "pnpm --filter server start",
     "lint": "pnpm -r lint"
   },

@@ -18,7 +18,7 @@ export default function VaultGateway({ children }: { children: ReactNode }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ClawPM</p>
         <h1 className="mt-2 text-xl font-semibold">打开或初始化 Git 工程</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          选择 Git 工程根目录。已有项目会打开 <code>docs\需求管理</code>；尚未创建时会让你确认初始化。
+          选择 Git 工程根目录。已有项目会打开 <code>.clawpm</code>；尚未创建时会让你确认初始化。
         </p>
         <button
           type="button"
