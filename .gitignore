@@ -8,7 +8,7 @@ dist/
 build/
 dist-portable/
 dist-exe/
-desktop/release/
+# desktop/release/   # 暂时不忽略（clawpm 桌面版安装包分发）
 desktop/release-refresh*/
 release-artifacts/
 

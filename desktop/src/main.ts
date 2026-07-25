@@ -8,7 +8,7 @@ app.disableHardwareAcceleration();
 
 const VAULT_FORMAT = 'clawpm-vault@1';
 const VAULT_DIRECTORY = '.clawpm';
-const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json'] as const;
+const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json', 'people.json'] as const;
 const RECENTS_FILE = 'recent-projects.json';
 
 type RecentProject = {
@@ -208,6 +208,7 @@ async function createVault(projectPath: string): Promise<VaultSnapshot> {
   await atomicWrite(path.join(vaultPath, 'milestones.json'), '{\n  "format": "clawpm-milestones@1",\n  "milestones": []\n}\n');
   await atomicWrite(path.join(vaultPath, 'fields.json'), '{\n  "format": "clawpm-fields@1",\n  "fields": []\n}\n');
   await atomicWrite(path.join(vaultPath, 'links.json'), '{\n  "format": "clawpm-links@1",\n  "links": []\n}\n');
+  await atomicWrite(path.join(vaultPath, 'people.json'), '{\n  "format": "clawpm-people@1",\n  "people": []\n}\n');
   return readSnapshot(absoluteProject);
 }
 

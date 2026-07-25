@@ -1,4 +1,5 @@
 import { getVaultSession } from './session';
+import { writeVaultFiles } from './desktop';
 
 type RecordValue = Record<string, any>;
 
@@ -21,13 +22,14 @@ function vaultData() {
   const milestones = json<{ milestones?: RecordValue[] }>(files, 'milestones.json', {}).milestones ?? [];
   const fields = json<{ fields?: RecordValue[] }>(files, 'fields.json', {}).fields ?? [];
   const links = json<{ links?: RecordValue[] }>(files, 'links.json', {}).links ?? [];
+  const people = json<{ people?: RecordValue[] }>(files, 'people.json', {}).people ?? [];
   const tasks: RecordValue[] = [];
   for (const [file, text] of Object.entries(files)) {
     if (!/^(tasks|archive)\/[^/]+\.json$/.test(file)) continue;
     const shard = JSON.parse(text) as { tasks?: RecordValue[] };
     tasks.push(...(shard.tasks ?? []).map(task => ({ ...task, __file: file })));
   }
-  return { config, domains, milestones, fields, links, tasks };
+  return { config, domains, milestones, fields, links, people, tasks };
 }
 
 function domainsForUi(domains: RecordValue[]) {
@@ -84,12 +86,79 @@ function taskTree(query: URLSearchParams) {
   return roots;
 }
 
+/** 将变更写入 vault/people.json */
+async function persistPeople(updater: (people: RecordValue[]) => RecordValue[]): Promise<void> {
+  const current = getVaultSession();
+  if (current.status !== 'ready') throw new Error('尚未打开 Git 工程。');
+  const raw = current.vault.files['people.json'];
+  let data: { format?: string; people?: RecordValue[] };
+  try { data = JSON.parse(raw ?? '{"people":[]}'); } catch { data = { people: [] }; }
+  const next = updater(data.people ?? []);
+  const content = JSON.stringify({ format: 'clawpm-people@1', people: next }, null, 2) + '\n';
+  await writeVaultFiles(current.vault.projectPath, [{ path: 'people.json', content }]);
+}
+
 export async function localRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const url = new URL(path, 'http://clawpm.local');
   const method = (options?.method ?? 'GET').toUpperCase();
-  if (method !== 'GET') throw new Error('该编辑操作尚未迁移到本地 Vault。');
-  const { config, domains, milestones, fields, links, tasks } = vaultData();
+  const { config, domains, milestones, fields, links, people, tasks } = vaultData();
 
+  // ── 写操作 ──
+  if (method === 'POST' && url.pathname === '/members') {
+    const body = JSON.parse(options.body as string ?? '{}');
+    await persistPeople(ps => {
+      if (ps.some((p: any) => p.identifier === body.identifier)) throw new Error(`标识 "${body.identifier}" 已被占用`);
+      return [...ps, { identifier: body.identifier, name: body.name, color: body.color || '#64748b', description: body.description || '', type: body.type || 'human', createdAt: new Date().toISOString() }];
+    });
+    return { identifier: body.identifier, name: body.name, color: body.color, description: body.description, type: body.type } as T;
+  }
+
+  if (method === 'PATCH' && url.pathname.startsWith('/members/')) {
+    const identifier = decodeURIComponent(url.pathname.slice('/members/'.length));
+    const body = JSON.parse(options.body as string ?? '{}');
+    await persistPeople(ps => {
+      const idx = ps.findIndex((p: any) => p.identifier === identifier);
+      if (idx === -1) throw new Error(`成员 "${identifier}" 不存在`);
+      ps[idx] = { ...ps[idx], ...body, updatedAt: new Date().toISOString() };
+      return [...ps];
+    });
+    return { identifier, ...body } as T;
+  }
+
+  if (method === 'DELETE' && (url.pathname.startsWith('/members/') || url.pathname.includes('/project-members/'))) {
+    const identifier = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+    await persistPeople(ps => ps.filter((p: any) => p.identifier !== identifier));
+    return { success: true } as T;
+  }
+
+  // 系统成员（本地模式复用同一份 people.json）
+  if (method === 'POST' && url.pathname === '/system-members') {
+    const body = JSON.parse(options.body as string ?? '{}');
+    await persistPeople(ps => {
+      if (ps.some((p: any) => p.identifier === body.identifier)) throw new Error(`标识 "${body.identifier}" 已被占用`);
+      return [...ps, { identifier: body.identifier, name: body.name, color: body.color || '#64748b', type: body.type || 'human', createdAt: new Date().toISOString() }];
+    });
+    return { identifier: body.identifier, name: body.name, color: body.color, type: body.type } as T;
+  }
+  if ((method === 'PATCH' || method === 'DELETE') && url.pathname.startsWith('/system-members/')) {
+    const identifier = decodeURIComponent(url.pathname.slice('/system-members/'.length));
+    if (method === 'DELETE') {
+      await persistPeople(ps => ps.filter((p: any) => p.identifier !== identifier));
+      return { success: true } as T;
+    }
+    const body = JSON.parse(options.body as string ?? '{}');
+    await persistPeople(ps => {
+      const idx = ps.findIndex((p: any) => p.identifier === identifier);
+      if (idx === -1) throw new Error(`成员 "${identifier}" 不存在`);
+      ps[idx] = { ...ps[idx], ...body, updatedAt: new Date().toISOString() };
+      return [...ps];
+    });
+    return { identifier, ...body } as T;
+  }
+
+  if (method !== 'GET') throw new Error('该编辑操作尚未迁移到本地 Vault。');
+
+  // ── 读操作 ──
   switch (url.pathname) {
     case '/workflow':
       return (config.workflow ?? { statuses: [] }) as T;
@@ -121,7 +190,7 @@ export async function localRequest<T>(path: string, options?: RequestInit): Prom
         targetTaskStrId: link.target,
       })) as T;
     case '/members':
-      return [] as T;
+      return people.map((p: any) => ({ ...p, taskCount: 0, role: p.role || 'member' })) as T;
     default:
       throw new Error(`本地 Vault 尚未实现接口：${url.pathname}`);
   }
