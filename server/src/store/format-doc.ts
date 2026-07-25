@@ -5,8 +5,9 @@
 // TASK_DEFAULTS / TASK_REQUIRED_KEYS）与**本库的 clawpm.json / domains.json**
 // 渲染，改代码或改配置，文档下次打开即自动跟上。
 //
-// 为什么放 vault 根而不是 .clawpm/：.clawpm/ 是运行时目录（不入 git），而说明必须
-// 随库走 —— 库被 git 拷到别的机器、别的 agent 打开时，不该依赖任何外部文档或 skill。
+// 为什么放 vault 根（新版 vault 根即 .clawpm/ 本身）：.clawpm/ 是需求库本体，随工程
+// Git 提交/同步；库被拷到别的机器、别的 agent 打开时，不该依赖任何外部文档或 skill。
+// 桌面端创建需求库（desktop/src/main.ts createVault）也会先落一份聚焦版，open() 再刷新为完整版。
 // 该文件只随「格式/工作流/领域」变化，不随需求增删变化，故不会成为合并冲突热点。
 
 import { TASK_DEFAULTS, TASK_KEY_ORDER, TASK_REQUIRED_KEYS } from './canonical.js';

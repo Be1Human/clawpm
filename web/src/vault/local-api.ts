@@ -105,7 +105,7 @@ export async function localRequest<T>(path: string, options?: RequestInit): Prom
 
   // ── 写操作 ──
   if (method === 'POST' && url.pathname === '/members') {
-    const body = JSON.parse(options.body as string ?? '{}');
+    const body = JSON.parse((options?.body as string) ?? '{}');
     await persistPeople(ps => {
       if (ps.some((p: any) => p.identifier === body.identifier)) throw new Error(`标识 "${body.identifier}" 已被占用`);
       return [...ps, { identifier: body.identifier, name: body.name, color: body.color || '#64748b', description: body.description || '', type: body.type || 'human', createdAt: new Date().toISOString() }];
@@ -115,7 +115,7 @@ export async function localRequest<T>(path: string, options?: RequestInit): Prom
 
   if (method === 'PATCH' && url.pathname.startsWith('/members/')) {
     const identifier = decodeURIComponent(url.pathname.slice('/members/'.length));
-    const body = JSON.parse(options.body as string ?? '{}');
+    const body = JSON.parse((options?.body as string) ?? '{}');
     await persistPeople(ps => {
       const idx = ps.findIndex((p: any) => p.identifier === identifier);
       if (idx === -1) throw new Error(`成员 "${identifier}" 不存在`);
@@ -133,7 +133,7 @@ export async function localRequest<T>(path: string, options?: RequestInit): Prom
 
   // 系统成员（本地模式复用同一份 people.json）
   if (method === 'POST' && url.pathname === '/system-members') {
-    const body = JSON.parse(options.body as string ?? '{}');
+    const body = JSON.parse((options?.body as string) ?? '{}');
     await persistPeople(ps => {
       if (ps.some((p: any) => p.identifier === body.identifier)) throw new Error(`标识 "${body.identifier}" 已被占用`);
       return [...ps, { identifier: body.identifier, name: body.name, color: body.color || '#64748b', type: body.type || 'human', createdAt: new Date().toISOString() }];
@@ -146,7 +146,7 @@ export async function localRequest<T>(path: string, options?: RequestInit): Prom
       await persistPeople(ps => ps.filter((p: any) => p.identifier !== identifier));
       return { success: true } as T;
     }
-    const body = JSON.parse(options.body as string ?? '{}');
+    const body = JSON.parse((options?.body as string) ?? '{}');
     await persistPeople(ps => {
       const idx = ps.findIndex((p: any) => p.identifier === identifier);
       if (idx === -1) throw new Error(`成员 "${identifier}" 不存在`);
