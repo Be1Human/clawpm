@@ -1,11 +1,25 @@
 import Database from 'better-sqlite3';
 const db = new Database('data/clawpm.db', { readonly: true });
-console.log('project 802:', JSON.stringify(db.prepare('SELECT * FROM projects WHERE id = 802').all()));
-console.log('tasks in 802:', db.prepare('SELECT COUNT(*) c FROM tasks WHERE project_id = 802').get().c);
-console.log('max project id:', db.prepare('SELECT MAX(id) m FROM projects').get().m);
-console.log('project ids > 100:', JSON.stringify(db.prepare('SELECT id, slug, name, created_at FROM projects WHERE id > 100 ORDER BY id').all(), null, 1));
-console.log('orphan task project_ids:', JSON.stringify(db.prepare(`
-  SELECT t.project_id, COUNT(*) c FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-  WHERE p.id IS NULL GROUP BY t.project_id
-`).all()));
-console.log('tasks total:', db.prepare('SELECT COUNT(*) c FROM tasks').get().c);
+
+// 1. 行数总览（关注 7/18 之后是否被重置）
+const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(t => t.name);
+const counts = {};
+for (const t of tables) counts[t] = db.prepare(`SELECT COUNT(*) c FROM "${t}"`).get().c;
+console.log('--- table counts ---');
+console.log(JSON.stringify(counts, null, 1));
+
+// 2. 关键内容
+console.log('--- projects ---');
+console.log(JSON.stringify(db.prepare('SELECT id, slug, name, archived, created_at, updated_at FROM projects ORDER BY id').all(), null, 1));
+console.log('--- tasks latest ---');
+console.log(JSON.stringify(db.prepare('SELECT id, project_id, title, status, created_at, updated_at FROM tasks ORDER BY updated_at DESC LIMIT 5').all(), null, 1));
+
+// 3. 启动时有什么在写库（看最近的通知 / 审计日志）
+for (const t of ['notifications', 'auth_audit_logs', 'accounts', 'account_sessions']) {
+  if (!tables.includes(t)) continue;
+  const cols = db.prepare(`PRAGMA table_info("${t}")`).all().map(c => c.name);
+  const orderCol = ['updated_at', 'created_at', 'timestamp', 'time'].find(c => cols.includes(c));
+  if (!orderCol) continue;
+  console.log(`--- ${t} latest by ${orderCol} ---`);
+  console.log(JSON.stringify(db.prepare(`SELECT * FROM "${t}" ORDER BY "${orderCol}" DESC LIMIT 3`).all(), null, 1));
+}
