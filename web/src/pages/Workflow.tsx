@@ -65,7 +65,7 @@ export default function Workflow() {
           <div className="flex items-center gap-2">
             <Link to="/skill-injection"
               className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-600 hover:border-indigo-200 hover:text-indigo-600">
-              配置 Agent Skill
+              安装到 Agent
             </Link>
             <button onClick={() => setShowCreate(true)}
               className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700">
