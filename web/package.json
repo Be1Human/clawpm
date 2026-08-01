@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:desktop": "tauri dev",
     "build": "tsc -b && vite build",
-    "build:desktop": "tauri build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
   },

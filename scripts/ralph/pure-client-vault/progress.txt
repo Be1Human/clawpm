@@ -1,9 +1,0 @@
-## Codebase Patterns
-
-- 当前 Web 前端通过 `web/src/api/client.ts` 调用 REST API；纯客户端改造必须用客户端 VaultStore 替换该边界。
-- 现有 Vault 真源为 `clawpm.json`、根级元数据 JSON 和 `tasks/*.json` / `archive/*.json` 分片。
-- 现有 `server/src/store/files.ts`、`canonical.ts` 定义了格式、稳定排序和原子写入规则；迁移时应保持输出兼容。
-
----
-
-需求工作包于 2026-07-18 创建，全部实现 story 等待人工评审。

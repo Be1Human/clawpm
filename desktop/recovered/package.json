@@ -1,0 +1,8 @@
+{
+  "name": "@clawpm/desktop",
+  "version": "0.1.2",
+  "description": "ClawPM local-first project management desktop application",
+  "author": "ClawPM Contributors",
+  "private": true,
+  "main": "dist/main.js"
+}

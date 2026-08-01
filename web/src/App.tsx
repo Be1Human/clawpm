@@ -1,4 +1,4 @@
-import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Component, useEffect, type ReactNode } from 'react';
 import Layout from './components/Layout';
 import KanbanBoard from './pages/KanbanBoard';
@@ -14,7 +14,7 @@ import Archive from './pages/Archive';
 import Members from './pages/Members';
 import { setCurrentMember, getCurrentMember } from './lib/useCurrentMember';
 import { setCurrentUser, setOnboarded } from './lib/useCurrentUser';
-import { BASE_PATH, withBasePath } from './api/client';
+import { withBasePath } from './api/client';
 import VaultGateway from './components/VaultGateway';
 import DesktopTitleBar from './components/DesktopTitleBar';
 import { isElectronRuntime } from './vault/desktop';
@@ -65,14 +65,12 @@ function LocalGuard() {
 }
 
 export default function App() {
-  const desktop = isElectronRuntime();
-  const Router = desktop ? HashRouter : BrowserRouter;
   return (
     <ErrorBoundary>
-      <Router basename={desktop ? undefined : BASE_PATH || undefined}>
-        <div className={desktop ? 'flex h-screen flex-col' : undefined}>
-        {desktop && <DesktopTitleBar />}
-        <div className={desktop ? 'min-h-0 flex-1' : undefined}>
+      <HashRouter>
+        <div className="flex h-screen flex-col">
+        {isElectronRuntime() && <DesktopTitleBar />}
+        <div className="min-h-0 flex-1">
         <VaultGateway>
           <Routes>
           <Route element={<LocalGuard />}>
@@ -108,7 +106,7 @@ export default function App() {
         </VaultGateway>
         </div>
         </div>
-      </Router>
+      </HashRouter>
     </ErrorBoundary>
   );
 }

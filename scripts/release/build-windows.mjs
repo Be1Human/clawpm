@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const desktop = join(root, 'desktop');
 const web = join(root, 'web');
+const buildOutput = join(desktop, 'release-build');
 const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const version = packageJson.version;
 const artifactDir = join(root, 'release-artifacts', `v${version}`, 'windows');
@@ -35,8 +36,12 @@ function run(command, args, cwd, env = {}) {
 
 function localBin(packageDir, name) {
   const suffix = process.platform === 'win32' ? '.cmd' : '';
-  const file = join(packageDir, 'node_modules', '.bin', `${name}${suffix}`);
-  if (!existsSync(file)) throw new Error(`缺少 ${file}，请先执行 pnpm install`);
+  const candidates = [
+    join(packageDir, 'node_modules', '.bin', `${name}${suffix}`),
+    join(root, 'node_modules', '.bin', `${name}${suffix}`),
+  ];
+  const file = candidates.find(c => existsSync(c));
+  if (!file) throw new Error(`缺少 ${name}，请先执行 pnpm install`);
   return file;
 }
 
@@ -55,21 +60,23 @@ function sha256(file) {
 if (process.platform !== 'win32') throw new Error('Windows 安装包必须在 Windows 构建机上生成');
 run(process.execPath, [join(root, 'scripts', 'release', 'preflight.mjs')], root);
 
-rmSync(join(desktop, 'release'), { recursive: true, force: true });
-rmSync(artifactDir, { recursive: true, force: true });
+rmSync(buildOutput, { recursive: true, force: true, maxRetries: 6, retryDelay: 500 });
+rmSync(artifactDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 500 });
 mkdirSync(artifactDir, { recursive: true });
 
 console.log('[release] 1/3 构建 Electron 模式前端');
 run(localBin(web, 'tsc'), ['-b'], web, { CLAWPM_ELECTRON: '1' });
 run(localBin(web, 'vite'), ['build'], web, { CLAWPM_ELECTRON: '1' });
 
-console.log('[release] 2/3 编译桌面主进程');
-run(localBin(desktop, 'tsc'), ['-p', 'tsconfig.json'], desktop);
+console.log('[release] 2/3 使用已恢复的 Electron 运行时');
+if (!existsSync(join(desktop, 'recovered', 'dist', 'main.js'))) {
+  throw new Error('缺少 desktop/recovered/dist/main.js，无法构建桌面应用');
+}
 
 console.log('[release] 3/3 构建 NSIS x64 安装包');
 run(localBin(desktop, 'electron-builder'), ['--win', 'nsis', '--x64'], desktop);
 
-const releaseFiles = readdirSync(join(desktop, 'release'));
+const releaseFiles = readdirSync(buildOutput);
 const selected = releaseFiles.filter(name =>
   name === `ClawPM-Setup-${version}-x64.exe` ||
   name === `ClawPM-Setup-${version}-x64.exe.blockmap` ||
@@ -77,7 +84,7 @@ const selected = releaseFiles.filter(name =>
 );
 if (!selected.some(name => name.endsWith('.exe'))) throw new Error('electron-builder 未生成预期的 EXE 安装包');
 
-for (const name of selected) copyFileSync(join(desktop, 'release', name), join(artifactDir, name));
+for (const name of selected) copyFileSync(join(buildOutput, name), join(artifactDir, name));
 const files = selected.sort().map(name => {
   const file = join(artifactDir, name);
   return { path: relative(join(root, 'release-artifacts', `v${version}`), file).replaceAll('\\', '/'), size: statSync(file).size, sha256: sha256(file) };

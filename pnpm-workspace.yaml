@@ -1,4 +1,7 @@
 packages:
   - 'desktop'
-  - 'server'
   - 'web'
+allowBuilds: true
+onlyBuiltDependencies:
+  - electron
+  - esbuild

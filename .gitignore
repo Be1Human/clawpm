@@ -1,52 +1,56 @@
 # Dependencies
 node_modules/
-.pnp
+.pnp/
 .pnp.js
 
-# Build outputs
+# Build output
 dist/
 build/
-dist-portable/
-dist-exe/
+coverage/
+.cache/
+.turbo/
 desktop/release/
+desktop/release-build/
 desktop/release-refresh*/
 release-artifacts/
+*.tsbuildinfo
+desktop/recovered/dist/*.map
+*.asar
+*.blockmap
+builder-debug.yml
 
-# Database
+# Local data and environment
+data/
+.env*
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
-data/
 
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
+# Logs and temporary files
 *.log
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
-yarn-error.log*
+*.pid
+*.pid.lock
+tmp_*.txt
+.tmp-release-*
+*.backup
 
-# OS
+# OS and editor files
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Editor
 .vscode/settings.json
 .idea/
 *.swp
 *.swo
 
-# Temp
-tmp_*.txt
-*.backup
-.tmp-release-*
-
-
-server/dist-installer/
-server/dist-portable/
+# Local agent/tool state
+.agentmem/
+.claude/
+.codebuddy/
+.codex/
+.cursor/
+.workflow/

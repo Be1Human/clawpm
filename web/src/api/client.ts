@@ -1,5 +1,4 @@
 import { getCurrentMember } from '../lib/useCurrentMember';
-import { getAuthToken } from '../lib/useAuthSession';
 import { isElectronRuntime } from '../vault/desktop';
 import { localRequest } from '../vault/local-api';
 
@@ -22,10 +21,10 @@ function normalizeBasePath(input?: string) {
   return value;
 }
 
-const runtimeConfig = typeof window !== 'undefined' ? window.__CLAWPM_RUNTIME_CONFIG__ : undefined;
-export const BASE_PATH = normalizeBasePath(runtimeConfig?.basePath || import.meta.env.BASE_URL);
-const BASE = runtimeConfig?.apiBase || `${BASE_PATH}/api/v1`;
-const LEGACY_TOKEN = runtimeConfig?.apiToken || import.meta.env.VITE_API_TOKEN || 'dev-token';
+export const BASE_PATH = '';
+const runtimeConfig: Window['__CLAWPM_RUNTIME_CONFIG__'] | undefined = undefined;
+const BASE = '/api/v1';
+const LEGACY_TOKEN = '';
 
 /** 获取服务器的外部可访问地址（优先用 CLAWPM_PUBLIC_URL 配置，回退到浏览器当前地址） */
 export function getServerOrigin(): string {

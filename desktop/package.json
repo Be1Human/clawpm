@@ -1,0 +1,48 @@
+{
+  "name": "@clawpm/desktop",
+  "version": "0.1.4",
+  "description": "ClawPM local-first project management desktop application",
+  "author": "ClawPM Contributors",
+  "private": true,
+  "main": "recovered/dist/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "package": "electron-builder --win nsis --x64"
+  },
+  "build": {
+    "appId": "com.clawpm.desktop",
+    "productName": "ClawPM",
+    "artifactName": "ClawPM-Setup-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release-build"
+    },
+    "files": [
+      "recovered/dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "26.0.12"
+  }
+}

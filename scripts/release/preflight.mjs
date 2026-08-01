@@ -34,10 +34,10 @@ if (rootPackage.version !== desktopPackage.version) {
 }
 
 for (const file of [
-  'desktop/src/main.ts',
-  'desktop/src/preload.ts',
-  'desktop/tsconfig.json',
+  'desktop/package.json',
   'desktop/assets/icon.png',
+  'desktop/recovered/dist/main.js',
+  'desktop/recovered/dist/preload.js',
   'web/vite.config.ts',
   'web/src/assets/logo.png',
 ]) {
