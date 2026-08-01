@@ -54,6 +54,14 @@ export default function TaskList() {
   );
   const visibleTasks = useMemo(() => flattenTree(filteredTree), [filteredTree]);
   const totalNodes = useMemo(() => flattenTree(sortedTree).length, [sortedTree]);
+  const idColumnWidth = useMemo(() => {
+    const longestId = flattenTree(sortedTree).reduce(
+      (longest, task: any) => Math.max(longest, String(task.taskId ?? '').length),
+      0,
+    );
+    // 保持各行与表头对齐，同时按当前工程最长 ID 扩展，避免无意义换行。
+    return Math.min(240, Math.max(112, longestId * 8 + 32));
+  }, [sortedTree]);
   const allVisibleSelected = visibleTasks.length > 0 && visibleTasks.every(task => selectedIds.has(task.taskId));
 
   // Batch selection
@@ -134,7 +142,7 @@ export default function TaskList() {
                 className="rounded border-gray-500"
               />
             </div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thId')}</div>
+            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium flex-shrink-0" style={{ width: idColumnWidth }}>{t('taskList.thId')}</div>
             <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium flex-1">{t('taskList.thTitle')}</div>
             <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thLabel')}</div>
             <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
@@ -161,6 +169,7 @@ export default function TaskList() {
                 depth={0}
                 selectedIds={selectedIds}
                 collapsedIds={collapsedIds}
+                idColumnWidth={idColumnWidth}
                 onToggleSelect={toggleSelect}
                 onToggleCollapse={toggleCollapse}
               />
@@ -171,6 +180,7 @@ export default function TaskList() {
                 key={task.id}
                 task={task}
                 selectedIds={selectedIds}
+                idColumnWidth={idColumnWidth}
                 onToggleSelect={toggleSelect}
               />
             ))
@@ -197,6 +207,7 @@ function TaskTreeRow({
   depth,
   selectedIds,
   collapsedIds,
+  idColumnWidth,
   onToggleSelect,
   onToggleCollapse,
 }: {
@@ -204,6 +215,7 @@ function TaskTreeRow({
   depth: number;
   selectedIds: Set<string>;
   collapsedIds: Set<string>;
+  idColumnWidth: number;
   onToggleSelect: (taskId: string) => void;
   onToggleCollapse: (taskId: string) => void;
 }) {
@@ -230,8 +242,8 @@ function TaskTreeRow({
             className="rounded border-gray-500"
           />
         </div>
-        <div className="px-4 py-1.5 w-24">
-          <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400">
+        <div className="px-4 py-1.5 flex-shrink-0" style={{ width: idColumnWidth }}>
+          <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400 whitespace-nowrap">
             {task.taskId}
           </Link>
         </div>
@@ -326,6 +338,7 @@ function TaskTreeRow({
           depth={depth + 1}
           selectedIds={selectedIds}
           collapsedIds={collapsedIds}
+          idColumnWidth={idColumnWidth}
           onToggleSelect={onToggleSelect}
           onToggleCollapse={onToggleCollapse}
         />
@@ -341,10 +354,12 @@ function TaskTreeRow({
 function TaskTableRow({
   task,
   selectedIds,
+  idColumnWidth,
   onToggleSelect,
 }: {
   task: any;
   selectedIds: Set<string>;
+  idColumnWidth: number;
   onToggleSelect: (taskId: string) => void;
 }) {
   const days = getDaysUntil(task.dueDate);
@@ -368,8 +383,8 @@ function TaskTableRow({
           className="rounded border-gray-500"
         />
       </div>
-      <div className="px-4 py-1.5 w-24 flex-shrink-0">
-        <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400">
+      <div className="px-4 py-1.5 flex-shrink-0" style={{ width: idColumnWidth }}>
+        <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400 whitespace-nowrap">
           {task.taskId}
         </Link>
       </div>

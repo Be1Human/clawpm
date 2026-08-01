@@ -22,6 +22,7 @@ const NAV_GROUPS = [
   {
     labelKey: 'nav.executionTracking',
     items: [
+      { to: '/workflow',    labelKey: 'nav.agentWorkflow', icon: OverviewIcon },
       { to: '/board',       labelKey: 'nav.kanban',      icon: BoardIcon },
       { to: '/tasks',       labelKey: 'nav.taskListNav', icon: ListIcon },
       { to: '/gantt',       labelKey: 'nav.ganttChart',  icon: GanttIcon },

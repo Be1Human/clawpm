@@ -18,6 +18,7 @@
     },
     "files": [
       "recovered/dist/**",
+      "skills/**",
       "package.json"
     ],
     "extraResources": [

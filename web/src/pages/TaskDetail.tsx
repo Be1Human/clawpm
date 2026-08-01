@@ -13,6 +13,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import PermissionPanel from '@/components/PermissionPanel';
 import MarkdownPreview from '@/components/MarkdownPreview';
 import MemberMultiSelect from '@/components/MemberMultiSelect';
+import AgentWorkflowPanel from '@/components/AgentWorkflowPanel';
 
 const ATTACHMENT_TYPES = [
   { key: 'doc', label: '文档', icon: '📄' },
@@ -34,6 +35,7 @@ const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
   epic: { bg: '#ede9fe', text: '#7c3aed' }, feature: { bg: '#dbeafe', text: '#1d4ed8' },
   bug: { bg: '#fee2e2', text: '#b91c1c' }, spike: { bg: '#ffedd5', text: '#c2410c' },
   chore: { bg: '#f1f5f9', text: '#475569' },
+  test: { bg: '#dcfce7', text: '#15803d' },
 };
 
 const STATUS_OPTIONS = [
@@ -46,7 +48,7 @@ const STATUS_OPTIONS = [
 
 const PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 
-const PRESET_LABELS = ['epic', 'feature', 'bug', 'spike', 'chore'];
+const PRESET_LABELS = ['epic', 'feature', 'bug', 'spike', 'chore', 'test'];
 
 const STATUS_DOT: Record<string, string> = {
   backlog: 'bg-slate-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
@@ -216,6 +218,8 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task', taskId] });
     qc.invalidateQueries({ queryKey: ['task-history', taskId] });
+    qc.invalidateQueries({ queryKey: ['task-children', taskId] });
+    qc.invalidateQueries({ queryKey: ['workflow-overview'] });
     qc.invalidateQueries({ queryKey: ['attachments', taskId] });
     // 刷新所有 task 相关列表/树查询
     qc.invalidateQueries({ predicate: (q) => {
@@ -404,6 +408,7 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
           const idx = flow.indexOf(task.status);
           if (idx < 0 || idx >= flow.length - 1) return null; // 已是最后状态(done)则不显示
           const next = STATUS_OPTIONS[idx + 1];
+          if (next.value === 'done') return null; // 完成必须从 Agent 工作流通过 Gate 提交
           const colors: Record<string, string> = {
             planned: 'bg-blue-600 hover:bg-blue-700',
             active: 'bg-indigo-600 hover:bg-indigo-700',
@@ -686,6 +691,8 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
               <p className="text-sm text-red-600">{task.blocker}</p>
             </div>
           )}
+
+          <AgentWorkflowPanel task={task} members={members as any[]} canEdit={canEdit} onUpdate={invalidate} />
 
           {/* 更新进度 + 进度总览 */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">

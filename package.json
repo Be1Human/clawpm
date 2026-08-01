@@ -10,6 +10,7 @@
     "release:preflight": "node scripts/release/preflight.mjs",
     "release:clean": "node scripts/release/clean.mjs",
     "release:build:win": "node scripts/release/build-windows.mjs",
+    "test:workflow": "node --experimental-strip-types --test scripts/tests/task-workflow.test.mjs",
     "lint": "pnpm --filter web lint"
   },
   "keywords": [

@@ -1,4 +1,5 @@
 import { getCurrentMember } from '../lib/useCurrentMember';
+import { getAuthToken } from '../lib/useAuthSession';
 import { isElectronRuntime } from '../vault/desktop';
 import { localRequest } from '../vault/local-api';
 
@@ -140,6 +141,7 @@ export const api = {
     return request<any[]>(withProject(`/tasks/tree${qs}`));
   },
   getWorkflow: () => request<any>('/workflow'),
+  getWorkflowOverview: () => request<any>('/workflow/overview'),
 
   // 需求库：最近打开列表与切换（切换后调用方需整页刷新）
   getVaults: () => request<{ current: string | null; currentName: string | null; recent: any[] }>('/vaults'),
@@ -158,8 +160,23 @@ export const api = {
   deleteTask: (id: string) => request<any>(`/tasks/${id}`, { method: 'DELETE' }),
   updateProgress: (id: string, progress: number, summary?: string) =>
     request<any>(`/tasks/${id}/progress`, { method: 'POST', body: JSON.stringify({ progress, summary }) }),
-  completeTask: (id: string, summary?: string) =>
-    request<any>(`/tasks/${id}/complete`, { method: 'POST', body: JSON.stringify({ summary }) }),
+  splitTask: (id: string, items: any[], actor?: string) =>
+    request<any>(`/tasks/${id}/split`, { method: 'POST', body: JSON.stringify({ items, actor }) }),
+  claimTask: (id: string, agent: string, leaseMinutes?: number) =>
+    request<any>(`/tasks/${id}/claim`, { method: 'POST', body: JSON.stringify({ agent, leaseMinutes }) }),
+  releaseTask: (id: string, agent?: string) =>
+    request<any>(`/tasks/${id}/release`, { method: 'POST', body: JSON.stringify({ agent }) }),
+  recordTaskTest: (id: string, data: { status: 'passed' | 'failed'; command?: string; summary?: string; evidence?: string | string[]; actor?: string }) =>
+    request<any>(`/tasks/${id}/tests`, { method: 'POST', body: JSON.stringify(data) }),
+  completeTask: (id: string, data?: string | { summary?: string; evidence?: string | string[]; actor?: string }) =>
+    request<any>(`/tasks/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(typeof data === 'string' ? { summary: data } : (data ?? {})),
+    }),
+  reopenTask: (id: string, summary?: string, actor?: string) =>
+    request<any>(`/tasks/${id}/reopen`, { method: 'POST', body: JSON.stringify({ summary, actor }) }),
+  resolveBlocker: (id: string, summary?: string, actor?: string) =>
+    request<any>(`/tasks/${id}/unblock`, { method: 'POST', body: JSON.stringify({ summary, actor }) }),
   reportBlocker: (id: string, blocker: string) =>
     request<any>(`/tasks/${id}/blocker`, { method: 'POST', body: JSON.stringify({ blocker }) }),
   addNote: (id: string, content: string, author?: string) =>

@@ -22,7 +22,7 @@ export default function Members() {
   const { data: members = [], isLoading } = useQuery({ queryKey: ['members', project], queryFn: () => api.getMembers() });
 
   const save = useMutation({
-    mutationFn: () => editing
+    mutationFn: () => editing?.identifier
       ? api.updateMember(editing.identifier, { name: form.name.trim(), color: form.color, description: form.description.trim() })
       : api.createMember({ name: form.name.trim(), identifier: form.identifier.trim() || makeIdentifier(form.name), color: form.color, description: form.description.trim(), type: 'human' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['members', project] }); setEditing(null); setForm(EMPTY_FORM); setError(''); },

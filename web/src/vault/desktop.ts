@@ -24,6 +24,7 @@ declare global {
       createProject(projectPath: string): Promise<VaultSnapshot>;
       openProject(projectPath: string): Promise<VaultSnapshot>;
       recentProjects(): Promise<RecentProject[]>;
+      syncAgentSkill(projectPath: string): Promise<{ ok: boolean; files: string[] }>;
       onProjectOpened(callback: (snapshot: VaultSnapshot) => void): () => void;
       onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void;
       minimizeWindow(): Promise<void>;
@@ -53,6 +54,10 @@ export async function openVault(projectPath: string): Promise<VaultSnapshot> {
 
 export async function listDesktopProjects(): Promise<RecentProject[]> {
   return requireDesktop().recentProjects();
+}
+
+export async function syncProjectAgentSkill(projectPath: string): Promise<{ ok: boolean; files: string[] }> {
+  return requireDesktop().syncAgentSkill(projectPath);
 }
 
 export function onVaultOpened(callback: (snapshot: VaultSnapshot) => void): () => void {

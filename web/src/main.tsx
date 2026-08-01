@@ -6,7 +6,13 @@ import App from './App';
 import './index.css';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60_000, // 本地模式数据为只读快照，5 分钟内不重复拉取
+      refetchOnWindowFocus: false, // 关掉窗口聚焦重取：避免每次切窗口全量读盘解析 vault
+      retry: 1,
+    },
+  },
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

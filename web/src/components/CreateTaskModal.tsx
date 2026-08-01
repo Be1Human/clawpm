@@ -11,6 +11,7 @@ const PRESET_LABELS = [
   { value: 'bug',     label: 'Bug',     color: '#ef4444', bg: '#fee2e2' },
   { value: 'spike',   label: 'Spike',   color: '#f97316', bg: '#ffedd5' },
   { value: 'chore',   label: 'Chore',   color: '#64748b', bg: '#f1f5f9' },
+  { value: 'test',    label: 'Test',    color: '#15803d', bg: '#dcfce7' },
 ];
 
 interface Props {
@@ -37,6 +38,8 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
   const [form, setForm] = useState({
     title: '',
     description: '',
+    acceptanceCriteria: '',
+    requiresTests: true,
     labels: [] as string[],
     parent_task_id: defaultParentId || '',
     priority: 'P2',
@@ -99,6 +102,8 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
       parent_task_id: form.parent_task_id || undefined,
     };
     if (form.description) payload.description = form.description;
+    if (form.acceptanceCriteria) payload.acceptanceCriteria = form.acceptanceCriteria.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+    payload.requiresTests = form.labels.includes('test') ? false : form.requiresTests;
     if (form.labels.length) payload.labels = form.labels;
     if (form.priority !== 'P2') payload.priority = form.priority;
     if (form.owner) payload.owner = form.owner;
@@ -205,6 +210,19 @@ export default function CreateTaskModal({ onClose, defaultParentId, defaultDomai
                 <textarea className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
                   rows={2} placeholder="详细描述（可选）" value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1.5 block">验收标准</label>
+                <textarea className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                  rows={3} placeholder="每行一条可验证的验收标准" value={form.acceptanceCriteria}
+                  onChange={e => setForm(f => ({ ...f, acceptanceCriteria: e.target.value }))} />
+                <label className="mt-2 flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                  <input type="checkbox" checked={form.labels.includes('test') ? false : form.requiresTests}
+                    disabled={form.labels.includes('test')}
+                    onChange={e => setForm(f => ({ ...f, requiresTests: e.target.checked }))} />
+                  完成前必须有通过的测试记录
+                </label>
               </div>
 
               <div>

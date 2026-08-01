@@ -5,6 +5,11 @@
 @tailwind utilities;
 
 @layer base {
+  @keyframes sticker-shake {
+    0% { transform: translateX(-0.5px) rotate(-0.5deg); }
+    100% { transform: translateX(0.5px) rotate(0.5deg); }
+  }
+
   .desktop-titlebar { -webkit-app-region: drag; }
   .desktop-titlebar button, .desktop-titlebar-menu { -webkit-app-region: no-drag; }
   /* Light theme: slate-900=white, slate-800=light-gray, slate-100=dark-text */

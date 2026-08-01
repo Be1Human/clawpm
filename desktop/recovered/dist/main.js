@@ -11,57 +11,45 @@ const path_1 = __importDefault(require("path"));
 electron_1.app.disableHardwareAcceleration();
 const VAULT_FORMAT = 'clawpm-vault@1';
 const VAULT_DIRECTORY = '.clawpm';
-const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json', 'people.json'];
+const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json', 'people.json', 'AGENTS.md'];
 const RECENTS_FILE = 'recent-projects.json';
 const AGENTS_FILE = 'AGENTS.md';
+const AGENT_SKILL = 'clawpm-project-workflow';
+const AGENT_SKILL_FILES = ['SKILL.md', 'agents/openai.yaml', 'references/vault-protocol.md'];
 function buildAgentSkillDoc(vaultName) {
     return [
-        '# ClawPM 项目 Agent 操作规范',
+        '<!-- clawpm:vault-agent:start -->',
+        '# ClawPM Vault Agent 约束',
         '',
-        `本目录就是“${vaultName}”的 ClawPM Vault。所有需求数据都在 .clawpm 内，并应随 Git 提交。`,
+        `当前 Vault 属于“${vaultName}”。业务数据只允许写入本项目 .clawpm，并随 Git 提交。`,
         '',
-        '## 先读再写',
+        '## 强制流程',
         '',
-        '1. 先读取 clawpm.json、domains.json、milestones.json、people.json 和目标任务分片。',
-        '2. workflow.statuses[].id 是唯一合法状态来源；不要从其他项目复制状态。',
-        '3. 修改前执行 git diff -- .clawpm，保留已有未提交变更。',
-        '4. 不使用 docs/需求管理、SQLite、HTTP API、端口或 token；.clawpm 本身就是 Vault。',
+        '1. 使用项目 Skill：`.agents/skills/clawpm-project-workflow/SKILL.md`。',
+        '2. 修改前读取 clawpm.json、domains.json、milestones.json、people.json、links.json 和相关任务文件。',
+        '3. 修改前执行 `git diff -- .clawpm`；同一任务存在并行修改时停止。',
+        '4. 工作必须经历：拆分/创建 → 领取 → 执行 → 测试 → Gate 验收。',
+        '5. `workflow.statuses[].id` 是唯一合法状态来源，禁止直接把任务改成 done。',
         '',
-        '## 目录与数据',
+        '## 项目边界',
         '',
-        '```text',
-        'clawpm.json          工作流状态',
-        'domains.json         领域定义',
-        'milestones.json      里程碑',
-        'fields.json          自定义字段',
-        'links.json           任务关联',
-        'people.json          人员',
-        'tasks/<CODE>.json    活跃任务',
-        'archive/<CODE>.json  已归档任务',
-        '```',
+        '- 不使用 Server、SQLite、HTTP API、端口或 token；`.clawpm` 本身就是事实源。',
+        '- 每个任务使用 `tasks/<TASK-ID>.json` 的 `clawpm-task@2` 单任务格式。',
+        '- 完成前必须有验收标准、通过的测试、交付证据，且依赖和子任务均已完成。',
         '',
-        '## 创建和更新任务',
+        '<!-- clawpm:vault-agent:end -->',
+    ].join('\n');
+}
+function buildRootAgentSection() {
+    return [
+        '<!-- clawpm:project-agent:start -->',
+        '## ClawPM 项目工作流',
         '',
-        '- 任务是扁平 JSON 记录；父子关系使用 parent 指向父任务 id。',
-        '- id 在整个 Vault 唯一。直接创建时，按领域已有最大编号递增，禁止复用或重写现有 id。',
-        '- 有领域的任务写入 tasks/<CODE>.json，且 domain 必须等于该领域 code；无领域任务写入 tasks/_inbox.json。',
-        '- 任务至少应有 id、title、status。description 使用字符串数组，一行一个元素。',
-        '- 更新进度时，写入 progress、updatedAt，并在 history 追加 { at, progress, summary }。',
-        '- 完成实现前必须填写可验证的验收标准；完成后补充交付证据，例如代码路径、提交、测试命令或产物位置。',
+        '- 开始项目任务前先读取 `.clawpm/AGENTS.md`。',
+        '- 规划、拆分、创建、领取、推进、测试或验收任务时，使用 `.agents/skills/clawpm-project-workflow/SKILL.md`。',
+        '- `.clawpm` 是任务事实源；不要建立平行的需求文档、数据库或服务端。',
         '',
-        '## 人员、依赖和归档',
-        '',
-        '- 人员写入 people.json 的 people 数组，identifier 必须唯一。',
-        '- 前置依赖写入 deps，跨任务关系写入 links.json。',
-        '- 归档任务时设置 archivedAt，并移动到 archive/<CODE>.json。',
-        '',
-        '## 写入后的自检',
-        '',
-        '1. 确认修改过的 JSON 可解析。',
-        '2. 确认任务 id、父任务、领域、状态、人员和依赖引用有效。',
-        '3. 执行 git diff --check -- .clawpm 与 git diff -- .clawpm。',
-        '4. 不覆盖无关文件，不做无意义格式化。',
-        '',
+        '<!-- clawpm:project-agent:end -->',
     ].join('\n');
 }
 let mainWindow = null;
@@ -82,6 +70,48 @@ async function atomicWrite(target, content) {
     const temporary = path_1.default.join(path_1.default.dirname(target), `.${path_1.default.basename(target)}.clawpm-tmp-${process.pid}`);
     await promises_1.default.writeFile(temporary, content, 'utf8');
     await promises_1.default.rename(temporary, target);
+}
+async function readTextIfExists(target) {
+    try {
+        return await promises_1.default.readFile(target, 'utf8');
+    }
+    catch (error) {
+        if (error.code === 'ENOENT')
+            return '';
+        throw error;
+    }
+}
+function upsertManagedSection(current, section, startMarker, endMarker) {
+    const start = current.indexOf(startMarker);
+    const end = current.indexOf(endMarker);
+    if (start >= 0 && end >= start) {
+        const after = end + endMarker.length;
+        return `${current.slice(0, start).trimEnd()}${current.slice(0, start).trim() ? '\n\n' : ''}${section}${current.slice(after).trim() ? `\n\n${current.slice(after).trimStart()}` : '\n'}`;
+    }
+    return `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${section}\n`;
+}
+async function syncAgentSkill(projectPath) {
+    const absoluteProject = path_1.default.resolve(projectPath);
+    const vaultPath = vaultPathForProject(absoluteProject);
+    const { name } = await validateVault(vaultPath);
+    const sourceRoot = path_1.default.join(electron_1.app.getAppPath(), 'skills', AGENT_SKILL);
+    const installed = [];
+    for (const relative of AGENT_SKILL_FILES) {
+        const source = path_1.default.join(sourceRoot, relative);
+        const target = path_1.default.join(absoluteProject, '.agents', 'skills', AGENT_SKILL, relative);
+        const content = await promises_1.default.readFile(source, 'utf8');
+        await atomicWrite(target, content);
+        installed.push(path_1.default.relative(absoluteProject, target).replace(/\\/g, '/'));
+    }
+    const vaultAgentsPath = path_1.default.join(vaultPath, AGENTS_FILE);
+    const vaultAgents = upsertManagedSection(await readTextIfExists(vaultAgentsPath), buildAgentSkillDoc(name), '<!-- clawpm:vault-agent:start -->', '<!-- clawpm:vault-agent:end -->');
+    await atomicWrite(vaultAgentsPath, vaultAgents);
+    installed.push('.clawpm/AGENTS.md');
+    const rootAgentsPath = path_1.default.join(absoluteProject, AGENTS_FILE);
+    const rootAgents = upsertManagedSection(await readTextIfExists(rootAgentsPath), buildRootAgentSection(), '<!-- clawpm:project-agent:start -->', '<!-- clawpm:project-agent:end -->');
+    await atomicWrite(rootAgentsPath, rootAgents);
+    installed.push('AGENTS.md');
+    return { ok: true, files: installed };
 }
 async function readRecents() {
     try {
@@ -225,6 +255,7 @@ async function createVault(projectPath) {
         format: VAULT_FORMAT,
         name,
         workflow: {
+            version: 2,
             statuses: [
                 { id: 'backlog', label: '待规划', kanban: 'backlog' },
                 { id: 'planned', label: '已计划', kanban: 'planned' },
@@ -232,6 +263,22 @@ async function createVault(projectPath) {
                 { id: 'review', label: '待评审', kanban: 'review' },
                 { id: 'done', label: '已完成', kanban: 'done' },
             ],
+            transitions: [
+                { from: 'backlog', to: 'planned' },
+                { from: 'planned', to: 'backlog' },
+                { from: 'planned', to: 'active' },
+                { from: 'active', to: 'planned' },
+                { from: 'active', to: 'review' },
+                { from: 'review', to: 'active' },
+                { from: 'review', to: 'done' },
+                { from: 'done', to: 'active' },
+            ],
+            gates: {
+                done: ['acceptance', 'blocker', 'dependencies', 'children', 'verification', 'evidence'],
+            },
+            agents: {
+                claimLeaseMinutes: 120,
+            },
         },
     }, null, 2)}\n`);
     await atomicWrite(path_1.default.join(vaultPath, 'domains.json'), '{\n  "format": "clawpm-domains@1",\n  "domains": []\n}\n');
@@ -239,7 +286,7 @@ async function createVault(projectPath) {
     await atomicWrite(path_1.default.join(vaultPath, 'fields.json'), '{\n  "format": "clawpm-fields@1",\n  "fields": []\n}\n');
     await atomicWrite(path_1.default.join(vaultPath, 'links.json'), '{\n  "format": "clawpm-links@1",\n  "links": []\n}\n');
     await atomicWrite(path_1.default.join(vaultPath, 'people.json'), '{\n  "format": "clawpm-people@1",\n  "people": []\n}\n');
-    await atomicWrite(path_1.default.join(vaultPath, AGENTS_FILE), buildAgentSkillDoc(name));
+    await syncAgentSkill(absoluteProject);
     return readSnapshot(absoluteProject);
 }
 async function selectProjectDirectory() {
@@ -333,6 +380,7 @@ electron_1.app.whenReady().then(() => {
     });
     electron_1.ipcMain.handle('project:open', async (_event, projectPath) => openProject(projectPath));
     electron_1.ipcMain.handle('project:recent', () => readRecents());
+    electron_1.ipcMain.handle('agent-skill:sync', async (_event, projectPath) => syncAgentSkill(projectPath));
     electron_1.ipcMain.handle('window:minimize', () => mainWindow?.minimize());
     electron_1.ipcMain.handle('window:toggle-maximize', () => {
         if (!mainWindow)

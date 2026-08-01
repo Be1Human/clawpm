@@ -9,11 +9,11 @@
  *  - 右键菜单：添加关联、折叠/展开、删除、改父节点、变为根节点
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
   useNodesState, useEdgesState, useReactFlow,
-  type Node, type Edge, type NodeProps, type EdgeProps,
+  type Node, type Edge, type NodeProps, type EdgeProps, type OnNodeDrag,
   Handle, Position, Panel,
   BaseEdge,
 } from '@xyflow/react';
@@ -98,7 +98,9 @@ let _groupBoxSeq = Date.now();
 function nextGroupBoxId() { return `gb_${_groupBoxSeq++}`; }
 
 function getLabelColors(task: any) {
-  const labels: string[] = (() => { try { return JSON.parse(task.labels ?? '[]'); } catch { return []; } })();
+  const labels: string[] = Array.isArray(task.labels)
+    ? task.labels
+    : (() => { try { return JSON.parse(task.labels ?? '[]'); } catch { return []; } })();
   const first = labels[0] || null;
   return { colors: LABEL_COLORS[first as string] ?? DEFAULT_COLORS, labels, firstLabel: first };
 }
@@ -261,7 +263,7 @@ const LINK_STYLE: Record<string, { stroke: string; dash: string; label: string; 
   relates:  { stroke: '#3b82f6', dash: '3 3', label: '关联', arrow: false },
 };
 
-// ── 布局算法 ──────────────────────────────────────────────────────
+// ── 布局算法（O(N) 后序遍历，预计算每个节点的子树半高）──────────────
 type VisibilityFn = (node: any) => boolean;
 const ALWAYS_VISIBLE: VisibilityFn = () => true;
 
@@ -271,68 +273,98 @@ function visibleChildren(node: any, collapsed: Set<string>, isVisible: Visibilit
   return node.children.filter((c: any) => isVisible(c));
 }
 
-// 计算节点上方需要的空间（从节点中心到子树顶边）
-function extentAbove(node: any, collapsed: Set<string>, isVisible: VisibilityFn = ALWAYS_VISIBLE): number {
-  const children = visibleChildren(node, collapsed, isVisible);
-  if (!children.length) return NODE_H / 2;
-  const gaps = (children.length - 1) * V_GAP;
-  const childHeights = children.map((c: any) => extentAbove(c, collapsed, isVisible) + extentBelow(c, collapsed, isVisible));
-  const totalChildrenH = childHeights.reduce((a: number, b: number) => a + b, 0) + gaps;
-  return Math.max(NODE_H / 2, totalChildrenH / 2);
+function footerRows(node: any, collapsed: Set<string>, stickerVisibility: StickerVisibility): number {
+  const tags: string[] = Array.isArray(node.tags) ? node.tags : [];
+  const hasDueDate = stickerVisibility.showDueDate && node.status !== 'done' && !!node.dueDate;
+  const hasTags = stickerVisibility.showTags && tags.length > 0;
+  const hasCollapsedCount = collapsed.has(node.taskId) && (node.children?.length ?? 0) > 0;
+  if (!hasDueDate && !hasTags && !hasCollapsedCount) return 0;
+
+  const widths: number[] = [];
+  if (hasDueDate) widths.push(82);
+  if (hasTags) {
+    for (const tag of tags.slice(0, 4)) {
+      widths.push(Math.min(68, 20 + Math.min(Array.from(tag).length, 6) * 6));
+    }
+    if (tags.length > 4) widths.push(22);
+  }
+  if (hasCollapsedCount) widths.push(42);
+
+  const availableWidth = NODE_W - 8;
+  let rows = 1;
+  let used = 0;
+  for (const width of widths) {
+    const next = used === 0 ? width : used + 4 + width;
+    if (next > availableWidth) {
+      rows += 1;
+      used = width;
+    } else {
+      used = next;
+    }
+  }
+  return rows;
 }
 
-function extentBelow(node: any, collapsed: Set<string>, isVisible: VisibilityFn = ALWAYS_VISIBLE): number {
-  const children = visibleChildren(node, collapsed, isVisible);
-  if (!children.length) return NODE_H / 2;
-  const gaps = (children.length - 1) * V_GAP;
-  const childHeights = children.map((c: any) => extentAbove(c, collapsed, isVisible) + extentBelow(c, collapsed, isVisible));
-  const totalChildrenH = childHeights.reduce((a: number, b: number) => a + b, 0) + gaps;
-  return Math.max(NODE_H / 2, totalChildrenH / 2);
+function mindMapNodeHeight(node: any, collapsed: Set<string>, stickerVisibility: StickerVisibility): number {
+  const rows = footerRows(node, collapsed, stickerVisibility);
+  return NODE_H + (rows > 0 ? 4 + rows * 24 : 0);
 }
 
-// 整个子树的外接高度
-function subtreeH(node: any, collapsed: Set<string>, isVisible: VisibilityFn = ALWAYS_VISIBLE): number {
-  return extentAbove(node, collapsed, isVisible) + extentBelow(node, collapsed, isVisible);
-}
-
+// 后序遍历计算每个可见节点的子树半高（中心到顶/底的距离），整体 O(N)。
+// 旧实现每个节点都重新递归整棵子树，整体 O(N²)；此处用两个 Map 缓存，单次遍历完成。
 function computeLayout(
   roots: any[],
   collapsed: Set<string>,
   isVisible: VisibilityFn = ALWAYS_VISIBLE,
+  nodeHeight: (node: any) => number = () => NODE_H,
 ): Map<string, { x: number; y: number }> {
+  const aboveMap = new Map<string, number>();
+  const belowMap = new Map<string, number>();
   const pos = new Map<string, { x: number; y: number }>();
+
+  function measure(node: any) {
+    const children = visibleChildren(node, collapsed, isVisible);
+    const ownHalf = nodeHeight(node) / 2;
+    if (!children.length) {
+      aboveMap.set(node.taskId, ownHalf);
+      belowMap.set(node.taskId, ownHalf);
+      return;
+    }
+    let total = 0;
+    for (const c of children) {
+      measure(c);
+      total += aboveMap.get(c.taskId)! + belowMap.get(c.taskId)!;
+    }
+    total += (children.length - 1) * V_GAP;
+    const half = Math.max(ownHalf, total / 2);
+    aboveMap.set(node.taskId, half);
+    belowMap.set(node.taskId, half);
+  }
 
   // 以节点中心坐标 (centerY) 为基准进行布局
   function layout(node: any, depth: number, centerY: number) {
     const children = visibleChildren(node, collapsed, isVisible);
 
-    // 放置当前节点（y 为左上角 = centerY - NODE_H/2）
+    // 放置当前节点（y 为左上角，包含标签区的完整可见高度）。
     pos.set(node.taskId, {
       x: depth * (NODE_W + H_GAP),
-      y: centerY - NODE_H / 2,
+      y: centerY - nodeHeight(node) / 2,
     });
 
     if (!children.length) return;
 
-    // 计算子节点的中心点位置：
-    // 所有子节点中心均匀排列，整体居中于 parentCenterY
-    const childExtents = children.map((c: any) => ({
-      above: extentAbove(c, collapsed, isVisible),
-      below: extentBelow(c, collapsed, isVisible),
-    }));
-
-    // 总高度 = sum(above_i + below_i) + gaps
-    const totalH = childExtents.reduce((s: number, e: any) => s + e.above + e.below, 0)
-      + (children.length - 1) * V_GAP;
-
-    // 第一个子节点的中心 y
-    let cy = centerY - totalH / 2 + childExtents[0].above;
+    // 子节点中心均匀排列，整体居中于 parentCenterY
+    const extents = children.map(c => {
+      const a = aboveMap.get(c.taskId)!, b = belowMap.get(c.taskId)!;
+      return { a, b };
+    });
+    const totalH = extents.reduce((s, e) => s + e.a + e.b, 0) + (children.length - 1) * V_GAP;
+    let cy = centerY - totalH / 2 + extents[0].a;
 
     for (let i = 0; i < children.length; i++) {
       layout(children[i], depth + 1, cy);
       if (i < children.length - 1) {
-        // 下一个子节点的中心 = 当前中心 + 当前下方 + gap + 下一个上方
-        cy += childExtents[i].below + V_GAP + childExtents[i + 1].above;
+        cy += extents[i].b + V_GAP + extents[i + 1].a;
       }
     }
   }
@@ -341,10 +373,11 @@ function computeLayout(
   const visibleRoots = roots.filter(r => isVisible(r));
   let topY = 0;
   for (const root of visibleRoots) {
-    const above = extentAbove(root, collapsed, isVisible);
+    measure(root);
+    const above = aboveMap.get(root.taskId)!;
     const centerY = topY + above;
     layout(root, 0, centerY);
-    topY += subtreeH(root, collapsed, isVisible) + ROOT_GAP;
+    topY += above + belowMap.get(root.taskId)! + ROOT_GAP;
   }
   return pos;
 }
@@ -464,6 +497,7 @@ function buildFlow(
   nodeStyles: Record<string, NodeStyle> = {},
   dropTargetId: string | null = null,
   stickerVisibility?: StickerVisibility,
+  compactNodeDetails = false,
 ) {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -491,6 +525,10 @@ function buildFlow(
         highlightDomains, renamingId, nodeStyle: nodeStyles[node.taskId] ?? {},
         isDropTarget: dropTargetId === node.taskId,
         stickerVisibility,
+        compact: compactNodeDetails,
+        nodeHeight: mindMapNodeHeight(node, collapsed, stickerVisibility ?? {
+          showDueDate: true, showPriority: true, showTags: true, showOwner: true, showStartDate: false,
+        }),
         ...callbacks,
       },
     });
@@ -529,14 +567,14 @@ function buildFlow(
 }
 
 // ── 自定义树形边 ────────────────────────────────────────────────
-function TreeEdge({ sourceX, sourceY, targetX, targetY }: EdgeProps) {
+const TreeEdge = memo(function TreeEdge({ sourceX, sourceY, targetX, targetY }: EdgeProps) {
   const dx = (targetX - sourceX) * 0.55;
   const d = `M ${sourceX},${sourceY} C ${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`;
   return <path d={d} fill="none" stroke="#d1d5db" strokeWidth={1.5} />;
-}
+});
 
 // ── 自定义关联边 ────────────────────────────────────────────────
-function AssocEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
+const AssocEdge = memo(function AssocEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
   const s = (data as any)?.style || LINK_STYLE.relates;
   const dx = (targetX - sourceX) * 0.4;
   const d = `M ${sourceX},${sourceY} C ${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`;
@@ -551,7 +589,7 @@ function AssocEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
       </text>
     </g>
   );
-}
+});
 
 // ── 右键菜单 ─────────────────────────────────────────────────────
 function ContextMenu({
@@ -853,6 +891,8 @@ function TaskNode({ data, selected }: NodeProps) {
   const [editVal, setEditVal] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
   const renamingId: string | null = (data as any).renamingId ?? null;
+  const isCompact = !!(data as any).compact && !selected && !editing;
+  const nodeHeight: number = (data as any).nodeHeight ?? NODE_H;
 
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
@@ -884,6 +924,7 @@ function TaskNode({ data, selected }: NodeProps) {
   const tags: string[] = Array.isArray(task.tags) ? task.tags : [];
   const showTags = stickerVis.showTags && tags.length > 0;
   const hasStickers = !!dueDateSticker || showTags;
+  const hasFooter = hasStickers || (isCollapsed && hasChildren);
 
   // 样式优先级：放置目标 > 用户自定义 > domain高亮 > label色系 > 默认
   const resolvedBorder = isDropTarget ? '#6366f1'
@@ -903,6 +944,47 @@ function TaskNode({ data, selected }: NodeProps) {
     if (isHighlighted && !nodeStyle.borderColor) return `${base}, 0 0 14px 3px ${hlColor}35`;
     return base;
   })();
+
+  if (isCompact) {
+    return (
+      <div className="relative select-none" style={{ width: NODE_W, minHeight: nodeHeight }}>
+        <div
+          className="relative rounded-lg"
+          style={{
+            height: NODE_H,
+            border: `${resolvedBorderWidth}px ${resolvedBorderStyle} ${resolvedBorder}`,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+            backgroundColor: resolvedBg,
+          }}
+          onDoubleClick={() => { (data as any).onOpenDetail(task.taskId); }}
+          onContextMenu={handleContextMenu}
+        >
+          <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg" style={{ backgroundColor: barColor }} />
+          <div className="flex h-full min-w-0 flex-col justify-center pl-4 pr-7">
+            <p className="truncate text-[12px] font-semibold leading-tight" style={{ color: resolvedTextColor }} title={task.title}>
+              {task.priority && task.priority !== 'P2' ? `${task.priority} ` : ''}{task.title}
+            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="text-[9px] font-mono text-indigo-400">{task.taskId}</span>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: STATUS_DOT[task.status] ?? '#cbd5e1' }} />
+            </div>
+          </div>
+          {hasChildren && (
+            <button
+              className="absolute -right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-gray-300 bg-white text-[9px] text-gray-400 shadow-sm hover:border-indigo-400 hover:text-indigo-600"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); (data as any).onToggleCollapse(task.taskId); }}
+              title={isCollapsed ? '展开' : '折叠'}
+            >
+              {isCollapsed ? '▶' : '▼'}
+            </button>
+          )}
+          <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
+          <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -924,23 +1006,6 @@ function TaskNode({ data, selected }: NodeProps) {
       >
         {/* 左侧色条 */}
         <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: barColor }} />
-
-        {/* 🔥 优先级旗标贴纸（左上角，像小贴纸一样翘起来） */}
-        {prioritySticker && (
-          <div
-            className="absolute -top-2.5 left-3 flex items-center gap-0.5 px-1.5 py-0.5 rounded-b-md rounded-t-sm z-20"
-            style={{
-              background: prioritySticker.bg,
-              border: `1.5px solid ${prioritySticker.color}40`,
-              boxShadow: `0 2px 6px ${prioritySticker.color}20`,
-              transform: 'rotate(-2deg)',
-            }}
-            title={`优先级: ${task.priority} ${prioritySticker.label}`}
-          >
-            <span className="text-[10px]">{prioritySticker.emoji}</span>
-            <span className="text-[8px] font-bold" style={{ color: prioritySticker.color }}>{task.priority}</span>
-          </div>
-        )}
 
         {/* 调度类型小耳朵徽标（右上角） */}
         {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
@@ -978,6 +1043,19 @@ function TaskNode({ data, selected }: NodeProps) {
         <div className="pl-5 pr-8 py-1.5">
           {/* 上行：标签 + 标题 */}
           <div className="flex items-center gap-1.5">
+            {prioritySticker && (
+              <span
+                className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5"
+                style={{
+                  background: prioritySticker.bg,
+                  border: `1px solid ${prioritySticker.color}40`,
+                }}
+                title={`优先级: ${task.priority} ${prioritySticker.label}`}
+              >
+                <span className="text-[10px] leading-none">{prioritySticker.emoji}</span>
+                <span className="text-[8px] font-bold leading-none" style={{ color: prioritySticker.color }}>{task.priority}</span>
+              </span>
+            )}
             {firstLabel && (
               <span className="flex-shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                 style={{ backgroundColor: colors.pill, color: colors.text }}>
@@ -1055,22 +1133,12 @@ function TaskNode({ data, selected }: NodeProps) {
           </>
         )}
 
-        {/* 子节点计数气泡（折叠时显示） */}
-        {isCollapsed && hasChildren && !hasStickers && (
-          <div
-            className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 rounded-full text-white"
-            style={{ backgroundColor: colors.border }}
-          >
-            {task.children.length}
-          </div>
-        )}
-
         <Handle type="target" position={Position.Left}  style={{ opacity: 0, width: 1, height: 1 }} />
         <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
       </div>
 
       {/* ====== 贴纸区（主卡片下方，像便利贴一样贴在卡片底部） ====== */}
-      {hasStickers && (
+      {hasFooter && (
         <div className="flex flex-wrap items-start gap-1 mt-1 px-1" style={{ maxWidth: NODE_W }}>
           {/* 📅 截止时间贴纸 — 小票根样式 */}
           {dueDateSticker && (
@@ -1129,15 +1197,6 @@ function TaskNode({ data, selected }: NodeProps) {
         </div>
       )}
 
-      {/* 过期抖动动画 CSS（注入 style 标签，只注入一次） */}
-      {dueDateSticker?.urgent === 'overdue' && (
-        <style>{`
-          @keyframes sticker-shake {
-            0% { transform: translateX(-0.5px) rotate(-0.5deg); }
-            100% { transform: translateX(0.5px) rotate(0.5deg); }
-          }
-        `}</style>
-      )}
     </div>
   );
 }
@@ -1320,7 +1379,7 @@ function ProjectRootNode({ data }: NodeProps) {
   );
 }
 
-const NODE_TYPES = { taskNode: TaskNode, projectRoot: ProjectRootNode, groupBox: GroupBoxNode };
+const NODE_TYPES = { taskNode: memo(TaskNode), projectRoot: memo(ProjectRootNode), groupBox: memo(GroupBoxNode) };
 const EDGE_TYPES = { treeEdge: TreeEdge, assocEdge: AssocEdge };
 
 // ── localStorage 持久化 ──────────────────────────────────────────
@@ -1466,6 +1525,9 @@ function MindMapCanvas() {
   const dropTargetRef = useRef<string | null>(null);
   const [reparentModal, setReparentModal] = useState<{ taskId: string } | null>(null);
   const draggingNodeId = useRef<string | null>(null);
+  const dragDescendants = useRef<Set<string>>(new Set());
+  const dragFrame = useRef<number | null>(null);
+  const pendingDragNode = useRef<Node | null>(null);
 
   useEffect(() => { edgesRef.current = edges; }, [edges]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
@@ -1527,6 +1589,30 @@ function MindMapCanvas() {
     onError: (e: any) => alert(e.message || '排序失败'),
   });
 
+  // 布局位置仅依赖「结构」相关状态，memo 化避免重命名/改样式等外观变更触发 O(N) 重算
+  const layoutPositions = useMemo(() => {
+    const hasFilters = hasCoreFilters(coreFilters) || Object.values(fieldFilters).some(v => !!v);
+    const isVisible: VisibilityFn = hasFilters
+      ? (node: any) => hasVisibleDescendant(node, coreFilters, fieldFilters, customFieldDefs as any[])
+      : ALWAYS_VISIBLE;
+    return computeLayout(
+      treeData as any[],
+      collapsed,
+      isVisible,
+      node => mindMapNodeHeight(node, collapsed, stickerVisibility),
+    );
+  }, [treeData, collapsed, fieldFilters, coreFilters, customFieldDefs, stickerVisibility]);
+
+  // 总节点数：用于 MiniMap 阈值，节点过多时关闭缩略图以省渲染
+  const totalNodeCount = useMemo(() => {
+    let count = 0;
+    const walk = (arr: any[]) => {
+      for (const n of arr) { count++; if (n.children?.length) walk(n.children); }
+    };
+    walk((treeData as any[]) ?? []);
+    return count;
+  }, [treeData]);
+
   // 重建图
   useEffect(() => {
     if (!(treeData as any[]).length) {
@@ -1539,7 +1625,7 @@ function MindMapCanvas() {
     const isVisible: VisibilityFn = hasFilters
       ? (node: any) => hasVisibleDescendant(node, coreFilters, fieldFilters, customFieldDefs as any[])
       : ALWAYS_VISIBLE;
-    const positions = computeLayout(treeData as any[], collapsed, isVisible);
+    const positions = layoutPositions;
     const hlArr = [...highlightDomains];
     const { nodes: ns, edges: es } = buildFlow(
       treeData as any[], positions, collapsed, callbacks,
@@ -1547,6 +1633,7 @@ function MindMapCanvas() {
       fieldFilters, customFieldDefs as any[], coreFilters, renamingId, nodeStyles,
       null, // dropTargetId 由独立 effect 处理
       stickerVisibility,
+      totalNodeCount > 120,
     );
 
     // 注入虚拟项目根节点：连接所有实际根节点
@@ -1558,7 +1645,7 @@ function MindMapCanvas() {
         const pos = positions.get(root.taskId);
         if (pos) {
           minY = Math.min(minY, pos.y);
-          maxY = Math.max(maxY, pos.y + NODE_H);
+          maxY = Math.max(maxY, pos.y + mindMapNodeHeight(root, collapsed, stickerVisibility));
         }
       }
       const centerY = (minY + maxY) / 2;
@@ -1611,7 +1698,7 @@ function MindMapCanvas() {
 
     setNodes(ns);
     setEdges(es);
-  }, [treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, stickerVisibility, activeProject, groupBoxes]);
+  }, [layoutPositions, treeData, collapsed, reqLinks, linkVisibility, highlightDomains, fieldFilters, customFieldDefs, coreFilters, renamingId, nodeStyles, stickerVisibility, activeProject, groupBoxes, totalNodeCount]);
 
   // 独立更新拖拽放置目标高亮（避免整图重建导致拖拽中断）
   useEffect(() => {
@@ -1655,16 +1742,17 @@ function MindMapCanvas() {
     return { parentTaskId: parent.taskId, siblingIds: (parent.children ?? []).map((c: any) => c.taskId) };
   }
 
-  const onNodeDragStart = useCallback((_: React.MouseEvent, node: Node) => {
+  const onNodeDragStart: OnNodeDrag = useCallback((_, node) => {
     if (node.id === PROJECT_NODE_ID) return;
     if (node.id.startsWith('gb_')) return; // groupBox 不需要拖拽快照
     const snap = new Map<string, { x: number; y: number }>();
     setNodes(curr => { curr.forEach(n => snap.set(n.id, { ...n.position })); return curr; });
     dragSnap.current = snap;
+    dragDescendants.current = getDescendants(node.id, edgesRef.current);
     draggingNodeId.current = node.id;
   }, []);
 
-  const onNodeDrag = useCallback((_: React.MouseEvent, node: Node) => {
+  const processNodeDrag = useCallback((node: Node) => {
     if (node.id.startsWith('gb_')) return; // groupBox 不做命中检测
     const start = dragSnap.current.get(node.id);
     if (!start) return;
@@ -1673,7 +1761,7 @@ function MindMapCanvas() {
 
     // 子树跟随
     if (dx || dy) {
-      const descendants = getDescendants(node.id, edgesRef.current);
+      const descendants = dragDescendants.current;
       if (descendants.size) {
         setNodes(prev => prev.map(n => {
           if (n.id === node.id) return n;
@@ -1690,7 +1778,7 @@ function MindMapCanvas() {
     // 检测放置目标：被拖节点中心是否落入某个其他节点的范围
     const dragCenterX = node.position.x + NODE_W / 2;
     const dragCenterY = node.position.y + NODE_H / 2;
-    const descendants = getDescendants(node.id, edgesRef.current);
+    const descendants = dragDescendants.current;
     let found: string | null = null;
 
     for (const n of nodesRef.current) {
@@ -1713,7 +1801,23 @@ function MindMapCanvas() {
     }
   }, []);
 
-  const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
+  const onNodeDrag: OnNodeDrag = useCallback((_, node) => {
+    pendingDragNode.current = node;
+    if (dragFrame.current !== null) return;
+    dragFrame.current = requestAnimationFrame(() => {
+      dragFrame.current = null;
+      const pending = pendingDragNode.current;
+      pendingDragNode.current = null;
+      if (pending) processNodeDrag(pending);
+    });
+  }, [processNodeDrag]);
+
+  const onNodeDragStop: OnNodeDrag = useCallback((_, node) => {
+    if (dragFrame.current !== null) {
+      cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+      pendingDragNode.current = null;
+    }
     // 如果是分组框节点 → 直接保存新位置
     if (node.id.startsWith('gb_')) {
       setGroupBoxes(prev => prev.map(g => g.id === node.id ? { ...g, x: node.position.x, y: node.position.y } : g));
@@ -1731,7 +1835,7 @@ function MindMapCanvas() {
     const restorePositions = () => {
       const snap = dragSnap.current;
       if (!snap.size) return;
-      const descendants = getDescendants(dragId, edgesRef.current);
+    const descendants = dragDescendants.current;
       setNodes(prev => prev.map(n => {
         if (n.id === dragId || descendants.has(n.id)) {
           const orig = snap.get(n.id);
@@ -1845,6 +1949,9 @@ function MindMapCanvas() {
         onNodeDragStop={onNodeDragStop}
         onSelectionChange={({ nodes: sel }) => setSelectedId(sel.length === 1 ? sel[0].id : null)}
         deleteKeyCode={null}
+        // 可见元素虚拟化会在平移时全量计算节点边界并反复挂载卡片；大图改用轻量卡片，
+        // 让画布保持单一 GPU transform，平移更稳定。
+        onlyRenderVisibleElements={false}
         defaultViewport={loadState('viewport', undefined)}
         fitView={!loadState('viewport', null)}
         fitViewOptions={{ padding: 0.2 }}
@@ -1854,17 +1961,19 @@ function MindMapCanvas() {
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#dde1e7" gap={24} />
+        {totalNodeCount <= 120 && <Background color="#dde1e7" gap={24} />}
         <Controls className="!bg-white !border-gray-200 !rounded-xl !shadow-sm" />
-        <MiniMap
-          nodeColor={n => {
-            const task = nodeDataMap.current.get(n.id);
-            if (!task) return '#94a3b8';
-            const { colors } = getLabelColors(task);
-            return colors.border;
-          }}
-          className="!bg-white !border-gray-200 !rounded-xl !shadow-sm"
-        />
+        {totalNodeCount <= 120 && (
+          <MiniMap
+            nodeColor={n => {
+              const task = nodeDataMap.current.get(n.id);
+              if (!task) return '#94a3b8';
+              const { colors } = getLabelColors(task);
+              return colors.border;
+            }}
+            className="!bg-white !border-gray-200 !rounded-xl !shadow-sm"
+          />
+        )}
 
         {/* 右侧控制面板 */}
         <Panel position="top-right">
