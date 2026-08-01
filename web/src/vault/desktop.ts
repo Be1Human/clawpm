@@ -17,6 +17,36 @@ export interface RecentProject {
   lastOpenedAt: string;
 }
 
+export type SkillPlatform = 'claude' | 'cursor' | 'codex' | 'codebuddy';
+export type SkillScope = 'user' | 'project';
+export type SkillInjectionStatus = 'not_installed' | 'current' | 'update_available';
+
+export interface SkillInjectionTarget {
+  platform: SkillPlatform;
+  platformName: string;
+  scope: SkillScope;
+  path: string;
+  note: string;
+  status: SkillInjectionStatus;
+  installedFileCount: number;
+  matchingFileCount: number;
+  totalFileCount: number;
+}
+
+export interface SkillInjectionRequest {
+  projectPath: string;
+  platform: SkillPlatform;
+  scope: SkillScope;
+}
+
+export interface SkillInjectionResult {
+  ok: boolean;
+  changed: boolean;
+  backupPath: string | null;
+  target: SkillInjectionTarget;
+  files: string[];
+}
+
 declare global {
   interface Window {
     clawpm?: {
@@ -25,6 +55,8 @@ declare global {
       openProject(projectPath: string): Promise<VaultSnapshot>;
       recentProjects(): Promise<RecentProject[]>;
       syncAgentSkill(projectPath: string): Promise<{ ok: boolean; files: string[] }>;
+      getSkillInjectionTargets(projectPath: string): Promise<SkillInjectionTarget[]>;
+      injectSkill(request: SkillInjectionRequest): Promise<SkillInjectionResult>;
       onProjectOpened(callback: (snapshot: VaultSnapshot) => void): () => void;
       onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void;
       minimizeWindow(): Promise<void>;
@@ -58,6 +90,14 @@ export async function listDesktopProjects(): Promise<RecentProject[]> {
 
 export async function syncProjectAgentSkill(projectPath: string): Promise<{ ok: boolean; files: string[] }> {
   return requireDesktop().syncAgentSkill(projectPath);
+}
+
+export async function getSkillInjectionTargets(projectPath: string): Promise<SkillInjectionTarget[]> {
+  return requireDesktop().getSkillInjectionTargets(projectPath);
+}
+
+export async function injectSkill(request: SkillInjectionRequest): Promise<SkillInjectionResult> {
+  return requireDesktop().injectSkill(request);
 }
 
 export function onVaultOpened(callback: (snapshot: VaultSnapshot) => void): () => void {

@@ -1,6 +1,6 @@
 {
   "name": "clawpm",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local-first Electron project management desktop application",
   "private": true,
   "scripts": {
@@ -10,7 +10,9 @@
     "release:preflight": "node scripts/release/preflight.mjs",
     "release:clean": "node scripts/release/clean.mjs",
     "release:build:win": "node scripts/release/build-windows.mjs",
+    "test": "pnpm test:workflow && pnpm test:skill-injection",
     "test:workflow": "node --experimental-strip-types --test scripts/tests/task-workflow.test.mjs",
+    "test:skill-injection": "node --test scripts/tests/skill-injection.test.mjs",
     "lint": "pnpm --filter web lint"
   },
   "keywords": [

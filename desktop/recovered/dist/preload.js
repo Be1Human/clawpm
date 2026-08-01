@@ -7,6 +7,8 @@ electron_1.contextBridge.exposeInMainWorld('clawpm', {
     openProject: (projectPath) => electron_1.ipcRenderer.invoke('project:open', projectPath),
     recentProjects: () => electron_1.ipcRenderer.invoke('project:recent'),
     syncAgentSkill: (projectPath) => electron_1.ipcRenderer.invoke('agent-skill:sync', projectPath),
+    getSkillInjectionTargets: (projectPath) => electron_1.ipcRenderer.invoke('skill-injection:targets', projectPath),
+    injectSkill: (request) => electron_1.ipcRenderer.invoke('skill-injection:inject', request),
     onProjectOpened: (callback) => {
         const listener = (_event, snapshot) => callback(snapshot);
         electron_1.ipcRenderer.on('project:opened', listener);

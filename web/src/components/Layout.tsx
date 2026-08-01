@@ -33,6 +33,7 @@ const NAV_GROUPS = [
   {
     labelKey: 'nav.settings',
     items: [
+      { to: '/skill-injection', labelKey: 'nav.skillInjection', icon: SkillIcon },
       { to: '/domains',        labelKey: 'nav.domains',        icon: DomainIcon },
       { to: '/custom-fields',  labelKey: 'nav.customFields',   icon: FieldsIcon },
       { to: '/members',        labelKey: 'nav.members',        icon: MembersIcon },
@@ -193,6 +194,16 @@ function ArchiveIcon({ className }: { className?: string }) {
       <rect x="1.5" y="2" width="13" height="3.5" rx="1" />
       <path d="M2.5 5.5v7.5a1 1 0 001 1h9a1 1 0 001-1V5.5" />
       <path d="M6 8.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function SkillIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M5.5 2.5h5a2 2 0 012 2v7a2 2 0 01-2 2h-5a2 2 0 01-2-2v-7a2 2 0 012-2z" />
+      <path d="M6 6h4M6 9h4M8 2.5v-1M6.5 1.5h3" strokeLinecap="round" />
+      <circle cx="6.2" cy="11.3" r=".6" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="11.3" r=".6" fill="currentColor" stroke="none" />
     </svg>
   );
 }

@@ -5,8 +5,6 @@ import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
 import { cn } from '@/lib/utils';
 import CreateTaskModal from '@/components/CreateTaskModal';
-import { syncProjectAgentSkill } from '@/vault/desktop';
-import { useVaultSession } from '@/vault/session';
 
 const FILTERS = [
   { id: 'all', label: '全部' },
@@ -36,11 +34,8 @@ function lines(value: unknown): string[] {
 
 export default function Workflow() {
   const project = useActiveProject();
-  const vault = useVaultSession();
   const [filter, setFilter] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
-  const [skillStatus, setSkillStatus] = useState('');
-  const [syncingSkill, setSyncingSkill] = useState(false);
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['workflow-overview', project],
     queryFn: api.getWorkflowOverview,
@@ -59,20 +54,6 @@ export default function Workflow() {
     { label: '待验收', value: data?.counts?.complete ?? 0, color: 'text-emerald-600' },
   ];
 
-  async function syncSkill() {
-    if (vault.status !== 'ready') return;
-    setSyncingSkill(true);
-    setSkillStatus('');
-    try {
-      const result = await syncProjectAgentSkill(vault.vault.projectPath);
-      setSkillStatus(`已同步 ${result.files.length} 个 Agent 规范文件`);
-    } catch (error: any) {
-      setSkillStatus(`同步失败：${error?.message || '未知错误'}`);
-    } finally {
-      setSyncingSkill(false);
-    }
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-slate-50/70">
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
@@ -82,24 +63,16 @@ export default function Workflow() {
             <p className="text-sm text-slate-500 mt-1">让人类与 Agent 按同一套拆分、领取、执行、测试和验收协议推进 `.clawpm`。</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={syncSkill} disabled={syncingSkill || vault.status !== 'ready'}
-              className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-600 hover:border-indigo-200 hover:text-indigo-600 disabled:opacity-40">
-              {syncingSkill ? '同步中...' : '同步 Agent Skill'}
-            </button>
+            <Link to="/skill-injection"
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-600 hover:border-indigo-200 hover:text-indigo-600">
+              配置 Agent Skill
+            </Link>
             <button onClick={() => setShowCreate(true)}
               className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700">
               + 创建任务
             </button>
           </div>
         </header>
-
-        {skillStatus && (
-          <div className={cn('rounded-lg border px-3 py-2 text-xs', skillStatus.startsWith('同步失败')
-            ? 'border-red-200 bg-red-50 text-red-700'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-700')}>
-            {skillStatus}
-          </div>
-        )}
 
         <div className="grid grid-cols-5 gap-3">
           {stats.map(stat => (

@@ -7,6 +7,7 @@ const electron_1 = require("electron");
 const promises_1 = __importDefault(require("fs/promises"));
 const fs_1 = require("fs");
 const path_1 = __importDefault(require("path"));
+const skill_injection_1 = require("./skill-injection");
 // Some Windows systems create the BrowserWindow but fail to paint its GPU surface.
 electron_1.app.disableHardwareAcceleration();
 const VAULT_FORMAT = 'clawpm-vault@1';
@@ -14,8 +15,6 @@ const VAULT_DIRECTORY = '.clawpm';
 const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json', 'people.json', 'AGENTS.md'];
 const RECENTS_FILE = 'recent-projects.json';
 const AGENTS_FILE = 'AGENTS.md';
-const AGENT_SKILL = 'clawpm-project-workflow';
-const AGENT_SKILL_FILES = ['SKILL.md', 'agents/openai.yaml', 'references/vault-protocol.md'];
 function buildAgentSkillDoc(vaultName) {
     return [
         '<!-- clawpm:vault-agent:start -->',
@@ -62,6 +61,9 @@ function vaultPathForProject(projectPath) {
 function recentsPath() {
     return path_1.default.join(electron_1.app.getPath('userData'), RECENTS_FILE);
 }
+function skillBackupRoot() {
+    return path_1.default.join(electron_1.app.getPath('userData'), 'skill-backups');
+}
 function writeDiagnostic(message) {
     void promises_1.default.appendFile(path_1.default.join(electron_1.app.getPath('userData'), 'renderer.log'), `${new Date().toISOString()} ${message}\n`);
 }
@@ -94,15 +96,15 @@ async function syncAgentSkill(projectPath) {
     const absoluteProject = path_1.default.resolve(projectPath);
     const vaultPath = vaultPathForProject(absoluteProject);
     const { name } = await validateVault(vaultPath);
-    const sourceRoot = path_1.default.join(electron_1.app.getAppPath(), 'skills', AGENT_SKILL);
-    const installed = [];
-    for (const relative of AGENT_SKILL_FILES) {
-        const source = path_1.default.join(sourceRoot, relative);
-        const target = path_1.default.join(absoluteProject, '.agents', 'skills', AGENT_SKILL, relative);
-        const content = await promises_1.default.readFile(source, 'utf8');
-        await atomicWrite(target, content);
-        installed.push(path_1.default.relative(absoluteProject, target).replace(/\\/g, '/'));
-    }
+    const injection = await (0, skill_injection_1.injectSkill)({
+        appPath: electron_1.app.getAppPath(),
+        homePath: electron_1.app.getPath('home'),
+        projectPath: absoluteProject,
+        backupRoot: skillBackupRoot(),
+        platform: 'codex',
+        scope: 'project',
+    });
+    const installed = injection.files.map(target => path_1.default.relative(absoluteProject, target).replace(/\\/g, '/'));
     const vaultAgentsPath = path_1.default.join(vaultPath, AGENTS_FILE);
     const vaultAgents = upsertManagedSection(await readTextIfExists(vaultAgentsPath), buildAgentSkillDoc(name), '<!-- clawpm:vault-agent:start -->', '<!-- clawpm:vault-agent:end -->');
     await atomicWrite(vaultAgentsPath, vaultAgents);
@@ -112,6 +114,36 @@ async function syncAgentSkill(projectPath) {
     await atomicWrite(rootAgentsPath, rootAgents);
     installed.push('AGENTS.md');
     return { ok: true, files: installed };
+}
+async function skillInjectionTargets(projectPath) {
+    const absoluteProject = projectPath ? path_1.default.resolve(projectPath) : null;
+    if (absoluteProject)
+        await validateVault(vaultPathForProject(absoluteProject));
+    return (0, skill_injection_1.listTargets)({
+        appPath: electron_1.app.getAppPath(),
+        homePath: electron_1.app.getPath('home'),
+        projectPath: absoluteProject,
+    });
+}
+async function injectAgentSkill(request) {
+    if (!request || typeof request !== 'object')
+        throw new Error('Skill 注入参数无效。');
+    const projectPath = typeof request.projectPath === 'string' && request.projectPath.trim()
+        ? path_1.default.resolve(request.projectPath)
+        : null;
+    if (request.scope === 'project') {
+        if (!projectPath)
+            throw new Error('注入项目级 Skill 前必须打开 ClawPM 项目。');
+        await validateVault(vaultPathForProject(projectPath));
+    }
+    return (0, skill_injection_1.injectSkill)({
+        appPath: electron_1.app.getAppPath(),
+        homePath: electron_1.app.getPath('home'),
+        projectPath,
+        backupRoot: skillBackupRoot(),
+        platform: request.platform,
+        scope: request.scope,
+    });
 }
 async function readRecents() {
     try {
@@ -381,6 +413,8 @@ electron_1.app.whenReady().then(() => {
     electron_1.ipcMain.handle('project:open', async (_event, projectPath) => openProject(projectPath));
     electron_1.ipcMain.handle('project:recent', () => readRecents());
     electron_1.ipcMain.handle('agent-skill:sync', async (_event, projectPath) => syncAgentSkill(projectPath));
+    electron_1.ipcMain.handle('skill-injection:targets', async (_event, projectPath) => skillInjectionTargets(projectPath));
+    electron_1.ipcMain.handle('skill-injection:inject', async (_event, request) => injectAgentSkill(request));
     electron_1.ipcMain.handle('window:minimize', () => mainWindow?.minimize());
     electron_1.ipcMain.handle('window:toggle-maximize', () => {
         if (!mainWindow)

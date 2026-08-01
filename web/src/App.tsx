@@ -13,6 +13,7 @@ import CustomFields from './pages/CustomFields';
 import Archive from './pages/Archive';
 import Members from './pages/Members';
 import Workflow from './pages/Workflow';
+import SkillInjection from './pages/SkillInjection';
 import { setCurrentMember, getCurrentMember } from './lib/useCurrentMember';
 import { setCurrentUser, setOnboarded } from './lib/useCurrentUser';
 import { withBasePath } from './api/client';
@@ -81,6 +82,7 @@ export default function App() {
             <Route path="/mindmap" element={<MindMap />} />
             <Route path="/board" element={<KanbanBoard />} />
             <Route path="/workflow" element={<Workflow />} />
+            <Route path="/skill-injection" element={<SkillInjection />} />
             <Route path="/tasks" element={<TaskList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />
             <Route path="/backlog" element={<Backlog />} />
