@@ -449,6 +449,10 @@ async function claimTask(id: string, body: RecordValue, data: VaultData): Promis
   if (isClaimActive(task) && task.claim.agent !== actor && !body.force) {
     throw new Error(`任务已由 ${task.claim.agent} 领取，有效期至 ${task.claim.leaseUntil ?? '手动释放'}。`);
   }
+  if (!isClaimActive(task)) {
+    const action = nextTaskAction(task, data.tasks);
+    if (action.action !== 'claim') throw new Error(`当前不能领取：${action.reason}`);
+  }
   const defaultMinutes = Number(data.config.workflow?.agents?.claimLeaseMinutes ?? 120);
   const leaseMinutes = Math.min(10080, Math.max(5, Number(body.leaseMinutes ?? body.lease_minutes ?? defaultMinutes)));
   const timestamp = new Date().toISOString();

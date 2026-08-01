@@ -26,14 +26,16 @@ function buildAgentSkillDoc(vaultName) {
         '',
         '1. 使用项目 Skill：`.agents/skills/clawpm-project-workflow/SKILL.md`。',
         '2. 修改前读取 clawpm.json、domains.json、milestones.json、people.json、links.json 和相关任务文件。',
-        '3. 修改前执行 `git diff -- .clawpm`；同一任务存在并行修改时停止。',
-        '4. 工作必须经历：拆分/创建 → 领取 → 执行 → 测试 → Gate 验收。',
-        '5. `workflow.statuses[].id` 是唯一合法状态来源，禁止直接把任务改成 done。',
+        '3. 修改前执行 `git status --short -- .clawpm` 与 `git diff -- .clawpm`；同一任务存在并行修改时停止。',
+        '4. 先按“结果目标 → 阶段/问题 → 可独立验证叶子”递归拆解，只领取叶子任务。',
+        '5. 工作必须经历：拆分/创建 → 领取 → 执行 → 测试 → Gate 验收。',
+        '6. `workflow.statuses[].id` 是唯一合法状态来源，禁止直接把任务改成 done。',
         '',
         '## 项目边界',
         '',
         '- 不使用 Server、SQLite、HTTP API、端口或 token；`.clawpm` 本身就是事实源。',
         '- 每个任务使用 `tasks/<TASK-ID>.json` 的 `clawpm-task@2` 单任务格式。',
+        '- 领域和依赖不能代替父子分解；禁止创建一批全部 `parent: null` 的平铺大任务。',
         '- 完成前必须有验收标准、通过的测试、交付证据，且依赖和子任务均已完成。',
         '',
         '<!-- clawpm:vault-agent:end -->',
@@ -98,6 +100,13 @@ function upsertManagedSection(current, section, startMarker, endMarker) {
     }
     return `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${section}\n`;
 }
+function migrateLegacyVaultAgentDocument(current) {
+    const managed = current.includes('<!-- clawpm:vault-agent:start -->');
+    const legacy = current.includes('# ClawPM 项目 Agent 操作规范')
+        && current.includes('任务是扁平 JSON 记录')
+        && current.includes('tasks/<CODE>.json');
+    return !managed && legacy ? '' : current;
+}
 async function syncAgentSkill(projectPath) {
     const absoluteProject = path_1.default.resolve(projectPath);
     const vaultPath = vaultPathForProject(absoluteProject);
@@ -112,7 +121,8 @@ async function syncAgentSkill(projectPath) {
     });
     const installed = injection.files.map(target => path_1.default.relative(absoluteProject, target).replace(/\\/g, '/'));
     const vaultAgentsPath = path_1.default.join(vaultPath, AGENTS_FILE);
-    const vaultAgents = upsertManagedSection(await readTextIfExists(vaultAgentsPath), buildAgentSkillDoc(name), '<!-- clawpm:vault-agent:start -->', '<!-- clawpm:vault-agent:end -->');
+    const existingVaultAgents = migrateLegacyVaultAgentDocument(await readTextIfExists(vaultAgentsPath));
+    const vaultAgents = upsertManagedSection(existingVaultAgents, buildAgentSkillDoc(name), '<!-- clawpm:vault-agent:start -->', '<!-- clawpm:vault-agent:end -->');
     await atomicWrite(vaultAgentsPath, vaultAgents);
     installed.push('.clawpm/AGENTS.md');
     const rootAgentsPath = path_1.default.join(absoluteProject, AGENTS_FILE);
@@ -152,7 +162,7 @@ async function injectAgentSkill(request) {
     });
 }
 async function installRecommendedAgentSkill(projectPath) {
-    return (0, skill_injection_1.installRecommended)({
+    const installed = await (0, skill_injection_1.installRecommended)({
         appPath: electron_1.app.getAppPath(),
         appVersion: electron_1.app.getVersion(),
         homePath: electron_1.app.getPath('home'),
@@ -161,6 +171,10 @@ async function installRecommendedAgentSkill(projectPath) {
         globalAgentsPath: globalAgentInstructionsPath(),
         manifestPath: skillInstallationManifestPath(),
     });
+    const project = typeof projectPath === 'string' && projectPath.trim()
+        ? await syncAgentSkill(projectPath)
+        : { files: [] };
+    return { ...installed, projectFiles: project.files };
 }
 async function readRecents() {
     try {

@@ -8,7 +8,7 @@ export type WorkflowCheck = {
 };
 
 export type NextTaskAction = {
-  action: 'claim' | 'define_acceptance' | 'wait_dependencies' | 'resolve_blocker' | 'advance_children' | 'progress' | 'test' | 'complete' | 'reopen' | 'view';
+  action: 'decompose' | 'claim' | 'define_acceptance' | 'wait_dependencies' | 'resolve_blocker' | 'advance_children' | 'progress' | 'test' | 'complete' | 'reopen' | 'view';
   label: string;
   reason: string;
   blockedBy: string[];
@@ -55,6 +55,18 @@ export function unresolvedDependencies(task: VaultRecord, allTasks: VaultRecord[
 
 export function openChildren(task: VaultRecord, allTasks: VaultRecord[]): VaultRecord[] {
   return allTasks.filter(child => child.parent === task.id && child.status !== 'done' && !child.archivedAt);
+}
+
+export function decompositionReasons(task: VaultRecord, allTasks: VaultRecord[]): string[] {
+  if (String(task.type ?? '').toLowerCase() === 'test') return [];
+  if (allTasks.some(child => child.parent === task.id && !child.archivedAt)) return [];
+  const description = textLines(task.description);
+  const criteria = textLines(task.acceptanceCriteria);
+  const reasons: string[] = [];
+  if (String(task.type ?? '').toLowerCase() === 'epic') reasons.push('Epic 必须先拆成可独立验收的子任务');
+  if (description.length >= 8) reasons.push(`描述包含 ${description.length} 个工作项，仍像实现清单`);
+  if (description.length >= 5 && criteria.length <= 1) reasons.push('多个工作项只对应一条验收标准，粒度过大');
+  return reasons;
 }
 
 function storedEvidence(task: VaultRecord): string[] {
@@ -134,9 +146,6 @@ export function nextTaskAction(task: VaultRecord, allTasks: VaultRecord[]): Next
   if (task.blocker) {
     return { action: 'resolve_blocker', label: '解除阻塞', reason: String(task.blocker), blockedBy: ['blocker'] };
   }
-  if (!isClaimActive(task)) {
-    return { action: 'claim', label: '领取任务', reason: '任务尚未被有效领取', blockedBy: [] };
-  }
   if (textLines(task.acceptanceCriteria).length === 0) {
     return { action: 'define_acceptance', label: '定义验收标准', reason: '开始实现前先明确可验证的完成条件', blockedBy: ['acceptance'] };
   }
@@ -148,6 +157,18 @@ export function nextTaskAction(task: VaultRecord, allTasks: VaultRecord[]): Next
       reason: `仍有 ${children.length} 个子任务未完成`,
       blockedBy: children.map(child => child.id),
     };
+  }
+  const decomposition = decompositionReasons(task, allTasks);
+  if (decomposition.length > 0) {
+    return {
+      action: 'decompose',
+      label: '继续拆解任务',
+      reason: decomposition.join('；'),
+      blockedBy: ['decomposition'],
+    };
+  }
+  if (!isClaimActive(task)) {
+    return { action: 'claim', label: '领取叶子任务', reason: '任务已满足叶子准入条件，可以领取执行', blockedBy: [] };
   }
   if (Number(task.progress ?? 0) < 100 && !hasPassingVerification(task, allTasks)) {
     return { action: 'progress', label: '推进实现', reason: '记录本次进展，完成后进入测试', blockedBy: [] };

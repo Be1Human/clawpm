@@ -1,3 +1,3 @@
 interface:
   display_name: "ClawPM 项目执行工作流"
-  short_description: "在 .clawpm 中拆分、领取、执行、测试和验收任务"
+  short_description: "在 .clawpm 中递归拆解、领取、执行、测试和验收任务"

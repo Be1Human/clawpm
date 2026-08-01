@@ -23,13 +23,28 @@ function task(overrides = {}) {
 }
 
 test('未领取任务的下一步是领取', () => {
-  assert.equal(nextTaskAction(task(), [task()]).action, 'claim');
+  const current = task({ acceptanceCriteria: ['可以验证结果'] });
+  assert.equal(nextTaskAction(current, [current]).action, 'claim');
 });
 
-test('领取后必须先定义验收标准', () => {
-  const current = task({ claim: { agent: 'codex', active: true, leaseUntil: now } });
-  assert.equal(isClaimActive(current), true);
+test('领取前必须先定义验收标准', () => {
+  const current = task();
+  assert.equal(isClaimActive(current), false);
   assert.equal(nextTaskAction(current, [current]).action, 'define_acceptance');
+});
+
+test('描述清单过大的任务必须继续拆解，不能直接领取', () => {
+  const current = task({
+    acceptanceCriteria: ['整体功能可用'],
+    description: Array.from({ length: 9 }, (_, index) => `实现步骤 ${index + 1}`),
+  });
+  assert.equal(nextTaskAction(current, [current]).action, 'decompose');
+});
+
+test('已有未完成子任务时必须先推进子任务', () => {
+  const current = task({ acceptanceCriteria: ['整体功能可用'] });
+  const child = task({ id: 'APP-001-001', parent: 'APP-001', acceptanceCriteria: ['子结果可验证'] });
+  assert.equal(nextTaskAction(current, [current, child]).action, 'advance_children');
 });
 
 test('通过测试后进入提交验收', () => {

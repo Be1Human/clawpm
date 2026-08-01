@@ -8,6 +8,7 @@ const AGENT_SKILL = "clawpm-project-workflow";
 const AGENT_SKILL_FILES = [
     "SKILL.md",
     "agents/openai.yaml",
+    "references/decomposition-protocol.md",
     "references/vault-protocol.md",
 ];
 

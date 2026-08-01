@@ -18,6 +18,7 @@ function lines(value: unknown): string[] {
 
 function actionTone(action: string): string {
   if (action === 'resolve_blocker' || action === 'wait_dependencies') return 'border-red-200 bg-red-50 text-red-800';
+  if (action === 'decompose') return 'border-violet-200 bg-violet-50 text-violet-800';
   if (action === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (action === 'test') return 'border-amber-200 bg-amber-50 text-amber-800';
   return 'border-indigo-200 bg-indigo-50 text-indigo-800';
@@ -126,7 +127,8 @@ export default function AgentWorkflowPanel({ task, members, canEdit, onUpdate }:
             </datalist>
             {!task.claimActive && task.status !== 'done' ? (
               <button
-                disabled={!canEdit || !actor.trim() || Boolean(pending)}
+                disabled={!canEdit || !actor.trim() || Boolean(pending) || nextAction.action !== 'claim'}
+                title={nextAction.action !== 'claim' ? `请先完成：${nextAction.label}` : undefined}
                 onClick={() => perform('claim', () => api.claimTask(task.taskId, actor.trim(), 120), '任务已领取，租约为 120 分钟。')}
                 className="px-3 py-2 text-xs rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 whitespace-nowrap"
               >{pending === 'claim' ? '领取中...' : '领取'}</button>
@@ -170,7 +172,7 @@ export default function AgentWorkflowPanel({ task, members, canEdit, onUpdate }:
           </div>
         </details>
 
-        <details className="group border-t border-slate-100 pt-3">
+        <details className="group border-t border-slate-100 pt-3" open={nextAction.action === 'decompose'}>
           <summary className="cursor-pointer list-none flex items-center justify-between text-sm font-medium text-slate-700">
             <span>拆分子任务</span><span className="text-slate-300 group-open:rotate-90 transition-transform">›</span>
           </summary>
@@ -183,7 +185,7 @@ export default function AgentWorkflowPanel({ task, members, canEdit, onUpdate }:
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50"
               placeholder={'每行创建一个子任务\n实现核心逻辑\n[test] 执行回归测试'}
             />
-            <p className="text-[10px] text-slate-400">使用 `[test]` 前缀创建测试任务，使用 `[review]` 创建评审任务。</p>
+            <p className="text-[10px] leading-4 text-slate-400">先拆“阶段/问题”，再继续拆到可独立实现并验证的叶子。使用 `[test]` 前缀创建测试任务，使用 `[review]` 创建评审任务。</p>
             <button
               disabled={!canEdit || parsedSplitItems().length === 0 || Boolean(pending) || task.status === 'done'}
               onClick={() => perform('split', async () => {

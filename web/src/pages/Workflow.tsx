@@ -8,6 +8,7 @@ import CreateTaskModal from '@/components/CreateTaskModal';
 
 const FILTERS = [
   { id: 'all', label: '全部' },
+  { id: 'decompose', label: '待拆解' },
   { id: 'claim', label: '待领取' },
   { id: 'resolve_blocker', label: '阻塞' },
   { id: 'progress', label: '执行中' },
@@ -16,6 +17,7 @@ const FILTERS = [
 ] as const;
 
 const ACTION_STYLE: Record<string, string> = {
+  decompose: 'bg-violet-50 text-violet-700 border-violet-100',
   claim: 'bg-blue-50 text-blue-700 border-blue-100',
   define_acceptance: 'bg-violet-50 text-violet-700 border-violet-100',
   wait_dependencies: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -47,6 +49,7 @@ export default function Workflow() {
   }), [tasks, filter]);
 
   const stats = [
+    { label: '待拆解', value: data?.counts?.decompose ?? 0, color: 'text-violet-600' },
     { label: '待领取', value: data?.counts?.claim ?? 0, color: 'text-blue-600' },
     { label: '执行中', value: data?.counts?.progress ?? 0, color: 'text-indigo-600' },
     { label: '阻塞', value: data?.counts?.resolve_blocker ?? 0, color: 'text-red-600' },
@@ -74,7 +77,7 @@ export default function Workflow() {
           </div>
         </header>
 
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-6 gap-3">
           {stats.map(stat => (
             <div key={stat.label} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-xs text-slate-400">{stat.label}</div>

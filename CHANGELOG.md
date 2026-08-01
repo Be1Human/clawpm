@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.8]
+
+- 将 Agent Skill 安装入口提升到侧边栏顶部和 File 菜单，并直接展示 Claude、Cursor、Codex、CodeBuddy 的安装状态。
+- 一键安装同时同步当前项目 Agent 规范，自动替换与新版单任务 Vault 协议冲突的旧版 ClawPM 指引。
+- 强制按“结果目标 → 阶段/问题 → 可验证叶子任务”递归拆解；大描述平铺任务会进入“待拆解”，父任务和未满足准入条件的任务不能领取。
+
 ## [0.1.7]
 
 - 一键安装覆盖 Claude Code、Cursor、Codex 和 CodeBuddy 的 5 个用户 Skill 目录，Codex 同时兼容 `.agents/skills` 与 `.codex/skills`。

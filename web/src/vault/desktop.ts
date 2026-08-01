@@ -57,6 +57,7 @@ export interface RecommendedSkillInstallationResult {
   manifestPath: string;
   backupPaths: string[];
   failures: Array<{ platform: SkillPlatform; message: string }>;
+  projectFiles: string[];
 }
 
 declare global {

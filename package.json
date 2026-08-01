@@ -1,6 +1,6 @@
 {
   "name": "clawpm",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Local-first Electron project management desktop application",
   "private": true,
   "scripts": {

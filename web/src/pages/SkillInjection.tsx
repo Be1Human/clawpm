@@ -65,6 +65,11 @@ export default function SkillInjection() {
   const userTargets = targets.filter(target => target.scope === 'user');
   const ready = userTargets.length === PLATFORM_ORDER.length && userTargets.every(target => target.status === 'current');
   const pendingUserCount = userTargets.filter(target => target.status !== 'current').length;
+  const installedUserCount = userTargets.filter(target => target.status === 'current').length;
+  const userStatusCards = PLATFORM_ORDER.map(platform => ({
+    platform,
+    target: userTargets.find(target => target.platform === platform),
+  }));
   const grouped = useMemo(() => PLATFORM_ORDER.map(platform => ({
     platform,
     targets: targets.filter(target => target.platform === platform),
@@ -87,7 +92,7 @@ export default function SkillInjection() {
           text: `已完成 ${result.installedPlatforms} 个平台，还有 ${result.failures.length} 个没有装好。点一下“重新安装”即可继续。`,
         });
       } else {
-        setNotice({ kind: 'success', text: '安装完成。Skill、全局 Agent 指引和安装记录均已自动配置。' });
+        setNotice({ kind: 'success', text: '安装完成。4 个平台的用户 Skill 与当前项目 Agent 规范均已自动配置。' });
       }
     } catch (error) {
       setNotice({ kind: 'error', text: (error as Error).message || '安装失败，请重试。' });
@@ -121,11 +126,56 @@ export default function SkillInjection() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
             <Bot className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-semibold text-slate-900">让 Agent 学会使用 ClawPM</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">Agent Skill 安装中心</p>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-900">一键把 ClawPM 工作流装进 Agent</h1>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-            不用选择平台，不用配置路径。ClawPM 会自动处理 Claude、Cursor、Codex 和 CodeBuddy。
+            不用找目录，不用复制文件，不用理解配置。点一次即可自动安装到 Claude、Cursor、Codex 和 CodeBuddy。
           </p>
         </header>
+
+        {!query.isLoading && !query.isError && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Agent Skill 安装状态">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">当前安装状态</h2>
+                <p className="mt-1 text-xs text-slate-500">这里显示的是用户级 Skill，安装一次后可供所有项目使用。</p>
+              </div>
+              <span className={cn(
+                'rounded-full border px-3 py-1 text-xs font-semibold',
+                ready
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-indigo-200 bg-indigo-50 text-indigo-700',
+              )}>
+                {installedUserCount}/4 已就绪
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {userStatusCards.map(({ platform, target }) => {
+                const style = PLATFORM_STYLE[platform];
+                const status = target ? STATUS_VIEW[target.status] : STATUS_VIEW.not_installed;
+                return (
+                  <article key={platform} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className={cn('flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[10px] font-bold', style.badge)}>
+                        {style.initials}
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-xs font-semibold text-slate-900">{target?.platformName ?? platform}</h3>
+                        <p className="text-[10px] text-slate-400">所有项目</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', status.className)}>
+                        {status.label}
+                      </span>
+                      <span className="text-[10px] text-slate-400">自动检测</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {query.isLoading ? (
           <section className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 shadow-sm">
@@ -171,9 +221,9 @@ export default function SkillInjection() {
           <section className="relative min-h-64 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 px-6 py-10 text-center text-white shadow-lg shadow-indigo-200">
             <Sparkles className="absolute right-8 top-7 h-8 w-8 text-white/20" />
             <div className="relative mx-auto max-w-xl">
-              <h2 className="text-xl font-semibold">一键完成全部安装</h2>
+              <h2 className="text-xl font-semibold">一键安装到 4 个 Agent 平台</h2>
               <p className="mt-2 text-sm leading-6 text-indigo-100">
-                自动补齐 {pendingUserCount || 4} 个平台的配置，不修改当前项目文件，也不会产生待提交内容。
+                自动补齐 {pendingUserCount || 4} 个平台的用户配置，并同步当前项目的 Agent 工作流规范。
               </p>
               <button
                 type="button"
@@ -184,7 +234,7 @@ export default function SkillInjection() {
                 {running === 'recommended' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                 {running === 'recommended' ? '正在自动安装…' : notice?.kind === 'error' ? '重新安装' : '立即一键安装'}
               </button>
-              <p className="mt-3 text-xs text-indigo-200">无需管理员权限 · 无需重启 ClawPM</p>
+              <p className="mt-3 text-xs text-indigo-200">无需管理员权限 · 当前项目规范会随 Git 共享给团队</p>
             </div>
           </section>
         )}

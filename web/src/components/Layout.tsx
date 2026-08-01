@@ -9,7 +9,7 @@ import { useI18n } from '@/lib/i18n';
 import logoImg from '@/assets/logo.png';
 import CommandPalette from './CommandPalette';
 import { reopenVault, useVaultSession } from '@/vault/session';
-import { isElectronRuntime } from '@/vault/desktop';
+import { getSkillInjectionTargets, isElectronRuntime } from '@/vault/desktop';
 
 // ── 导航结构（单机 lite：去除个人/项目双空间与多人协作项） ────────
 const NAV_GROUPS = [
@@ -33,7 +33,6 @@ const NAV_GROUPS = [
   {
     labelKey: 'nav.settings',
     items: [
-      { to: '/skill-injection', labelKey: 'nav.skillInjection', icon: SkillIcon },
       { to: '/domains',        labelKey: 'nav.domains',        icon: DomainIcon },
       { to: '/custom-fields',  labelKey: 'nav.customFields',   icon: FieldsIcon },
       { to: '/members',        labelKey: 'nav.members',        icon: MembersIcon },
@@ -241,6 +240,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { favorites } = useFavorites();
   const vaultSession = useVaultSession();
   const desktop = isElectronRuntime();
+  const projectPath = vaultSession.status === 'ready' ? vaultSession.vault.projectPath : '';
+  const skillTargetsQuery = useQuery({
+    queryKey: ['skill-injection-targets', projectPath],
+    queryFn: () => getSkillInjectionTargets(projectPath),
+    enabled: desktop && Boolean(projectPath),
+  });
+  const userSkillTargets = (skillTargetsQuery.data ?? []).filter(target => target.scope === 'user');
+  const installedSkillCount = userSkillTargets.filter(target => target.status === 'current').length;
+  const outdatedSkillCount = userSkillTargets.filter(target => target.status === 'update_available').length;
+  const skillStatus = skillTargetsQuery.isLoading
+    ? { label: '正在检测安装状态', dot: 'bg-slate-300' }
+    : skillTargetsQuery.isError
+      ? { label: '点击查看并重新检测', dot: 'bg-rose-500' }
+      : installedSkillCount === 4
+        ? { label: '4/4 平台已就绪', dot: 'bg-emerald-500' }
+        : outdatedSkillCount > 0
+          ? { label: `${outdatedSkillCount} 个平台需要更新`, dot: 'bg-amber-500' }
+          : { label: `${4 - installedSkillCount} 个平台等待安装`, dot: 'bg-indigo-500' };
 
   // Cmd+K / Ctrl+K global shortcut
   useEffect(() => {
@@ -345,6 +362,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {switching ? '正在切换…' : vaultInfo?.current ?? ''}
           </p>
         </div>
+
+        {desktop && (
+          <div className="border-b px-3 py-3" style={{ borderColor: '#e8eaed' }}>
+            <NavLink
+              to="/skill-injection"
+              className={({ isActive }) => cn(
+                'block rounded-xl border px-3 py-2.5 shadow-sm transition-all',
+                isActive
+                  ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100'
+                  : 'border-indigo-200 bg-gradient-to-br from-indigo-50 to-violet-50 hover:border-indigo-300 hover:shadow',
+              )}
+            >
+              <span className="flex items-center gap-2 text-[13px] font-semibold text-indigo-800">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                  <SkillIcon className="h-4 w-4" />
+                </span>
+                安装 Agent Skill
+              </span>
+              <span className="mt-1.5 flex items-center gap-1.5 pl-9 text-[10px] font-medium text-slate-500">
+                <span className={cn('h-2 w-2 rounded-full', skillStatus.dot)} />
+                {skillStatus.label}
+              </span>
+            </NavLink>
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
