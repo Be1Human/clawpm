@@ -64,6 +64,12 @@ function recentsPath() {
 function skillBackupRoot() {
     return path_1.default.join(electron_1.app.getPath('userData'), 'skill-backups');
 }
+function skillInstallationManifestPath() {
+    return path_1.default.join(electron_1.app.getPath('userData'), 'skill-installations', `${skill_injection_1.AGENT_SKILL}.json`);
+}
+function globalAgentInstructionsPath() {
+    return path_1.default.join(electron_1.app.getPath('home'), '.codex', AGENTS_FILE);
+}
 function writeDiagnostic(message) {
     void promises_1.default.appendFile(path_1.default.join(electron_1.app.getPath('userData'), 'renderer.log'), `${new Date().toISOString()} ${message}\n`);
 }
@@ -143,6 +149,17 @@ async function injectAgentSkill(request) {
         backupRoot: skillBackupRoot(),
         platform: request.platform,
         scope: request.scope,
+    });
+}
+async function installRecommendedAgentSkill(projectPath) {
+    return (0, skill_injection_1.installRecommended)({
+        appPath: electron_1.app.getAppPath(),
+        appVersion: electron_1.app.getVersion(),
+        homePath: electron_1.app.getPath('home'),
+        projectPath: null,
+        backupRoot: skillBackupRoot(),
+        globalAgentsPath: globalAgentInstructionsPath(),
+        manifestPath: skillInstallationManifestPath(),
     });
 }
 async function readRecents() {
@@ -415,6 +432,7 @@ electron_1.app.whenReady().then(() => {
     electron_1.ipcMain.handle('agent-skill:sync', async (_event, projectPath) => syncAgentSkill(projectPath));
     electron_1.ipcMain.handle('skill-injection:targets', async (_event, projectPath) => skillInjectionTargets(projectPath));
     electron_1.ipcMain.handle('skill-injection:inject', async (_event, request) => injectAgentSkill(request));
+    electron_1.ipcMain.handle('skill-injection:install-recommended', async (_event, projectPath) => installRecommendedAgentSkill(projectPath));
     electron_1.ipcMain.handle('window:minimize', () => mainWindow?.minimize());
     electron_1.ipcMain.handle('window:toggle-maximize', () => {
         if (!mainWindow)

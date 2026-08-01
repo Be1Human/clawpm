@@ -19,6 +19,7 @@ import { useVaultSession } from '@/vault/session';
 import {
   getSkillInjectionTargets,
   injectSkill as injectAgentSkill,
+  installRecommendedSkill,
   type SkillInjectionStatus,
   type SkillInjectionTarget,
   type SkillPlatform,
@@ -75,25 +76,24 @@ export default function SkillInjection() {
   }
 
   async function installRecommended() {
-    const pending = userTargets.filter(target => target.status !== 'current');
-    if (pending.length === 0) {
-      setNotice({ kind: 'success', text: 'ClawPM 工作流已经安装，可以直接使用。' });
-      return;
-    }
     setRunning('recommended');
     setNotice(null);
-    const results = await Promise.allSettled(pending.map(installTarget));
-    const failures = results.filter(result => result.status === 'rejected');
-    await query.refetch();
-    if (failures.length > 0) {
-      setNotice({
-        kind: 'error',
-        text: `已完成 ${pending.length - failures.length} 个平台，还有 ${failures.length} 个没有装好。点一下“重新安装”即可继续。`,
-      });
-    } else {
-      setNotice({ kind: 'success', text: '安装完成。现在直接让 Agent 使用 ClawPM 管理项目任务即可。' });
+    try {
+      const result = await installRecommendedSkill(projectPath);
+      await query.refetch();
+      if (result.failures.length > 0) {
+        setNotice({
+          kind: 'error',
+          text: `已完成 ${result.installedPlatforms} 个平台，还有 ${result.failures.length} 个没有装好。点一下“重新安装”即可继续。`,
+        });
+      } else {
+        setNotice({ kind: 'success', text: '安装完成。Skill、全局 Agent 指引和安装记录均已自动配置。' });
+      }
+    } catch (error) {
+      setNotice({ kind: 'error', text: (error as Error).message || '安装失败，请重试。' });
+    } finally {
+      setRunning('');
     }
-    setRunning('');
   }
 
   async function runOne(target: SkillInjectionTarget) {
@@ -157,6 +157,15 @@ export default function SkillInjection() {
               <ShieldCheck className="h-4 w-4" />
               后续更新也只需再点一次
             </div>
+            <button
+              type="button"
+              onClick={() => void installRecommended()}
+              disabled={running === 'recommended'}
+              className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-60"
+            >
+              {running === 'recommended' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {running === 'recommended' ? '正在同步配置…' : '重新同步全部配置'}
+            </button>
           </section>
         ) : (
           <section className="relative min-h-64 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 px-6 py-10 text-center text-white shadow-lg shadow-indigo-200">
@@ -253,6 +262,11 @@ export default function SkillInjection() {
                             <div className="truncate rounded-md bg-slate-50 px-2.5 py-1.5 font-mono text-[10px] text-slate-400" title={target.path}>
                               {target.path}
                             </div>
+                            {target.additionalPaths.map(additionalPath => (
+                              <div key={additionalPath} className="truncate rounded-md bg-slate-50 px-2.5 py-1.5 font-mono text-[10px] text-slate-400" title={additionalPath}>
+                                {additionalPath}
+                              </div>
+                            ))}
                             <div className="flex justify-end">
                               <button
                                 type="button"

@@ -28,7 +28,8 @@ const PLATFORM_DEFINITIONS = Object.freeze({
         id: "codex",
         name: "Codex",
         directory: ".agents",
-        note: "使用开放 Agent Skills 标准目录；如果当前会话未发现，请重启 Codex。",
+        compatibilityDirectory: ".codex",
+        note: "同时安装开放标准目录与 Codex 兼容目录；如果当前会话未发现，请重启 Codex。",
     }),
     codebuddy: Object.freeze({
         id: "codebuddy",
@@ -69,6 +70,21 @@ function resolveSkillTarget(options) {
     if (relative !== AGENT_SKILL || relative.startsWith("..") || path.isAbsolute(relative))
         throw new Error("Skill 安装目标超出允许目录。");
     return { basePath, targetPath };
+}
+
+function resolveSkillTargets(options) {
+    const definition = assertPlatform(options.platform);
+    const primary = resolveSkillTarget(options);
+    const targets = [{ ...primary, id: definition.id }];
+    if (options.scope === "user" && definition.compatibilityDirectory) {
+        const basePath = path.resolve(options.homePath, definition.compatibilityDirectory, "skills");
+        const targetPath = path.resolve(basePath, AGENT_SKILL);
+        const relative = path.relative(basePath, targetPath);
+        if (relative !== AGENT_SKILL || relative.startsWith("..") || path.isAbsolute(relative))
+            throw new Error("Skill 兼容安装目标超出允许目录。");
+        targets.push({ basePath, targetPath, id: `${definition.id}-compatibility` });
+    }
+    return targets;
 }
 
 function bundledSkillRoot(appPath) {
@@ -128,16 +144,28 @@ async function inspectTarget(sourceRoot, targetRoot) {
 
 async function describeTarget(options) {
     const definition = assertPlatform(options.platform);
-    const { targetPath } = resolveSkillTarget(options);
     const sourceRoot = bundledSkillRoot(options.appPath);
-    const inspection = await inspectTarget(sourceRoot, targetPath);
+    const locations = resolveSkillTargets(options);
+    const inspections = await Promise.all(locations.map(location => inspectTarget(sourceRoot, location.targetPath)));
+    const installedFileCount = inspections.reduce((sum, item) => sum + item.installedFileCount, 0);
+    const matchingFileCount = inspections.reduce((sum, item) => sum + item.matchingFileCount, 0);
+    const totalFileCount = inspections.reduce((sum, item) => sum + item.totalFileCount, 0);
+    const status = installedFileCount === 0
+        ? "not_installed"
+        : matchingFileCount === totalFileCount
+            ? "current"
+            : "update_available";
     return {
         platform: definition.id,
         platformName: definition.name,
         scope: options.scope,
-        path: targetPath,
+        path: locations[0].targetPath,
+        additionalPaths: locations.slice(1).map(location => location.targetPath),
         note: definition.note,
-        ...inspection,
+        status,
+        installedFileCount,
+        matchingFileCount,
+        totalFileCount,
     };
 }
 
@@ -166,11 +194,8 @@ async function copyBundledFiles(sourceRoot, targetRoot) {
     }
 }
 
-async function injectSkill(options) {
-    const definition = assertPlatform(options.platform);
-    assertScope(options.scope);
-    const sourceRoot = bundledSkillRoot(options.appPath);
-    const { basePath, targetPath } = resolveSkillTarget(options);
+async function installOneTarget(options, definition, sourceRoot, location) {
+    const { basePath, targetPath } = location;
     for (const directory of [path.dirname(basePath), basePath]) {
         const kind = await pathKind(directory);
         if (kind === "symlink")
@@ -184,13 +209,11 @@ async function injectSkill(options) {
     if (targetKind !== "missing" && targetKind !== "directory")
         throw new Error(`Skill 目标已被非目录文件占用：${targetPath}`);
 
-    const currentTarget = await describeTarget(options);
-    if (currentTarget.status === "current") {
+    const currentInspection = await inspectTarget(sourceRoot, targetPath);
+    if (currentInspection.status === "current") {
         return {
-            ok: true,
             changed: false,
             backupPath: null,
-            target: currentTarget,
             files: AGENT_SKILL_FILES.map(relative => path.join(targetPath, relative)),
         };
     }
@@ -206,7 +229,7 @@ async function injectSkill(options) {
             backupPath = path.resolve(
                 options.backupRoot,
                 `${backupStamp()}-${transactionId}`,
-                definition.id,
+                location.id,
                 options.scope,
                 AGENT_SKILL,
             );
@@ -224,11 +247,123 @@ async function injectSkill(options) {
     }
 
     return {
-        ok: true,
         changed: true,
         backupPath,
-        target: await describeTarget(options),
         files: AGENT_SKILL_FILES.map(relative => path.join(targetPath, relative)),
+    };
+}
+
+async function injectSkill(options) {
+    const definition = assertPlatform(options.platform);
+    assertScope(options.scope);
+    const sourceRoot = bundledSkillRoot(options.appPath);
+    const results = [];
+    for (const location of resolveSkillTargets(options))
+        results.push(await installOneTarget(options, definition, sourceRoot, location));
+    const backupPaths = results.map(result => result.backupPath).filter(Boolean);
+    return {
+        ok: true,
+        changed: results.some(result => result.changed),
+        backupPath: backupPaths[0] || null,
+        backupPaths,
+        target: await describeTarget(options),
+        files: results.flatMap(result => result.files),
+    };
+}
+
+async function atomicWrite(target, content) {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const temporary = path.join(path.dirname(target), `.${path.basename(target)}.clawpm-tmp-${process.pid}-${Date.now()}`);
+    await fs.writeFile(temporary, content, "utf8");
+    await fs.rename(temporary, target);
+}
+
+async function readTextIfExists(target) {
+    try {
+        return await fs.readFile(target, "utf8");
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return "";
+        throw error;
+    }
+}
+
+function upsertManagedSection(current, section, startMarker, endMarker) {
+    const start = current.indexOf(startMarker);
+    const end = current.indexOf(endMarker);
+    if (start >= 0 && end >= start) {
+        const after = end + endMarker.length;
+        return `${current.slice(0, start).trimEnd()}${current.slice(0, start).trim() ? "\n\n" : ""}${section}${current.slice(after).trim() ? `\n\n${current.slice(after).trimStart()}` : "\n"}`;
+    }
+    return `${current.trimEnd()}${current.trim() ? "\n\n" : ""}${section}\n`;
+}
+
+function buildGlobalAgentSection() {
+    return [
+        "<!-- clawpm:global-agent:start -->",
+        "## ClawPM 项目工作流",
+        "",
+        "- 当项目包含 `.clawpm/clawpm.json` 时，使用 `clawpm-project-workflow` Skill 规划、拆分、创建、领取、执行、测试和验收任务。",
+        "- `.clawpm` 是任务事实源；修改前读取 `.clawpm/AGENTS.md` 并检查 `git diff -- .clawpm`。",
+        "- 不需要 ClawPM CLI、Server、端口或 token；Skill 直接维护项目内的 Vault 文件。",
+        "",
+        "<!-- clawpm:global-agent:end -->",
+    ].join("\n");
+}
+
+async function installRecommended(options) {
+    const platforms = Object.keys(PLATFORM_DEFINITIONS);
+    const settled = await Promise.allSettled(platforms.map(platform => injectSkill({
+        ...options,
+        platform,
+        scope: "user",
+    })));
+    const results = [];
+    const failures = [];
+    settled.forEach((result, index) => {
+        if (result.status === "fulfilled")
+            results.push(result.value);
+        else
+            failures.push({ platform: platforms[index], message: result.reason?.message || String(result.reason) });
+    });
+
+    if (results.length > 0) {
+        const globalAgents = upsertManagedSection(
+            await readTextIfExists(options.globalAgentsPath),
+            buildGlobalAgentSection(),
+            "<!-- clawpm:global-agent:start -->",
+            "<!-- clawpm:global-agent:end -->",
+        );
+        await atomicWrite(options.globalAgentsPath, globalAgents);
+    }
+
+    const targets = await listTargets(options);
+    const backupPaths = results.flatMap(result => result.backupPaths || []);
+    const manifest = {
+        format: "clawpm-skill-installation@1",
+        skill: AGENT_SKILL,
+        appVersion: options.appVersion,
+        installedAt: new Date().toISOString(),
+        targets: targets.filter(target => target.scope === "user").map(target => ({
+            platform: target.platform,
+            paths: [target.path, ...(target.additionalPaths || [])],
+            status: target.status,
+        })),
+        globalAgentsPath: results.length > 0 ? options.globalAgentsPath : null,
+        cli: { installed: false, required: false },
+        backupPaths,
+        failures,
+    };
+    await atomicWrite(options.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    return {
+        ok: failures.length === 0,
+        installedPlatforms: results.length,
+        installedPaths: results.flatMap(result => [result.target.path, ...(result.target.additionalPaths || [])]),
+        globalAgentsPath: manifest.globalAgentsPath,
+        manifestPath: options.manifestPath,
+        backupPaths,
+        failures,
     };
 }
 
@@ -239,6 +374,8 @@ module.exports = {
     bundledSkillRoot,
     describeTarget,
     injectSkill,
+    installRecommended,
     listTargets,
     resolveSkillTarget,
+    resolveSkillTargets,
 };

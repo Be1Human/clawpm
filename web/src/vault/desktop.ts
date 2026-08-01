@@ -26,6 +26,7 @@ export interface SkillInjectionTarget {
   platformName: string;
   scope: SkillScope;
   path: string;
+  additionalPaths: string[];
   note: string;
   status: SkillInjectionStatus;
   installedFileCount: number;
@@ -43,8 +44,19 @@ export interface SkillInjectionResult {
   ok: boolean;
   changed: boolean;
   backupPath: string | null;
+  backupPaths: string[];
   target: SkillInjectionTarget;
   files: string[];
+}
+
+export interface RecommendedSkillInstallationResult {
+  ok: boolean;
+  installedPlatforms: number;
+  installedPaths: string[];
+  globalAgentsPath: string | null;
+  manifestPath: string;
+  backupPaths: string[];
+  failures: Array<{ platform: SkillPlatform; message: string }>;
 }
 
 declare global {
@@ -57,6 +69,7 @@ declare global {
       syncAgentSkill(projectPath: string): Promise<{ ok: boolean; files: string[] }>;
       getSkillInjectionTargets(projectPath: string): Promise<SkillInjectionTarget[]>;
       injectSkill(request: SkillInjectionRequest): Promise<SkillInjectionResult>;
+      installRecommendedSkill(projectPath: string): Promise<RecommendedSkillInstallationResult>;
       onProjectOpened(callback: (snapshot: VaultSnapshot) => void): () => void;
       onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void;
       minimizeWindow(): Promise<void>;
@@ -98,6 +111,10 @@ export async function getSkillInjectionTargets(projectPath: string): Promise<Ski
 
 export async function injectSkill(request: SkillInjectionRequest): Promise<SkillInjectionResult> {
   return requireDesktop().injectSkill(request);
+}
+
+export async function installRecommendedSkill(projectPath: string): Promise<RecommendedSkillInstallationResult> {
+  return requireDesktop().installRecommendedSkill(projectPath);
 }
 
 export function onVaultOpened(callback: (snapshot: VaultSnapshot) => void): () => void {
