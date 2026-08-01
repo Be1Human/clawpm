@@ -18,11 +18,5 @@
     "electron",
     "local-first"
   ],
-  "license": "MIT",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild"
-    ]
-  }
+  "license": "MIT"
 }
