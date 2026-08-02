@@ -78,9 +78,9 @@ export default function TaskList() {
   }, []);
 
   return (
-    <div className="min-h-full bg-[#f6f8fc] p-6 lg:p-8 animate-fade-in">
-      <div className="mx-auto w-full max-w-[1680px]">
-      <div className="mb-6 flex flex-col gap-4 border-b border-gray-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="min-h-full bg-[#f6f8fc] p-5 lg:p-6 animate-fade-in">
+      <div className="w-full">
+      <div className="mb-5 flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Task inventory</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-950">任务树</h1>

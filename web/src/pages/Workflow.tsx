@@ -59,8 +59,8 @@ export default function Workflow() {
 
   return (
     <div className="min-h-full overflow-y-auto bg-[#f6f8fc]">
-      <div className="w-full max-w-[1600px] mx-auto px-6 py-8 lg:px-10 space-y-6">
-        <header className="flex flex-col gap-4 border-b border-gray-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="w-full space-y-5 px-5 py-5 lg:px-7 lg:py-6">
+        <header className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Execution cockpit</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-950">Agent 工作流</h1>
