@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { matchesTaskSearch } from './task-search';
 
 export interface FilterState {
   status: Set<string>;
@@ -165,9 +166,7 @@ export function applyFilters(tasks: any[], filters: FilterState): any[] {
     if (filters.dateFrom && task.dueDate && task.dueDate < filters.dateFrom) return false;
     if (filters.dateTo && task.dueDate && task.dueDate > filters.dateTo) return false;
     if (filters.search) {
-      const q = filters.search.toLowerCase();
-      const match = (task.title?.toLowerCase().includes(q)) || (task.taskId?.toLowerCase().includes(q));
-      if (!match) return false;
+      if (!matchesTaskSearch(task, filters.search)) return false;
     }
     return true;
   });

@@ -10,10 +10,11 @@
     "release:preflight": "node scripts/release/preflight.mjs",
     "release:clean": "node scripts/release/clean.mjs",
     "release:build:win": "node scripts/release/build-windows.mjs",
-    "test": "pnpm test:workflow && pnpm test:skill-injection && pnpm test:desktop-vault",
+    "test": "pnpm test:workflow && pnpm test:skill-injection && pnpm test:desktop-vault && pnpm test:task-search",
     "test:workflow": "node --experimental-strip-types --test scripts/tests/task-workflow.test.mjs",
     "test:skill-injection": "node --test scripts/tests/skill-injection.test.mjs",
     "test:desktop-vault": "node --test scripts/tests/desktop-vault-format.test.mjs",
+    "test:task-search": "node --experimental-strip-types --test scripts/tests/task-search.test.mjs",
     "lint": "pnpm --filter web lint"
   },
   "keywords": [

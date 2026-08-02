@@ -1,4 +1,5 @@
 import type { FilterState } from './useFilters';
+import { matchesTaskSearch } from './task-search';
 
 const PRIORITY_ORDER: Record<string, number> = {
   P0: 0,
@@ -68,9 +69,7 @@ export function treeMatchesFilters(task: any, filters: FilterState): boolean {
   if (filters.dateTo && task.dueDate && task.dueDate > filters.dateTo) return false;
 
   if (filters.search) {
-    const q = filters.search.toLowerCase();
-    const matched = (task.title?.toLowerCase().includes(q)) || (task.taskId?.toLowerCase().includes(q));
-    if (!matched) return false;
+    if (!matchesTaskSearch(task, filters.search)) return false;
   }
 
   return true;
