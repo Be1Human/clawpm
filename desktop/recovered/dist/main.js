@@ -11,6 +11,7 @@ const skill_injection_1 = require("./skill-injection");
 // Some Windows systems create the BrowserWindow but fail to paint its GPU surface.
 electron_1.app.disableHardwareAcceleration();
 const VAULT_FORMAT = 'clawpm-vault@1';
+const SUPPORTED_VAULT_FORMATS = new Set([VAULT_FORMAT, 'clawpm-vault@2']);
 const VAULT_DIRECTORY = '.clawpm';
 const ROOT_FILES = ['clawpm.json', 'domains.json', 'milestones.json', 'fields.json', 'links.json', 'people.json', 'AGENTS.md'];
 const RECENTS_FILE = 'recent-projects.json';
@@ -218,8 +219,8 @@ async function validateVault(vaultPath) {
     catch {
         throw new Error(`不是有效需求库：缺少或无法读取 ${configPath}`);
     }
-    if (config.format !== VAULT_FORMAT) {
-        throw new Error(`不是有效需求库：clawpm.json 的 format 必须为 ${VAULT_FORMAT}`);
+    if (!SUPPORTED_VAULT_FORMATS.has(config.format)) {
+        throw new Error(`不是有效需求库：clawpm.json 的 format 必须为 ${[...SUPPORTED_VAULT_FORMATS].join(' 或 ')}`);
     }
     return { name: config.name?.trim() || path_1.default.basename(path_1.default.dirname(path_1.default.dirname(vaultPath))) };
 }

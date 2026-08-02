@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useActiveProject } from '@/lib/useActiveProject';
@@ -20,23 +20,11 @@ const LABEL_COLORS: Record<string, { bg: string; text: string }> = {
   chore:   { bg: '#f1f5f9', text: '#475569' },
 };
 
-type ViewMode = 'tree' | 'table';
-const VIEW_STORAGE_KEY = 'clawpm-task-list-view';
-
 export default function TaskList() {
   const { t } = useI18n();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-      return (saved === 'table' ? 'table' : 'tree') as ViewMode;
-    } catch { return 'tree'; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(VIEW_STORAGE_KEY, viewMode); } catch {}
-  }, [viewMode]);
 
   const activeProject = useActiveProject();
 
@@ -90,38 +78,18 @@ export default function TaskList() {
   }, []);
 
   return (
-    <div className="p-6 animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+    <div className="min-h-full bg-[#f6f8fc] p-6 lg:p-8 animate-fade-in">
+      <div className="mx-auto w-full max-w-[1680px]">
+      <div className="mb-6 flex flex-col gap-4 border-b border-gray-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">节点列表</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Task inventory</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-950">任务树</h1>
+          <p className="mt-1.5 text-sm text-gray-600">
             {visibleTasks.length} / {totalNodes} 个节点，按需求树展开，同级按优先级排序
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* 视图切换 */}
-          <div className="inline-flex rounded-md overflow-hidden border border-slate-700 text-xs">
-            <button
-              onClick={() => setViewMode('tree')}
-              className={cn(
-                'px-3 py-1.5 transition-colors',
-                viewMode === 'tree' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:bg-slate-800'
-              )}
-              title="树形视图：每个节点一行"
-            >
-              🌳 树形
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={cn(
-                'px-3 py-1.5 transition-colors border-l border-slate-700',
-                viewMode === 'table' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:bg-slate-800'
-              )}
-              title="表格视图：一个父节点一行，子节点缩进列在同一格"
-            >
-              📊 表格
-            </button>
-          </div>
+          <span className="hidden rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 sm:inline-flex">树状清单</span>
           <button onClick={() => setShowCreate(true)} className="btn-primary">+ 新建节点</button>
         </div>
       </div>
@@ -131,9 +99,9 @@ export default function TaskList() {
         <FilterBar {...filterHook} />
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="min-w-[1080px]">
-          <div className="flex items-center border-b border-slate-800 text-sm">
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="min-w-[900px]">
+          <div className="flex items-center border-b border-gray-200 bg-gray-50/80 text-sm">
             <div className="px-2 py-2 w-8">
               <input
                 type="checkbox"
@@ -142,26 +110,23 @@ export default function TaskList() {
                 className="rounded border-gray-500"
               />
             </div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium flex-shrink-0" style={{ width: idColumnWidth }}>{t('taskList.thId')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium flex-1">{t('taskList.thTitle')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thLabel')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thStatus')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-16">{t('taskList.thPriority')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thDomain')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">处理人</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-28">{t('taskList.thProgress')}</div>
-            <div className="text-left px-4 py-2 text-xs text-slate-500 font-medium w-24">{t('taskList.thDueDate')}</div>
+            <div className="flex-shrink-0 px-4 py-3 text-left text-xs font-semibold text-gray-600" style={{ width: idColumnWidth }}>{t('taskList.thId')}</div>
+            <div className="flex-1 px-4 py-3 text-left text-xs font-semibold text-gray-600">{t('taskList.thTitle')}</div>
+            <div className="w-24 px-4 py-3 text-left text-xs font-semibold text-gray-600">{t('taskList.thStatus')}</div>
+            <div className="w-16 px-4 py-3 text-left text-xs font-semibold text-gray-600">{t('taskList.thPriority')}</div>
+            <div className="w-32 px-4 py-3 text-left text-xs font-semibold text-gray-600">处理人</div>
+            <div className="w-32 px-4 py-3 text-left text-xs font-semibold text-gray-600">{t('taskList.thProgress')}</div>
           </div>
 
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="border-b border-slate-800/50 px-4 py-2">
-                <div className="h-4 bg-slate-800 rounded animate-pulse" />
+              <div key={i} className="border-b border-gray-100 px-4 py-3">
+                <div className="h-4 rounded bg-gray-100 animate-pulse" />
               </div>
             ))
           ) : visibleTasks.length === 0 ? (
-            <div className="text-center py-12 text-slate-600">没有节点</div>
-          ) : viewMode === 'tree' ? (
+            <div className="py-12 text-center text-gray-500">没有节点</div>
+          ) : (
             filteredTree.map((task: any) => (
               <TaskTreeRow
                 key={task.id}
@@ -172,16 +137,6 @@ export default function TaskList() {
                 idColumnWidth={idColumnWidth}
                 onToggleSelect={toggleSelect}
                 onToggleCollapse={toggleCollapse}
-              />
-            ))
-          ) : (
-            filteredTree.map((task: any) => (
-              <TaskTableRow
-                key={task.id}
-                task={task}
-                selectedIds={selectedIds}
-                idColumnWidth={idColumnWidth}
-                onToggleSelect={toggleSelect}
               />
             ))
           )}
@@ -195,6 +150,7 @@ export default function TaskList() {
       />
 
       {showCreate && <CreateTaskModal onClose={() => setShowCreate(false)} />}
+      </div>
     </div>
   );
 }
@@ -230,8 +186,8 @@ function TaskTreeRow({
     <>
       <div
         className={cn(
-          'flex items-center border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors text-sm',
-          isSelected && 'bg-indigo-900/20'
+          'flex items-center border-b border-gray-100 px-0 text-sm transition-colors hover:bg-indigo-50/50',
+          isSelected && 'bg-indigo-50'
         )}
       >
         <div className="px-2 py-1.5 w-8">
@@ -242,92 +198,60 @@ function TaskTreeRow({
             className="rounded border-gray-500"
           />
         </div>
-        <div className="px-4 py-1.5 flex-shrink-0" style={{ width: idColumnWidth }}>
-          <Link to={`/tasks/${task.taskId}`} className="font-mono text-xs text-slate-500 hover:text-brand-400 whitespace-nowrap">
+        <div className="flex-shrink-0 px-4 py-3" style={{ width: idColumnWidth }}>
+          <Link to={`/tasks/${task.taskId}`} className="whitespace-nowrap font-mono text-xs text-gray-500 hover:text-indigo-700">
             {task.taskId}
           </Link>
         </div>
-        <div className="px-4 py-1.5 flex-1 min-w-0">
+        <div className="min-w-0 flex-1 px-4 py-3">
           <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: `${depth * 20}px` }}>
             <button
               type="button"
               onClick={() => hasChildren && onToggleCollapse(task.taskId)}
               className={cn(
-                'w-4 h-4 flex items-center justify-center text-[10px] text-slate-500 flex-shrink-0',
-                hasChildren ? 'hover:text-slate-300 cursor-pointer' : 'invisible cursor-default'
+                'flex h-4 w-4 flex-shrink-0 items-center justify-center text-[10px] text-gray-400',
+                hasChildren ? 'cursor-pointer hover:text-gray-700' : 'invisible cursor-default'
               )}
             >
               {collapsed ? '▶' : '▼'}
             </button>
-            <Link to={`/tasks/${task.taskId}`} className="text-slate-200 hover:text-brand-400 line-clamp-1 min-w-0">
+            <Link to={`/tasks/${task.taskId}`} className="min-w-0 line-clamp-1 font-medium text-gray-900 hover:text-indigo-700">
               {task.title}
             </Link>
           </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500" style={{ paddingLeft: `${depth * 20 + 24}px` }}>
+            {task.domain?.name && <span>{task.domain.name}</span>}
+            {labels.slice(0, 2).map(label => <span key={label} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{label}</span>)}
+            {task.dueDate && <span className={isOverdue ? 'text-red-600' : undefined}>{formatDate(task.dueDate)}</span>}
+          </div>
           {task.blocker && (
-            <div className="text-xs text-red-400 mt-0.5 truncate" style={{ paddingLeft: `${depth * 20 + 24}px` }}>
+            <div className="mt-1 truncate text-xs text-red-600" style={{ paddingLeft: `${depth * 20 + 24}px` }}>
               ! {task.blocker}
             </div>
           )}
         </div>
-        <div className="px-4 py-1.5 w-24">
-          {labels.slice(0, 1).map(label => {
-            const c = LABEL_COLORS[label] || { bg: '#f1f5f9', text: '#475569' };
-            return (
-              <span
-                key={label}
-                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full whitespace-nowrap overflow-hidden text-ellipsis inline-block max-w-full"
-                style={{ backgroundColor: c.bg, color: c.text }}
-                title={label}
-              >
-                {label}
-              </span>
-            );
-          })}
-          {labels.length === 0 && <span className="text-slate-700">-</span>}
-          {task.scheduleMode && task.scheduleMode !== 'once' && (() => {
-            const icons: Record<string, string> = { recurring: '🔄', scheduled: '⏰', milestone_driven: '🏁', on_demand: '⚡' };
-            const names: Record<string, string> = { recurring: '周期循环', scheduled: '定时触发', milestone_driven: '里程碑驱动', on_demand: '按需触发' };
-            return (
-              <span className="text-[9px] ml-1" title={names[task.scheduleMode] || task.scheduleMode}>
-                {icons[task.scheduleMode] || ''}
-              </span>
-            );
-          })()}
-        </div>
-        <div className="px-4 py-1.5 w-24"><StatusBadge status={task.status} /></div>
-        <div className="px-4 py-1.5 w-16"><PriorityBadge priority={task.priority} /></div>
-        <div className="px-4 py-1.5 w-24">
-          {task.domain ? (
-            <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: `${task.domain.color}20`, color: task.domain.color }}>
-              {task.domain.name}
-            </span>
-          ) : <span className="text-slate-700">-</span>}
-        </div>
-        <div className="px-4 py-1.5 w-24">
+        <div className="w-24 px-4 py-3"><StatusBadge status={task.status} /></div>
+        <div className="w-16 px-4 py-3"><PriorityBadge priority={task.priority} /></div>
+        <div className="w-32 px-4 py-3">
           {(task.assignee || task.owner) ? (
             <div className="flex items-center gap-1.5">
               <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                task.assignee ? "bg-brand-500/30 text-brand-400" : "bg-slate-500/30 text-slate-400")}>
+                task.assignee ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600")}>
                 {(task.assignee || task.owner)[0].toUpperCase()}
               </span>
-              <span className="text-xs text-slate-400 truncate" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>
+              <span className="truncate text-xs text-gray-600" title={task.assignee ? `处理人: ${task.assignee}` : `负责人: ${task.owner}`}>
                 {task.assignee || task.owner}
               </span>
             </div>
-          ) : <span className="text-slate-700">-</span>}
+          ) : <span className="text-gray-400">—</span>}
         </div>
-        <div className="px-4 py-1.5 w-28">
+        <div className="w-32 px-4 py-3">
           <div className="flex items-center gap-2">
-            <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-brand-500 rounded-full" style={{ width: `${task.progress}%` }} />
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+              <div className="h-full rounded-full bg-indigo-600" style={{ width: `${task.progress}%` }} />
             </div>
-            <span className="text-xs text-slate-600 w-7">{task.progress}%</span>
+            <span className="w-8 text-right text-xs tabular-nums text-gray-500">{task.progress}%</span>
           </div>
-        </div>
-        <div className="px-4 py-1.5 w-24">
-          <span className={cn('text-xs', isOverdue ? 'text-red-400' : 'text-slate-500')}>
-            {task.dueDate ? formatDate(task.dueDate) : '-'}
-          </span>
         </div>
       </div>
 
