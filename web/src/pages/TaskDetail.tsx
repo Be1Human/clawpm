@@ -51,7 +51,7 @@ const PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 const PRESET_LABELS = ['epic', 'feature', 'bug', 'spike', 'chore', 'test'];
 
 const STATUS_DOT: Record<string, string> = {
-  backlog: 'bg-slate-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
+  backlog: 'bg-gray-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
   review: 'bg-amber-500', done: 'bg-emerald-500',
 };
 
@@ -336,10 +336,10 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
   }
 
   return (
-    <div className="flex w-full h-full min-h-0 bg-white relative">
+    <div className="flex w-full h-full min-h-0 bg-[#f4f5f7] relative">
       {/* 主要内容区（可滚动） */}
       <div className="flex-1 min-w-0 overflow-y-auto relative custom-scrollbar">
-        <div className={cn('p-6 mx-auto transition-all', editingDesc ? 'max-w-7xl' : 'max-w-4xl')}>
+        <div className="p-6 w-full">
           {/* 只读模式提示 */}
       {!canEdit && (
         <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
@@ -510,8 +510,8 @@ export default function TaskDetail({ taskId: propTaskId, onClose }: { taskId?: s
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 space-y-5">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
           {/* 描述（非编辑态 — Markdown 只读预览） */}
           {!editingDesc && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -1341,7 +1341,7 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 // ── 树上下文小视图 ──────────────────────────────────────────────────
 
 const CTX_STATUS_DOT: Record<string, string> = {
-  backlog: 'bg-slate-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
+  backlog: 'bg-gray-400', planned: 'bg-blue-400', active: 'bg-indigo-500',
   review: 'bg-amber-500', done: 'bg-emerald-500',
 };
 

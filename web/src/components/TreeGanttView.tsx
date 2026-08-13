@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 const STATUS_COLOR: Record<string, string> = {
-  backlog: 'bg-slate-300',
+  backlog: 'bg-gray-300',
   planned: 'bg-blue-400',
   active: 'bg-indigo-500',
   review: 'bg-amber-500',

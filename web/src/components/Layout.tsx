@@ -250,7 +250,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const installedSkillCount = userSkillTargets.filter(target => target.status === 'current').length;
   const outdatedSkillCount = userSkillTargets.filter(target => target.status === 'update_available').length;
   const skillStatus = skillTargetsQuery.isLoading
-    ? { label: '正在检测安装状态', dot: 'bg-slate-300' }
+    ? { label: '正在检测安装状态', dot: 'bg-gray-300' }
     : skillTargetsQuery.isError
       ? { label: '点击查看并重新检测', dot: 'bg-rose-500' }
       : installedSkillCount === 4

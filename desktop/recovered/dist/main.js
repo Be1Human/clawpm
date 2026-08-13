@@ -417,7 +417,7 @@ function createWindow() {
     else {
         const entry = electron_1.app.isPackaged
             ? path_1.default.join(process.resourcesPath, 'web', 'index.html')
-            : path_1.default.resolve(__dirname, '../../web/dist/index.html');
+            : path_1.default.resolve(__dirname, '../../../web/dist/index.html');
         void mainWindow.loadFile(entry)
             .then(() => writeDiagnostic(`[renderer] loaded ${entry}`))
             .catch(error => writeDiagnostic(`[renderer] unable to load ${entry}: ${error.message}`));

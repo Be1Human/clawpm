@@ -35,6 +35,18 @@ async function fixture(t) {
   return { appPath, homePath, projectPath, backupRoot, globalAgentsPath, manifestPath, appVersion: 'test' };
 }
 
+test('内置 Skill 强制任务描述使用背景、目标和涉及文档结构', async () => {
+  const skill = await fs.readFile(path.resolve('desktop/skills/clawpm-project-workflow/SKILL.md'), 'utf8');
+  const protocol = await fs.readFile(path.resolve('desktop/skills/clawpm-project-workflow/references/decomposition-protocol.md'), 'utf8');
+
+  for (const heading of ['### 背景', '### 目标', '### 涉及文档']) {
+    assert.match(skill, new RegExp(heading));
+  }
+  assert.match(skill, /缺少任一必填段落时不得写入新任务或领取现有任务/);
+  assert.match(skill, /没有时写 `- 无`/);
+  assert.match(protocol, /description 按“背景、目标、涉及文档”分段/);
+});
+
 test('只解析平台白名单中的用户级与项目级目录', async t => {
   const options = await fixture(t);
   const codex = resolveSkillTarget({ ...options, platform: 'codex', scope: 'user' });

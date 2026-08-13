@@ -29,7 +29,14 @@
     "priority": "P1",
     "domain": "APP",
     "parent": "APP-003",
-    "description": ["实现本地登录状态流转"],
+    "description": [
+      "### 背景",
+      "现有应用缺少可验证的本地登录状态流转。",
+      "### 目标",
+      "用户能够使用本地凭据完成登录并看到明确的失败提示。",
+      "### 涉及文档",
+      "- `docs/auth-flow.md` — 登录状态和错误码约定"
+    ],
     "acceptanceCriteria": ["正确凭据可以登录", "错误凭据显示明确提示"],
     "verification": { "required": true },
     "progress": 60,

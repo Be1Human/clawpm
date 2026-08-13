@@ -58,7 +58,7 @@ export default function Workflow() {
   ];
 
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f6f8fc]">
+    <div className="min-h-full overflow-y-auto bg-[#f4f5f7]">
       <div className="w-full space-y-5 px-5 py-5 lg:px-7 lg:py-6">
         <header className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
